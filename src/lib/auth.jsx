@@ -33,9 +33,12 @@ export function AuthProvider({ children }) {
 
   const load = useCallback(async (userId) => {
     if (!userId) { setProfile(null); setWorkspace(null); return; }
-    const p = await q(db.from('profiles').select('*').eq('id', userId).maybeSingle()).catch(() => null);
+    let p = null, why = null;
+    try { p = await q(db.from('profiles').select('*').eq('id', userId).maybeSingle()); }
+    catch (e) { why = e.message || String(e); }
     setProfile(p);
-    setNoProfile(!p && !isDemo && !isLocal);
+    // false = no problem; true = no profile row; text = the server's error (shown on the start screen)
+    setNoProfile(!p && !isDemo && !isLocal ? (why || true) : false);
     if (p) {
       setWorkspace(await q(db.from('workspaces').select('*').eq('id', p.workspace_id).maybeSingle()));
       rpc('log_access', { p_action: 'login', p_entity: null, p_entity_id: null, p_meta: {} }).catch(() => {});
@@ -109,7 +112,7 @@ export function AuthProvider({ children }) {
   const isOps = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
 
   return (
-    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id) }}>
+    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
       {children}
     </AuthCtx.Provider>
   );

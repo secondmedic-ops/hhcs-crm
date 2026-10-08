@@ -9,7 +9,7 @@ import { Button, Field, Input, ErrorNote } from '../components/ui.jsx';
 const DEMO_PICKS = ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'field_staff', 'medical_desk', 'admin'];
 
 export default function Login({ next }) {
-  const { signIn, signInDemo, mfa, noProfile, verifyMfa, signOut } = useAuth();
+  const { signIn, signInDemo, mfa, noProfile, verifyMfa, signOut, retry } = useAuth();
   const [code, setCode] = useState('');
   const idle = (() => { try { const v = sessionStorage.getItem('caredesk.idle'); sessionStorage.removeItem('caredesk.idle'); return v; } catch { return null; } })();
   const [idleNote] = useState(idle);
@@ -71,7 +71,11 @@ export default function Login({ next }) {
           ) : noProfile ? (
             <div className="col gap-12">
               <h1>No access yet</h1>
-              <p className="muted">You are signed in, but this login has no CareDesk profile. Ask the platform administrator to add you in Settings, Users, with your role.</p>
+              {noProfile === true
+                ? <p className="muted">You are signed in, but this login has no CareDesk profile. Ask the platform administrator to add you in Settings, Users, with your role.</p>
+                : <><p className="muted">You are signed in, but your CareDesk profile could not be loaded. The server said:</p>
+                  <div className="badge danger" style={{ height: 'auto', padding: 10, whiteSpace: 'normal' }}>{String(noProfile)}</div></>}
+              <Button kind="primary" onClick={retry}>Try again</Button>
               <Button onClick={signOut}>Sign out</Button>
             </div>
           ) : mfa ? (
