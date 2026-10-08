@@ -1,0 +1,45 @@
+// CareDesk CRM on Cloudflare (Workers FREE plan): ONE Worker is the whole app.
+//   - /api/*                the backend (TypeScript in src/), talking to Supabase Postgres through Hyperdrive
+//   - /webhooks/myoperator  MyOperator Webhook v2
+//   - the rest              the React build (../dist) as static assets
+// Deployed ONLY by the pipeline (.github/workflows/ship.yml, step 5) together with the frontend.
+// Workers Builds must stay disconnected - a second deployer would race the pipeline.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hhcs-caredesk",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  // postgres.js talks to Supabase over TCP (cloudflare:sockets) and needs the Node.js compatibility layer.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "assets": {
+    "directory": "../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/webhooks/*"]
+  },
+
+  // SLA scan every minute; MIS packs at 04:30 UTC = 10:00 IST. (Workers Free allows 5 cron triggers per account.)
+  "triggers": { "crons": ["* * * * *", "30 4 * * *"] },
+
+  // Settings (not secret). The pipeline adds BUILD_SHA, SUPABASE_URL and APP_URL with --var.
+  "vars": {
+    "DEFAULT_WORKSPACE_CODE": "HHC",
+    "GEMINI_MODEL": "gemini-2.5-flash",
+    "AI_AUTO_PROCESS_CALLS": "true",
+    "MYOPERATOR_REGION": ""
+  },
+  // Supabase Postgres through Hyperdrive. The pipeline (scripts/hyperdrive.mjs) creates / updates the Hyperdrive
+  // config "hhcs-caredesk-db" from the GitHub secret SUPABASE_DB_URL and deploys with its real id; the id below is
+  // only a stand-in for local runs, which use CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE instead.
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000" }],
+  // Secrets (never in git) are uploaded by the pipeline with wrangler deploy --secrets-file: MyOperator keys,
+  // GEMINI_API_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY / MIS_RECIPIENTS (see .github/workflows/ship.yml).
+
+  // Live-updates hub: a SQLite Durable Object (allowed on the Workers Free plan), hibernating WebSockets.
+  "durable_objects": {
+    "bindings": [{ "name": "LIVE", "class_name": "LiveHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveHub"] }]
+}

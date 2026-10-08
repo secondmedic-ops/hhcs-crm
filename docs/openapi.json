@@ -1,0 +1,985 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CareDesk CRM API (Hinduja Home Care x SecondMedic)",
+    "version": "1"
+  },
+  "components": {
+    "securitySchemes": {
+      "supabase": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Supabase ES256 JWT"
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Service and database status",
+        "x-access": "public",
+        "security": []
+      }
+    },
+    "/api/version": {
+      "get": {
+        "summary": "Deployed commit",
+        "x-access": "public",
+        "security": []
+      }
+    },
+    "/api/actuator/health": {
+      "get": {
+        "summary": "Health with database check",
+        "x-access": "public",
+        "security": []
+      }
+    },
+    "/api/actuator/health/liveness": {
+      "get": {
+        "summary": "Worker is up",
+        "x-access": "public",
+        "security": []
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "summary": "Signed-in user, role and workspace",
+        "x-access": "login",
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/live": {
+      "get": {
+        "summary": "WebSocket: table names that changed",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/local/users": {
+      "get": {
+        "summary": "Local test only: logins to pick from",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/batch": {
+      "post": {
+        "summary": "Several reads in one transaction (RLS per user)",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/data/{table}": {
+      "post": {
+        "summary": "One read or write on an allowed table",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rpc/{fn}": {
+      "post": {
+        "summary": "One business action",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/calls/dial": {
+      "post": {
+        "summary": "MyOperator click-to-call",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/calls/{id}/recording": {
+      "get": {
+        "summary": "Call recording audio (logged)",
+        "x-access": [
+          "supervisor",
+          "coordinator",
+          "client_manager",
+          "client_clinical",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cases/{id}/quote": {
+      "post": {
+        "summary": "Send the quote on an approved template",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cases/{id}/message": {
+      "post": {
+        "summary": "Send an approved template message",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/calls/{id}": {
+      "post": {
+        "summary": "AI: transcript, summary, QA of a recorded call",
+        "x-access": [
+          "supervisor",
+          "coordinator",
+          "agent",
+          "client_manager"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/cases/{id}/brief": {
+      "post": {
+        "summary": "AI case brief",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/command": {
+      "post": {
+        "summary": "AI command bar",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/extract-enquiry": {
+      "post": {
+        "summary": "AI enquiry extraction",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "post": {
+        "summary": "Create a login and its profile",
+        "x-access": [
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/webhooks": {
+      "get": {
+        "summary": "Last 50 MyOperator webhook events",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/integrations": {
+      "get": {
+        "summary": "Which integrations are configured",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    }
+  },
+  "x-tables-read": {
+    "workspaces": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "zones": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "profiles": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "services": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "templates": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "sla_policies": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "escalation_matrix": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "patients": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "cases": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "case_items": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "case_stage_history": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "calls": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "interactions": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "callbacks": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "approvals": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "sla_timers": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "complaints": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "escalations": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "assignments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "samples": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "payments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "qa_reviews": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "notifications": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "inbound_emails": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "mis_snapshots": [
+      "supervisor",
+      "coordinator",
+      "client_manager",
+      "client_clinical"
+    ],
+    "audit_log": [
+      "supervisor",
+      "client_manager"
+    ],
+    "access_log": [
+      "supervisor",
+      "client_manager"
+    ],
+    "v_audit": [
+      "supervisor",
+      "client_manager"
+    ],
+    "v_access": [
+      "supervisor",
+      "client_manager"
+    ],
+    "v_cases": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_patients": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_calls": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_callbacks": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_assignments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_escalations": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_approvals": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_complaints": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ]
+  },
+  "x-tables-write": {
+    "case_items": {
+      "insert": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk"
+      ],
+      "delete": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk"
+      ]
+    },
+    "complaints": {
+      "insert": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk",
+        "client_manager"
+      ],
+      "update": [
+        "supervisor",
+        "coordinator",
+        "client_manager"
+      ]
+    },
+    "escalations": {
+      "insert": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk",
+        "field_staff",
+        "client_manager",
+        "client_clinical"
+      ],
+      "update": [
+        "supervisor",
+        "coordinator",
+        "medical_desk",
+        "client_manager",
+        "client_clinical"
+      ]
+    },
+    "escalation_matrix": {
+      "update": [
+        "admin",
+        "supervisor",
+        "client_manager"
+      ],
+      "insert": [
+        "admin",
+        "supervisor",
+        "client_manager"
+      ]
+    },
+    "interactions": {
+      "insert": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk",
+        "field_staff"
+      ]
+    },
+    "notifications": {
+      "update": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "field_staff",
+        "medical_desk",
+        "client_manager",
+        "client_clinical",
+        "admin"
+      ]
+    },
+    "patients": {
+      "update": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk"
+      ]
+    },
+    "profiles": {
+      "update": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "field_staff",
+        "medical_desk",
+        "client_manager",
+        "client_clinical",
+        "admin"
+      ]
+    },
+    "qa_reviews": {
+      "insert": [
+        "supervisor"
+      ]
+    },
+    "sla_policies": {
+      "update": [
+        "admin",
+        "supervisor",
+        "client_manager"
+      ],
+      "insert": [
+        "admin",
+        "supervisor",
+        "client_manager"
+      ]
+    },
+    "templates": {
+      "insert": [
+        "admin",
+        "supervisor"
+      ],
+      "update": [
+        "admin",
+        "supervisor"
+      ]
+    },
+    "workspaces": {
+      "update": [
+        "admin",
+        "client_manager"
+      ]
+    },
+    "zones": {
+      "insert": [
+        "admin",
+        "supervisor"
+      ],
+      "update": [
+        "admin",
+        "supervisor"
+      ],
+      "delete": [
+        "admin",
+        "supervisor"
+      ]
+    },
+    "callbacks": {
+      "insert": [
+        "agent",
+        "coordinator",
+        "supervisor",
+        "medical_desk"
+      ]
+    }
+  },
+  "x-rpc": {
+    "create_enquiry": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "advance_case": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "cancel_case": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "reopen_case": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "set_discount": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "confirm_booking": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "record_consent": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "callback_update": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "capture_feedback": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "set_report_status": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "assign_staff": [
+      "coordinator",
+      "supervisor"
+    ],
+    "field_update": [
+      "field_staff",
+      "coordinator",
+      "supervisor"
+    ],
+    "upsert_sample": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "field_staff"
+    ],
+    "record_payment": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "field_staff"
+    ],
+    "reconcile_payment": [
+      "supervisor",
+      "coordinator"
+    ],
+    "decide_approval": [
+      "client_manager",
+      "client_clinical",
+      "supervisor",
+      "coordinator",
+      "admin"
+    ],
+    "request_rate_change": [
+      "admin",
+      "supervisor"
+    ],
+    "submit_template": [
+      "admin",
+      "supervisor"
+    ],
+    "case_gates": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "render_template": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "log_access": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "dashboard_kpis": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "mis_report": [
+      "supervisor",
+      "coordinator",
+      "client_manager",
+      "client_clinical"
+    ]
+  }
+}

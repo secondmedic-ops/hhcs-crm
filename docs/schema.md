@@ -1,0 +1,814 @@
+# Database schema (generated from supabase/migrations - do not edit)
+
+## access_log
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| workspace_id | uuid | YES |
+| user_id | uuid | YES |
+| action | text | NO |
+| entity | text | YES |
+| entity_id | text | YES |
+| meta | jsonb | NO |
+| at | timestamp with time zone | NO |
+
+## approvals
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | YES |
+| kind | text | NO |
+| title | text | NO |
+| payload | jsonb | NO |
+| status | text | NO |
+| requested_by | uuid | YES |
+| requested_at | timestamp with time zone | NO |
+| decided_by | uuid | YES |
+| decided_at | timestamp with time zone | YES |
+| decision_note | text | YES |
+
+## assignments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| staff_id | uuid | NO |
+| task | text | NO |
+| status | text | NO |
+| assigned_by | uuid | YES |
+| assigned_at | timestamp with time zone | NO |
+| eta | timestamp with time zone | YES |
+| window_start | timestamp with time zone | YES |
+| window_end | timestamp with time zone | YES |
+| checkin_at | timestamp with time zone | YES |
+| checkin_lat | double precision | YES |
+| checkin_lng | double precision | YES |
+| checkin_distance_m | integer | YES |
+| checkout_at | timestamp with time zone | YES |
+| checklist | jsonb | NO |
+| patient_signoff | boolean | NO |
+| backup_for | uuid | YES |
+| delay_reason | text | YES |
+
+## audit_log
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| workspace_id | uuid | YES |
+| table_name | text | NO |
+| record_id | uuid | YES |
+| action | text | NO |
+| changes | jsonb | YES |
+| actor_id | uuid | YES |
+| at | timestamp with time zone | NO |
+
+## callbacks
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| call_id | uuid | YES |
+| number | text | NO |
+| patient_id | uuid | YES |
+| reason | text | NO |
+| due_at | timestamp with time zone | NO |
+| status | text | NO |
+| assigned_to | uuid | YES |
+| attempts | integer | NO |
+| last_attempt_at | timestamp with time zone | YES |
+| completed_at | timestamp with time zone | YES |
+| completed_by | uuid | YES |
+| notes | text | YES |
+| created_at | timestamp with time zone | NO |
+
+## calls
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| provider | text | NO |
+| provider_call_id | text | YES |
+| session_id | text | YES |
+| direction | text | NO |
+| customer_number | text | YES |
+| did_number | text | YES |
+| agent_id | uuid | YES |
+| agent_name | text | YES |
+| department | text | YES |
+| status | text | NO |
+| started_at | timestamp with time zone | NO |
+| answered_at | timestamp with time zone | YES |
+| ended_at | timestamp with time zone | YES |
+| ring_seconds | integer | YES |
+| talk_seconds | integer | YES |
+| recording_filename | text | YES |
+| patient_id | uuid | YES |
+| case_id | uuid | YES |
+| disposition | text | YES |
+| notes | text | YES |
+| transcript | text | YES |
+| ai_summary | text | YES |
+| ai_sentiment | text | YES |
+| ai_intent | text | YES |
+| ai_extracted | jsonb | YES |
+| ai_flags | ARRAY | YES |
+| ai_processed_at | timestamp with time zone | YES |
+| click_to_call_ref | text | YES |
+| raw | jsonb | YES |
+| created_at | timestamp with time zone | NO |
+
+## case_counters
+| column | type | nullable |
+|---|---|---|
+| workspace_id | uuid | NO |
+| day | date | NO |
+| last_value | integer | NO |
+
+## case_items
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| case_id | uuid | NO |
+| service_id | uuid | NO |
+| service_code | text | YES |
+| service_name | text | YES |
+| category | text | YES |
+| unit_price | numeric | NO |
+| qty | integer | NO |
+| line_total | numeric | NO |
+| created_at | timestamp with time zone | NO |
+
+## case_stage_history
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| case_id | uuid | NO |
+| from_stage | USER-DEFINED | YES |
+| to_stage | USER-DEFINED | NO |
+| changed_by | uuid | YES |
+| changed_at | timestamp with time zone | NO |
+| note | text | YES |
+
+## cases
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_no | text | YES |
+| patient_id | uuid | NO |
+| caller_name | text | YES |
+| caller_relation | text | YES |
+| caller_mobile | text | YES |
+| source_channel | text | NO |
+| stage | USER-DEFINED | NO |
+| priority | text | NO |
+| services_requested | text | YES |
+| clinical_notes | text | YES |
+| preferred_slot | timestamp with time zone | YES |
+| booked_slot | timestamp with time zone | YES |
+| address | text | YES |
+| pincode | text | YES |
+| zone_id | uuid | YES |
+| owner_id | uuid | YES |
+| coordinator_id | uuid | YES |
+| subtotal | numeric | NO |
+| discount_pct | numeric | NO |
+| discount_amount | numeric | NO |
+| total | numeric | NO |
+| quote_status | text | NO |
+| quote_template_id | uuid | YES |
+| quote_sent_at | timestamp with time zone | YES |
+| booking_confirmed_at | timestamp with time zone | YES |
+| service_completed_at | timestamp with time zone | YES |
+| amount_collected | numeric | NO |
+| payment_status | text | NO |
+| report_status | text | NO |
+| report_delivered_at | timestamp with time zone | YES |
+| feedback_rating | integer | YES |
+| feedback_text | text | YES |
+| cancel_reason | text | YES |
+| reopen_reason | text | YES |
+| closed_at | timestamp with time zone | YES |
+| closed_by | uuid | YES |
+| sla_state | text | NO |
+| ai_brief | jsonb | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| updated_at | timestamp with time zone | NO |
+
+## complaints
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| ref_no | text | YES |
+| case_id | uuid | YES |
+| patient_id | uuid | YES |
+| category | text | NO |
+| severity | text | NO |
+| description | text | NO |
+| status | text | NO |
+| owner_id | uuid | YES |
+| opened_by | uuid | YES |
+| opened_at | timestamp with time zone | NO |
+| acknowledged_at | timestamp with time zone | YES |
+| resolved_at | timestamp with time zone | YES |
+| root_cause | text | YES |
+| resolution | text | YES |
+
+## deployments
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| at | timestamp with time zone | NO |
+| sha | text | NO |
+| subject | text | YES |
+| author | text | YES |
+| areas | text | YES |
+| status | text | NO |
+| run_url | text | YES |
+
+## escalation_matrix
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| type | text | NO |
+| level | integer | NO |
+| owner_label | text | NO |
+| contact_name | text | YES |
+| contact_phone | text | YES |
+| contact_email | text | YES |
+| target_minutes | integer | YES |
+
+## escalations
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | YES |
+| complaint_id | uuid | YES |
+| type | text | NO |
+| level | integer | NO |
+| trigger_text | text | NO |
+| raised_by | uuid | YES |
+| raised_at | timestamp with time zone | NO |
+| contacted_name | text | YES |
+| contacted_at | timestamp with time zone | YES |
+| outcome | text | YES |
+| status | text | NO |
+| acknowledged_by | uuid | YES |
+| acknowledged_at | timestamp with time zone | YES |
+| resolved_at | timestamp with time zone | YES |
+| auto_raised | boolean | NO |
+
+## inbound_emails
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| message_id | text | YES |
+| from_address | text | YES |
+| to_address | text | YES |
+| subject | text | YES |
+| text_body | text | YES |
+| patient_id | uuid | YES |
+| case_id | uuid | YES |
+| received_at | timestamp with time zone | NO |
+
+## interactions
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | YES |
+| patient_id | uuid | YES |
+| channel | text | NO |
+| direction | text | NO |
+| actor_id | uuid | YES |
+| actor_label | text | YES |
+| summary | text | NO |
+| body | text | YES |
+| evidence | text | YES |
+| call_id | uuid | YES |
+| template_id | uuid | YES |
+| occurred_at | timestamp with time zone | NO |
+| meta | jsonb | NO |
+
+## mis_snapshots
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| period | text | NO |
+| period_start | date | NO |
+| period_end | date | NO |
+| data | jsonb | NO |
+| narrative | text | YES |
+| generated_at | timestamp with time zone | NO |
+
+## notifications
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| user_id | uuid | YES |
+| role | USER-DEFINED | YES |
+| kind | text | NO |
+| title | text | NO |
+| body | text | YES |
+| link | text | YES |
+| read_at | timestamp with time zone | YES |
+| created_at | timestamp with time zone | NO |
+
+## patients
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| mrn | text | YES |
+| full_name | text | NO |
+| age | integer | YES |
+| gender | text | YES |
+| mobile | text | YES |
+| alt_mobile | text | YES |
+| email | text | YES |
+| address | text | YES |
+| landmark | text | YES |
+| locality | text | YES |
+| pincode | text | YES |
+| city | text | YES |
+| zone_id | uuid | YES |
+| lat | double precision | YES |
+| lng | double precision | YES |
+| consent_verbal_at | timestamp with time zone | YES |
+| consent_verbal_call_id | uuid | YES |
+| consent_digital_at | timestamp with time zone | YES |
+| tags | ARRAY | NO |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| updated_at | timestamp with time zone | NO |
+
+## payments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| amount | numeric | NO |
+| mode | text | NO |
+| txn_ref | text | YES |
+| receipt_no | text | YES |
+| collected_by | uuid | YES |
+| collected_at | timestamp with time zone | NO |
+| gateway_status | text | YES |
+| settled_at | timestamp with time zone | YES |
+| reconciled | boolean | NO |
+| reconciled_at | timestamp with time zone | YES |
+| reconciled_by | uuid | YES |
+| exception | text | YES |
+
+## profiles
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| full_name | text | NO |
+| email | text | YES |
+| phone | text | YES |
+| role | USER-DEFINED | NO |
+| agent_code | text | YES |
+| myoperator_user_id | text | YES |
+| myoperator_extension | text | YES |
+| zone_id | uuid | YES |
+| skills | ARRAY | NO |
+| on_duty | boolean | NO |
+| active | boolean | NO |
+| last_seen_at | timestamp with time zone | YES |
+| created_at | timestamp with time zone | NO |
+
+## qa_reviews
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| call_id | uuid | NO |
+| agent_id | uuid | YES |
+| reviewer_id | uuid | YES |
+| greeting | integer | YES |
+| consent | integer | YES |
+| price_accuracy | integer | YES |
+| empathy | integer | YES |
+| closure | integer | YES |
+| total_pct | numeric | YES |
+| notes | text | YES |
+| coaching_action | text | YES |
+| ai_generated | boolean | NO |
+| created_at | timestamp with time zone | NO |
+
+## samples
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| barcode | text | NO |
+| kind | text | NO |
+| collected_at | timestamp with time zone | YES |
+| handover_at | timestamp with time zone | YES |
+| dispatched_at | timestamp with time zone | YES |
+| transport_temp_c | numeric | YES |
+| received_at | timestamp with time zone | YES |
+| accessioned_at | timestamp with time zone | YES |
+| report_released_at | timestamp with time zone | YES |
+| delivered_at | timestamp with time zone | YES |
+| critical_flag | boolean | NO |
+| critical_note | text | YES |
+| file_url | text | YES |
+
+## services
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| code | text | NO |
+| name | text | NO |
+| category | text | NO |
+| price | numeric | NO |
+| tat_hours | integer | YES |
+| description | text | YES |
+| active | boolean | NO |
+| version | integer | NO |
+| approved_by | uuid | YES |
+| approved_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | NO |
+
+## sla_policies
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| key | text | NO |
+| label | text | NO |
+| target_minutes | integer | NO |
+| escalate_to | USER-DEFINED | NO |
+| measured_by | text | YES |
+| penalty | boolean | NO |
+
+## sla_timers
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| policy_key | text | NO |
+| case_id | uuid | YES |
+| complaint_id | uuid | YES |
+| callback_id | uuid | YES |
+| started_at | timestamp with time zone | NO |
+| due_at | timestamp with time zone | NO |
+| met_at | timestamp with time zone | YES |
+| breached_at | timestamp with time zone | YES |
+| status | text | NO |
+
+## templates
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| kind | text | NO |
+| code | text | NO |
+| title | text | NO |
+| body | text | NO |
+| version | integer | NO |
+| status | text | NO |
+| provider_template_name | text | YES |
+| approved_by | uuid | YES |
+| approved_at | timestamp with time zone | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+
+## v_access
+| column | type | nullable |
+|---|---|---|
+| id | bigint | YES |
+| workspace_id | uuid | YES |
+| user_id | uuid | YES |
+| action | text | YES |
+| entity | text | YES |
+| entity_id | text | YES |
+| meta | jsonb | YES |
+| at | timestamp with time zone | YES |
+| user_name | text | YES |
+| user_role | USER-DEFINED | YES |
+
+## v_approvals
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| kind | text | YES |
+| title | text | YES |
+| payload | jsonb | YES |
+| status | text | YES |
+| requested_by | uuid | YES |
+| requested_at | timestamp with time zone | YES |
+| decided_by | uuid | YES |
+| decided_at | timestamp with time zone | YES |
+| decision_note | text | YES |
+| case_no | text | YES |
+| requested_by_name | text | YES |
+| decided_by_name | text | YES |
+
+## v_assignments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| staff_id | uuid | YES |
+| task | text | YES |
+| status | text | YES |
+| assigned_by | uuid | YES |
+| assigned_at | timestamp with time zone | YES |
+| eta | timestamp with time zone | YES |
+| window_start | timestamp with time zone | YES |
+| window_end | timestamp with time zone | YES |
+| checkin_at | timestamp with time zone | YES |
+| checkin_lat | double precision | YES |
+| checkin_lng | double precision | YES |
+| checkin_distance_m | integer | YES |
+| checkout_at | timestamp with time zone | YES |
+| checklist | jsonb | YES |
+| patient_signoff | boolean | YES |
+| backup_for | uuid | YES |
+| delay_reason | text | YES |
+| staff_name | text | YES |
+| staff_phone | text | YES |
+| case_no | text | YES |
+| booked_slot | timestamp with time zone | YES |
+| priority | text | YES |
+| stage | USER-DEFINED | YES |
+| address | text | YES |
+| pincode | text | YES |
+| patient_name | text | YES |
+| patient_age | integer | YES |
+| patient_gender | text | YES |
+| landmark | text | YES |
+| patient_lat | double precision | YES |
+| patient_lng | double precision | YES |
+| zone_name | text | YES |
+| service_names | text | YES |
+
+## v_audit
+| column | type | nullable |
+|---|---|---|
+| id | bigint | YES |
+| workspace_id | uuid | YES |
+| table_name | text | YES |
+| record_id | uuid | YES |
+| action | text | YES |
+| changes | jsonb | YES |
+| actor_id | uuid | YES |
+| at | timestamp with time zone | YES |
+| actor_name | text | YES |
+| actor_role | USER-DEFINED | YES |
+
+## v_callbacks
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| call_id | uuid | YES |
+| reason | text | YES |
+| due_at | timestamp with time zone | YES |
+| status | text | YES |
+| assigned_to | uuid | YES |
+| attempts | integer | YES |
+| last_attempt_at | timestamp with time zone | YES |
+| completed_at | timestamp with time zone | YES |
+| created_at | timestamp with time zone | YES |
+| patient_id | uuid | YES |
+| number | text | YES |
+| patient_name | text | YES |
+| assignee_name | text | YES |
+| open_case_id | uuid | YES |
+
+## v_calls
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| provider | text | YES |
+| provider_call_id | text | YES |
+| session_id | text | YES |
+| direction | text | YES |
+| customer_number | text | YES |
+| did_number | text | YES |
+| agent_id | uuid | YES |
+| agent_label | text | YES |
+| department | text | YES |
+| status | text | YES |
+| started_at | timestamp with time zone | YES |
+| answered_at | timestamp with time zone | YES |
+| ended_at | timestamp with time zone | YES |
+| ring_seconds | integer | YES |
+| talk_seconds | integer | YES |
+| has_recording | boolean | YES |
+| patient_id | uuid | YES |
+| case_id | uuid | YES |
+| disposition | text | YES |
+| notes | text | YES |
+| transcript | text | YES |
+| ai_summary | text | YES |
+| ai_sentiment | text | YES |
+| ai_intent | text | YES |
+| ai_extracted | jsonb | YES |
+| ai_flags | ARRAY | YES |
+| ai_processed_at | timestamp with time zone | YES |
+| patient_name | text | YES |
+| case_no | text | YES |
+| qa_pct | numeric | YES |
+| line_label | text | YES |
+
+## v_cases
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_no | text | YES |
+| patient_id | uuid | YES |
+| caller_name | text | YES |
+| caller_relation | text | YES |
+| caller_mobile | text | YES |
+| source_channel | text | YES |
+| stage | USER-DEFINED | YES |
+| priority | text | YES |
+| services_requested | text | YES |
+| clinical_notes | text | YES |
+| preferred_slot | timestamp with time zone | YES |
+| booked_slot | timestamp with time zone | YES |
+| address | text | YES |
+| pincode | text | YES |
+| zone_id | uuid | YES |
+| owner_id | uuid | YES |
+| coordinator_id | uuid | YES |
+| subtotal | numeric | YES |
+| discount_pct | numeric | YES |
+| discount_amount | numeric | YES |
+| total | numeric | YES |
+| quote_status | text | YES |
+| quote_template_id | uuid | YES |
+| quote_sent_at | timestamp with time zone | YES |
+| booking_confirmed_at | timestamp with time zone | YES |
+| service_completed_at | timestamp with time zone | YES |
+| amount_collected | numeric | YES |
+| payment_status | text | YES |
+| report_status | text | YES |
+| report_delivered_at | timestamp with time zone | YES |
+| feedback_rating | integer | YES |
+| feedback_text | text | YES |
+| cancel_reason | text | YES |
+| reopen_reason | text | YES |
+| closed_at | timestamp with time zone | YES |
+| closed_by | uuid | YES |
+| sla_state | text | YES |
+| ai_brief | jsonb | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | YES |
+| patient_name | text | YES |
+| patient_age | integer | YES |
+| patient_gender | text | YES |
+| patient_mobile | text | YES |
+| caller_mobile_display | text | YES |
+| patient_locality | text | YES |
+| patient_landmark | text | YES |
+| patient_lat | double precision | YES |
+| patient_lng | double precision | YES |
+| consent_verbal_at | timestamp with time zone | YES |
+| consent_digital_at | timestamp with time zone | YES |
+| zone_name | text | YES |
+| owner_name | text | YES |
+| owner_code | text | YES |
+| coordinator_name | text | YES |
+| service_names | text | YES |
+| service_categories | text | YES |
+| next_sla_due | timestamp with time zone | YES |
+| next_sla_key | text | YES |
+| open_escalations | bigint | YES |
+| open_complaints | bigint | YES |
+
+## v_complaints
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| ref_no | text | YES |
+| case_id | uuid | YES |
+| patient_id | uuid | YES |
+| category | text | YES |
+| severity | text | YES |
+| description | text | YES |
+| status | text | YES |
+| owner_id | uuid | YES |
+| opened_by | uuid | YES |
+| opened_at | timestamp with time zone | YES |
+| acknowledged_at | timestamp with time zone | YES |
+| resolved_at | timestamp with time zone | YES |
+| root_cause | text | YES |
+| resolution | text | YES |
+| case_no | text | YES |
+| patient_name | text | YES |
+| owner_name | text | YES |
+| resolve_due | timestamp with time zone | YES |
+
+## v_escalations
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| complaint_id | uuid | YES |
+| type | text | YES |
+| level | integer | YES |
+| trigger_text | text | YES |
+| raised_by | uuid | YES |
+| raised_at | timestamp with time zone | YES |
+| contacted_name | text | YES |
+| contacted_at | timestamp with time zone | YES |
+| outcome | text | YES |
+| status | text | YES |
+| acknowledged_by | uuid | YES |
+| acknowledged_at | timestamp with time zone | YES |
+| resolved_at | timestamp with time zone | YES |
+| auto_raised | boolean | YES |
+| case_no | text | YES |
+| patient_name | text | YES |
+| raised_by_name | text | YES |
+
+## v_patients
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| mrn | text | YES |
+| full_name | text | YES |
+| age | integer | YES |
+| gender | text | YES |
+| mobile | text | YES |
+| alt_mobile | text | YES |
+| email | text | YES |
+| address | text | YES |
+| landmark | text | YES |
+| locality | text | YES |
+| pincode | text | YES |
+| city | text | YES |
+| zone_id | uuid | YES |
+| lat | double precision | YES |
+| lng | double precision | YES |
+| consent_verbal_at | timestamp with time zone | YES |
+| consent_digital_at | timestamp with time zone | YES |
+| tags | ARRAY | YES |
+| created_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | YES |
+| zone_name | text | YES |
+| case_count | bigint | YES |
+| last_case_at | timestamp with time zone | YES |
+| lifetime_value | numeric | YES |
+
+## webhook_events
+| column | type | nullable |
+|---|---|---|
+| event_id | text | NO |
+| source | text | NO |
+| event_type | text | YES |
+| received_at | timestamp with time zone | NO |
+| processed | boolean | NO |
+| error | text | YES |
+| payload | jsonb | YES |
+
+## workspaces
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| code | text | NO |
+| name | text | NO |
+| brand_name | text | NO |
+| support_number | text | YES |
+| support_email | text | YES |
+| timezone | text | NO |
+| discount_band_pct | numeric | NO |
+| settings | jsonb | NO |
+| created_at | timestamp with time zone | NO |
+
+## zones
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| name | text | NO |
+| pincodes | ARRAY | NO |
+| active | boolean | NO |

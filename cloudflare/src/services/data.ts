@@ -1,0 +1,149 @@
+// Screen data: reads, writes and business actions (RPCs), always as the signed-in user (db.asUser), so the
+// database's Row Level Security and the role checks inside every RPC apply on top of the rules below.
+//   POST /api/v1/batch          several reads in ONE transaction (a screen's loaders, sent together)
+//   POST /api/v1/data/{table}   one write (insert / update / upsert / delete) on an allowed table
+//   POST /api/v1/rpc/{fn}       one business action (advance a case, approve a discount, record a payment ...)
+import type { Ctx } from '../api/context';
+import type { Role } from '../api/auth';
+import { ApiError } from '../domain/errors';
+import { buildQuery, QueryError, shape, type QuerySpec, ident, toParam } from '../domain/query';
+import { asUser, readAsUser, type Tx } from '../db';
+
+const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
+const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
+const MANAGERS: readonly Role[] = ['supervisor', 'client_manager'];
+
+/** Who may read a table / view (rows are then filtered by RLS per role). Not listed = nobody. */
+export const READ: Record<string, readonly Role[]> = {
+  workspaces: ALL, zones: ALL, profiles: ALL, services: ALL, templates: ALL, sla_policies: ALL, escalation_matrix: ALL,
+  patients: ALL, cases: ALL, case_items: ALL, case_stage_history: ALL, calls: ALL, interactions: ALL, callbacks: ALL,
+  approvals: ALL, sla_timers: ALL, complaints: ALL, escalations: ALL, assignments: ALL, samples: ALL, payments: ALL,
+  qa_reviews: ALL, notifications: ALL, inbound_emails: ALL,
+  mis_snapshots: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
+  audit_log: MANAGERS, access_log: MANAGERS, v_audit: MANAGERS, v_access: MANAGERS,
+  v_cases: ALL, v_patients: ALL, v_calls: ALL, v_callbacks: ALL, v_assignments: ALL, v_escalations: ALL, v_approvals: ALL, v_complaints: ALL,
+};
+
+/** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */
+export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert' | 'delete', readonly Role[]>>> = {
+  case_items: { insert: OPS, delete: OPS },
+  complaints: { insert: [...OPS, 'client_manager'], update: ['supervisor', 'coordinator', 'client_manager'] },
+  escalations: { insert: [...OPS, 'field_staff', 'client_manager', 'client_clinical'], update: ['supervisor', 'coordinator', 'medical_desk', 'client_manager', 'client_clinical'] },
+  escalation_matrix: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
+  interactions: { insert: [...OPS, 'field_staff'] },
+  notifications: { update: ALL },
+  patients: { update: OPS },
+  profiles: { update: ALL },
+  qa_reviews: { insert: ['supervisor'] },
+  sla_policies: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
+  templates: { insert: ['admin', 'supervisor'], update: ['admin', 'supervisor'] },
+  workspaces: { update: ['admin', 'client_manager'] },
+  zones: { insert: ['admin', 'supervisor'], update: ['admin', 'supervisor'], delete: ['admin', 'supervisor'] },
+  callbacks: { insert: OPS },
+};
+
+/** Business actions and who may call them (each function checks again inside the database). */
+export const RPC: Record<string, readonly Role[]> = {
+  create_enquiry: OPS, advance_case: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
+  record_consent: OPS, callback_update: OPS, capture_feedback: OPS, set_report_status: OPS,
+  assign_staff: ['coordinator', 'supervisor'],
+  field_update: ['field_staff', 'coordinator', 'supervisor'],
+  upsert_sample: [...OPS, 'field_staff'],
+  record_payment: [...OPS, 'field_staff'],
+  reconcile_payment: ['supervisor', 'coordinator'],
+  decide_approval: ['client_manager', 'client_clinical', 'supervisor', 'coordinator', 'admin'],
+  request_rate_change: ['admin', 'supervisor'],
+  submit_template: ['admin', 'supervisor'],
+  case_gates: ALL, render_template: ALL, log_access: ALL,
+  dashboard_kpis: ALL,
+  mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
+};
+/** Read-only actions that may ride in a batch. */
+export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report']);
+
+const allowed = (roles: readonly Role[] | undefined, role: Role | null) => !!role && !!roles && roles.includes(role);
+const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);
+
+/** Postgres error -> the message the screen shows (RPCs raise readable business messages). */
+export function dbMessage(e: unknown): ApiError | null {
+  const pg = e as { code?: string; message?: string };
+  if (e instanceof QueryError) return new ApiError(400, e.message);
+  if (!pg || typeof pg.code !== 'string') return null;
+  if (pg.code === 'P0001') return new ApiError(400, String(pg.message));                                  // raise exception in an RPC
+  if (pg.code === '42501') return new ApiError(403, 'Not allowed: ' + String(pg.message).replace(/^new row violates /, ''));
+  if (pg.code.startsWith('23')) return new ApiError(409, String(pg.message).includes('duplicate') ? 'That record already exists.' : 'Record conflicts with existing data.');
+  if (pg.code === '22P02' || pg.code === '22007' || pg.code === '22008' || pg.code === '22003') return new ApiError(400, 'Invalid value: ' + String(pg.message));
+  if (pg.code === '42703' || pg.code === '42P01' || pg.code === '42883') return new ApiError(400, String(pg.message));
+  return null;
+}
+const wrap = (e: unknown): never => { throw dbMessage(e) ?? e; };
+
+async function runSelect(tx: Tx, spec: QuerySpec) {
+  const q = buildQuery({ ...spec, op: 'select' }, 'raw');
+  const rows = await tx.unsafe(q.text, q.params as never[]);
+  const count = q.countText ? Number((await tx.unsafe(q.countText, q.countParams as never[]))[0]?.n ?? 0) : null;
+  return shape(spec, rows as unknown as Record<string, unknown>[], count);
+}
+
+async function runRpc(tx: Tx, fn: string, args: Record<string, unknown>) {
+  const keys = Object.keys(args ?? {});
+  const text = `select ${ident(fn)}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')}) as r`;
+  const [row] = await tx.unsafe(text, keys.map((k) => toParam(args[k], 'raw')) as never[]);
+  return row?.r ?? null;
+}
+
+export interface BatchOp { kind?: 'select' | 'rpc'; spec?: QuerySpec; fn?: string; args?: Record<string, unknown> }
+
+/** Several reads in one transaction. A failed read fails only itself (the batch is retried one by one). */
+export async function batch(c: Ctx, body: { ops?: BatchOp[] }) {
+  const ops = Array.isArray(body?.ops) ? body.ops : [];
+  if (!ops.length) return { results: [] };
+  if (ops.length > 40) throw new ApiError(400, 'Too many reads in one batch (max 40)');
+  for (const op of ops) {
+    if (op.kind === 'rpc') {
+      if (!op.fn || !READ_RPC.has(op.fn) || !allowed(RPC[op.fn], c.user.role)) throw deny(`"${op.fn}"`);
+    } else {
+      const t = op.spec?.table;
+      if (!t || !allowed(READ[t], c.user.role)) throw deny(`reading "${t}"`);
+      if (op.spec && op.spec.op && op.spec.op !== 'select') throw new ApiError(400, 'Only reads can be batched');
+    }
+  }
+  const run = (tx: Tx, op: BatchOp) => (op.kind === 'rpc' ? runRpc(tx, op.fn!, op.args ?? {}).then((data) => ({ data, count: null, error: null })) : runSelect(tx, op.spec!));
+  try {
+    const results = await readAsUser(c.sql, c.user.id, async (tx) => {
+      const out = [];
+      for (const op of ops) out.push(await run(tx, op));
+      return out;
+    });
+    return { results };
+  } catch {
+    // one bad read aborted the transaction: answer each read on its own, so the others still show
+    const results = [];
+    for (const op of ops) {
+      try { results.push(await readAsUser(c.sql, c.user.id, (tx) => run(tx, op))); }
+      catch (e) { results.push({ data: null, count: null, error: (dbMessage(e) ?? new ApiError(500, 'Could not load')).message }); }
+    }
+    return { results };
+  }
+}
+
+/** One write. Returns the shaped result and the changed tables (for live updates). */
+export async function write(c: Ctx, table: string, spec: QuerySpec) {
+  const op = spec?.op;
+  if (!op || op === 'select') {
+    if (!allowed(READ[table], c.user.role)) throw deny(`reading "${table}"`);
+    const r = await readAsUser(c.sql, c.user.id, (tx) => runSelect(tx, { ...spec, table })).catch(wrap);
+    return { body: r, changed: [] as string[] };
+  }
+  if (!allowed(WRITE[table]?.[op], c.user.role)) throw deny(`changing "${table}"`);
+  const q = buildQuery({ ...spec, table }, 'raw');
+  const { result, changed } = await asUser(c.sql, c.user.id, async (tx) => tx.unsafe(q.text, q.params as never[])).catch(wrap);
+  return { body: shape({ ...spec, table }, result as unknown as Record<string, unknown>[], null), changed };
+}
+
+export async function rpc(c: Ctx, fn: string, args: Record<string, unknown>) {
+  if (!allowed(RPC[fn], c.user.role)) throw deny(`"${fn}"`);
+  if (READ_RPC.has(fn)) return { body: { data: await readAsUser(c.sql, c.user.id, (tx) => runRpc(tx, fn, args ?? {})).catch(wrap) }, changed: [] as string[] };
+  const { result, changed } = await asUser(c.sql, c.user.id, (tx) => runRpc(tx, fn, args ?? {})).catch(wrap);
+  return { body: { data: result }, changed };
+}

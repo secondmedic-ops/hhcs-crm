@@ -1,0 +1,6 @@
+# Supabase CLI settings. Used by the pipeline to build a throwaway local database from
+# supabase/migrations/ (rehearsal) and by `supabase db push` to apply them to production.
+project_id = "hhcs-caredesk"
+
+[db]
+port = 54322

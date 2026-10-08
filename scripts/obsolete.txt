@@ -1,0 +1,14 @@
+# Files retired by earlier changes. scripts/ship.mjs (git rm) and scripts/retire.mjs (first run) delete them.
+# 2026-10-08: CareDesk moved onto the sb-spring-cf-stack pipeline (SM ERP layout): React app in src/, TypeScript
+# Worker in cloudflare/, timestamped migrations, SHIP.bat. The first layout (web/, worker/, wrangler.toml at the
+# root, 0001-0004 migrations, seed.sql, tools/) is retired.
+web
+worker
+tools
+wrangler.toml
+.dev.vars.example
+supabase/seed.sql
+supabase/migrations/0001_schema.sql
+supabase/migrations/0002_logic.sql
+supabase/migrations/0003_rls.sql
+supabase/migrations/0004_views.sql

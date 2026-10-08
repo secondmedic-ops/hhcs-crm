@@ -1,0 +1,19 @@
+# CareDesk CRM: notes for Claude
+
+Read `PROJECT.md` first (values, roles, how this project differs from the sb-spring-cf-stack template), then only what the change needs: `docs/schema.md`, `docs/openapi.json` (both generated), the service in `cloudflare/src/services/`, the screen in `src/pages/`.
+
+## Map
+- `supabase/migrations/` the only migrator (pipeline step 4). `..._caredesk_schema` tables, `..._caredesk_logic` RPCs and triggers (stage gates, pricing lock, discount approval, SLA engine, audit, MIS), `..._caredesk_rls` policies + grants, `..._caredesk_views` read views (masking), `..._hhcs_initial_config` workspace / rate card / templates / SLA matrix, `..._live_change_tracking` changed-table notes + deployments.
+- `cloudflare/src/index.ts` entry; `api/routes.ts` endpoint table (one line, with access); `api/auth.ts` ES256 JWT + profile cache; `db.ts` `asUser` / `readAsUser` / `asSystem`, `SCHEMA`; `domain/query.ts` JSON query -> SQL (shared with the browser demo); `services/data.ts` READ / WRITE / RPC rules, batch; `services/myoperator.ts` webhooks, click-to-call, recordings, WhatsApp; `services/ai.ts` Gemini; `services/live.ts` LiveHub; `services/cron.ts`, `services/email.ts`, `services/admin.ts`, `services/calls.ts`.
+- `src/api.ts` the only `/api` caller; `src/lib/db.js` modes (live / local / demo) + query builder (`pg-adapter.js`); `src/lib/auth.jsx` login, TOTP, idle sign-out; `src/demo/` browser demo data and stand-ins; `src/lib/localsim.js` local-test webhooks.
+- Tests: `cloudflare/test/workflow.test.mjs` (SQL workflow per role), `arrays.test.ts` (translator, arrays), `api.itest.mjs` (rehearsal API checks, run by `rehearse.mjs`).
+
+## Rules
+- Every request as a user runs in `asUser` / `readAsUser` (role `caredesk_app`, `app_uid()` set). System work (webhooks, cron, email) uses `asSystem`. Never query patient data outside these.
+- New table: migration (table, RLS on, policies using `me_ws()` / `has_role()` / `app_uid()`, and add it to the change-tracking trigger loop by re-running that DO block in the new migration) -> `READ` / `WRITE` in `services/data.ts` -> `SCHEMA` if the Worker's own SQL uses it -> screen. New business action: SQL function in a migration (check roles inside) -> `RPC` map -> `READ_RPC` if read-only.
+- New endpoint: one line in `routes.ts` with `access` before `handler`; add checks to `api.itest.mjs`; add the call to `src/api.ts`.
+- Parameters to postgres.js: arrays via `pgArray(...)` with an explicit `::text[]` cast; JSON via `tx.json(...)`; never pre-stringify JSON. The translator's `'raw'` mode does this for screen queries.
+- Money: Postgres `numeric`, computed in SQL (rate card, discounts, totals are server-side only). Times: IST in screens, UTC in the database.
+- Migrations: `YYYYMMDDHHMMSS_snake_name.sql`, idempotent, expand first, `[contract]` for drops.
+- Before shipping: `cd cloudflare && npx tsc --noEmit && npm test && npm run rehearse`, then at the root `npx tsc --noEmit`, `npm run build`, `node scripts/check-api.mjs`, `node scripts/lint.mjs`. Then `SHIP.bat` (or `node scripts/ship.mjs "what changed"`).
+- UI: follow `docs/DEVGUIDE.md` and the no-vibe-coded rules (no gradients, shadows, rounded cards, lucide icons, emojis, em dashes; skeleton loaders; Terms and Privacy linked).

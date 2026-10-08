@@ -1,0 +1,116 @@
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { db, isDemo, isLocal, supabase, demoSession, q, rpc } from './db.js';
+
+const AuthCtx = createContext(null);
+export const useAuth = () => useContext(AuthCtx);
+
+// What each role can open. Mirrors the RLS role matrix (slide 20).
+export const NAV = [
+  { to: '/', label: 'Live dashboard', icon: 'pulse', roles: ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'] },
+  { to: '/console', label: 'Agent console', icon: 'headset', roles: ['agent', 'supervisor', 'coordinator'] },
+  { to: '/cases', label: 'Cases', icon: 'folder', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/callbacks', label: 'Callback queue', icon: 'return', roles: ['agent', 'coordinator', 'supervisor', 'client_manager'] },
+  { to: '/calls', label: 'Calls & recordings', icon: 'phone', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/patients', label: 'Patients', icon: 'person', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/field', label: 'Dispatch board', icon: 'pin', roles: ['coordinator', 'supervisor', 'client_manager'] },
+  { to: '/my-visits', label: 'My visits', icon: 'pin', roles: ['field_staff'] },
+  { to: '/approvals', label: 'Approvals', icon: 'stamp', roles: ['client_manager', 'supervisor', 'coordinator', 'admin'], badge: 'approvals' },
+  { to: '/escalations', label: 'Escalations', icon: 'flag', roles: ['coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'escalations' },
+  { to: '/complaints', label: 'Complaints', icon: 'alert', roles: ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'medical_desk'] },
+  { to: '/mis', label: 'MIS reports', icon: 'report', roles: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'] },
+  { to: '/audit', label: 'Audit trail', icon: 'shield', roles: ['supervisor', 'client_manager'] },
+  { to: '/settings', label: 'Settings', icon: 'gear', roles: ['admin', 'supervisor', 'client_manager', 'coordinator', 'agent', 'medical_desk', 'client_clinical', 'field_staff'] },
+];
+
+export const homeFor = (role) => ({ agent: '/console', field_staff: '/my-visits', admin: '/settings' }[role] || '/');
+
+export function AuthProvider({ children }) {
+  const [profile, setProfile] = useState(null);
+  const [workspace, setWorkspace] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [mfa, setMfa] = useState(null); // { factorId, userId } while a second factor is owed
+  const [noProfile, setNoProfile] = useState(false); // signed in to Supabase, but no CareDesk profile yet
+
+  const load = useCallback(async (userId) => {
+    if (!userId) { setProfile(null); setWorkspace(null); return; }
+    const p = await q(db.from('profiles').select('*').eq('id', userId).maybeSingle()).catch(() => null);
+    setProfile(p);
+    setNoProfile(!p && !isDemo && !isLocal);
+    if (p) {
+      setWorkspace(await q(db.from('workspaces').select('*').eq('id', p.workspace_id).maybeSingle()));
+      rpc('log_access', { p_action: 'login', p_entity: null, p_entity_id: null, p_meta: {} }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (isDemo || isLocal) await load(demoSession.restore());
+        else {
+          const { data } = await supabase.auth.getSession();
+          await gate(data.session?.user?.id);
+          supabase.auth.onAuthStateChange((e, s) => { if (e !== 'MFA_CHALLENGE_VERIFIED') gate(s?.user?.id); });
+        }
+      } finally { setLoading(false); }
+    })();
+  }, [load]);
+
+  // Slide 20: multi-factor login. A user with a verified authenticator must pass it before any data loads.
+  async function gate(userId) {
+    if (!userId) { setMfa(null); return load(null); }
+    const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (data?.nextLevel === 'aal2' && data?.currentLevel !== 'aal2') {
+      const f = await supabase.auth.mfa.listFactors();
+      const factor = (f.data?.totp || []).find((x) => x.status === 'verified');
+      if (factor) { setProfile(null); setMfa({ factorId: factor.id, userId }); return undefined; }
+    }
+    setMfa(null);
+    return load(userId);
+  }
+  const verifyMfa = async (code) => {
+    const ch = await supabase.auth.mfa.challenge({ factorId: mfa.factorId });
+    if (ch.error) throw ch.error;
+    const v = await supabase.auth.mfa.verify({ factorId: mfa.factorId, challengeId: ch.data.id, code: code.trim() });
+    if (v.error) throw v.error;
+    const userId = mfa.userId;
+    setMfa(null);
+    await load(userId);
+  };
+
+  // Slide 20: auto-logout after inactivity (workspace setting, default 30 min; off in demo)
+  useEffect(() => {
+    if (isDemo || isLocal || !profile) return undefined;
+    const mins = Number(workspace?.settings?.idle_logout_minutes ?? 30);
+    if (!mins) return undefined;
+    let last = Date.now();
+    const bump = () => { last = Date.now(); };
+    const evs = ['pointerdown', 'keydown', 'scroll', 'touchstart'];
+    evs.forEach((e) => window.addEventListener(e, bump, { passive: true }));
+    const t = setInterval(() => {
+      if (Date.now() - last > mins * 60000) {
+        sessionStorage.setItem('caredesk.idle', '1');
+        supabase.auth.signOut().finally(() => setProfile(null));
+      }
+    }, 20000);
+    return () => { clearInterval(t); evs.forEach((e) => window.removeEventListener(e, bump)); };
+  }, [profile?.id, workspace?.settings?.idle_logout_minutes]);
+
+  const signIn = async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  };
+  const signInDemo = async (userId) => { demoSession.set(userId); await load(userId); };
+  const signOut = async () => {
+    if (isDemo || isLocal) demoSession.set(null); else await supabase.auth.signOut();
+    setProfile(null); setMfa(null); setNoProfile(false);
+  };
+  const can = (...roles) => !!profile && roles.includes(profile.role);
+  const isClient = profile && ['client_manager', 'client_clinical'].includes(profile.role);
+  const isOps = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
+
+  return (
+    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id) }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+}

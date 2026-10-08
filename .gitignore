@@ -1,0 +1,24 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Local tools and secrets
+.idea/
+*.iml
+.wrangler/
+.dev.vars*
+# Written by the pipeline (step 5) with the real Hyperdrive id
+cloudflare/wrangler.deploy.jsonc
+secrets.json
+target/
+
+# Supabase CLI temp files and local setup notes
+supabase/.temp/
+MY-SETUP-DETAILS.json
+
+# Never commit: backend/.env (old Spring setup) holds the Supabase DB password (covered by .env* above)
