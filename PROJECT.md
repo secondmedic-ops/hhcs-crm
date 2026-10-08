@@ -3,11 +3,11 @@
 Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case ID from enquiry to closure, every call recorded through MyOperator on the patient timeline, locked rate card with in-app discount approval, SLA timers, three-level escalation, live Hinduja dashboard and MIS. It runs on the **sb-spring-cf-stack** pipeline (Worker + Supabase, no Java): one push checks and ships the database, the API and the frontend together, on free plans.
 
 - GitHub repo: secondmedic-ops/hhcs-crm   (`main` = production; pushed only as the GitHub account secondmedic-ops)
-- Live URL: (set by START-HERE.bat)
+- Live URL: https://hhcs-caredesk.secondmedic.workers.dev
 - Cloudflare Worker: `hhcs-caredesk` (Workers **Free**), everything in `cloudflare/`. ONE Worker is the whole app: `/api/*` is the backend (TypeScript: `src/api`, `src/services`, `src/domain`), `/webhooks/myoperator` takes MyOperator events, crons run the SLA scan and MIS, `email()` turns mailbox mail into tickets, everything else is the React build `dist/`.
 - Hyperdrive config: `hhcs-caredesk-db` (made by the pipeline from the GitHub secret `SUPABASE_DB_URL`, caching off).
 - Live updates: Durable Object `LiveHub` (SQLite class, free plan): the Worker pushes changed table names to open screens over WebSocket.
-- Supabase project ref: (set by START-HERE.bat)   region: ap-south-1 (Mumbai, data stays in India)
+- Supabase project ref: eilshdpbnhcohroujaui   region: ap-south-1   URL: https://eilshdpbnhcohroujaui.supabase.co
 - DB pooler host (copy from Supabase > Connect > Session pooler, never guess aws-0/aws-1): (set by START-HERE.bat)   user: postgres.<ref>
 - Auth: Supabase Auth with ES256 signing keys, verified in the Worker with `jose` (issuer `<SUPABASE_URL>/auth/v1`, audience `authenticated`). TOTP two-factor is asked at login for users who enrolled it; idle sign-out after 30 minutes (Settings > Workspace).
 - Roles (`public.profiles.role`, one per user, set by the platform admin in Settings > Users; cached 60 s):
