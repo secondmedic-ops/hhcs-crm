@@ -19,6 +19,28 @@ function canManage(login) {
   return quiet(`gh repo view ${REPO} --json viewerPermission --jq .viewerPermission`) === "ADMIN";
 }
 
+/** Can the signed-in account push to secondmedic-ops/hhcs-crm (an invited developer, e.g. Pritesh)? Enough for SHIP. */
+function canPush(login) {
+  if (!login) return false;
+  if (canManage(login)) return true;
+  return ["WRITE", "MAINTAIN"].includes(quiet(`gh repo view ${REPO} --json viewerPermission --jq .viewerPermission`));
+}
+
+/** SHIP.bat: the owner account, or a developer the owner invited to the repository. Commits are still authored as secondmedic-ops. */
+export function ensurePushAccount() {
+  const login = quiet("gh api user --jq .login");
+  if (login && login.toLowerCase() !== OWNER && canPush(login)) {
+    spawnSync("gh auth setup-git --hostname github.com", { shell: true, stdio: "ignore" });
+    try {
+      execSync(`git config user.name "${OWNER}"`, { stdio: "ignore" });
+      execSync(`git config user.email "${OWNER}@users.noreply.github.com"`, { stdio: "ignore" });
+    } catch { /* not a git folder yet */ }
+    console.log(`GitHub: using ${login} (invited developer) for ${REPO}.`);
+    return login;
+  }
+  return ensureOwnerAccount();
+}
+
 export function ensureOwnerAccount() {
   for (let attempt = 0; attempt < 3; attempt++) {
     const login = quiet("gh api user --jq .login");

@@ -3,7 +3,7 @@
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { ensureGhLogin } from "./gh-login.mjs";
-import { ensureOwnerAccount, ensureRepo } from "./gh-owner.mjs";
+import { ensurePushAccount, ensureRepo } from "./gh-owner.mjs";
 // Pause without a shell command (Windows "timeout" refuses to run from a script: "Input redirection is not supported").
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -24,8 +24,8 @@ if (!hasOrigin) {
   console.log("\nSetup finished. Do the browser steps printed above, then double-click SHIP.bat again.");
   process.exit(0);
 }
-// Always secondmedic-ops/hhcs-crm, always as secondmedic-ops.
-ensureOwnerAccount();
+// Always secondmedic-ops/hhcs-crm: as secondmedic-ops, or as a developer it invited (commits authored as secondmedic-ops).
+ensurePushAccount();
 ensureRepo();
 // First push of a new repository: there is no main on GitHub to pull yet.
 let remoteMain = false;
