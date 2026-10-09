@@ -64,6 +64,11 @@ export const api = {
   createUser: (u: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/admin/users', { method: 'POST', body: u }),
   webhookEvents: () => request<Record<string, unknown>[]>('/api/v1/admin/webhooks'),
   integrations: () => request<Record<string, unknown>>('/api/v1/admin/integrations'),
+  moSettings: () => request<Record<string, any>>('/api/v1/admin/myoperator'),
+  saveMoSettings: (body: { values?: Record<string, string>; generate_webhook_key?: boolean }) => request<Record<string, any>>('/api/v1/admin/myoperator', { method: 'POST', body }),
+  testMo: () => request<Record<string, { ok: boolean; message: string }>>('/api/v1/admin/myoperator/test', { method: 'POST', body: {} }),
+  moUsers: () => request<{ users: Record<string, any>[]; profiles: Record<string, any>[] }>('/api/v1/admin/myoperator/users'),
+  linkMoUsers: (body: { links?: { profile_id: string; myoperator_user_id: string | null }[]; auto?: boolean }) => request<{ linked: number; unlinked: number }>('/api/v1/admin/myoperator/users', { method: 'POST', body }),
 };
 
 /** Live updates: one WebSocket; the server pushes {"tables": [...]} after any change. Reconnects by itself. */

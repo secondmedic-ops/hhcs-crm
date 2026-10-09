@@ -20,6 +20,7 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
   - **client_clinical** (Hinduja clinical): clinical records, escalations, MIS
   - **admin** (SecondMedic platform admin): configuration and users only, sees no patient data
 - Sensitive fields kept out of `audit_log` and logs: patient names, phone numbers, addresses, clinical notes (DPDP Act 2023). Hinduja is the Data Fiduciary; SecondMedic is the Data Processor.
+- MyOperator: helpline +91 80493 68621 (account "Hinduja - SecondMedic"). Connection values are entered in Settings > Telephony (table `integration_settings`, system-only; they win over the MYOPERATOR_* secrets). Webhooks accepted: v2, InCall, AfterCall, all at `/webhooks/myoperator` (key in `x-webhook-key`, `?key=` or Basic auth).
 - Secrets (GitHub secrets, uploaded to the Worker by the pipeline): `CLOUDFLARE_API_TOKEN` (template "Edit Cloudflare Workers" **plus Account > Hyperdrive > Edit**), `CLOUDFLARE_ACCOUNT_ID`, `SUPABASE_DB_URL`, `MYOPERATOR_WEBHOOK_KEY`, `MYOPERATOR_COMPANY_ID`, `MYOPERATOR_SECRET_TOKEN`, `MYOPERATOR_OBD_API_KEY`, `MYOPERATOR_PUBLIC_IVR_ID`, `MYOPERATOR_API_TOKEN`, optional `MYOPERATOR_WABA_API_KEY`, `MYOPERATOR_WABA_PHONE_ID`, `MYOPERATOR_CALLER_ID`, `GEMINI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `MIS_RECIPIENTS`, `MIS_FROM`. GitHub variables: `APP_URL`, `VITE_SUPABASE_URL` (also the Worker's `SUPABASE_URL`), `VITE_SUPABASE_ANON_KEY`.
 
 ## Where this project differs from the skill's template (and why)

@@ -32,7 +32,7 @@ const LOCALITIES = [
   ['Powai', 'Hiranandani Gardens', '400076', 19.1176, 72.9060], ['Powai', 'Saki Naka', '400072', 19.1030, 72.8890],
   ['Thane', 'Thane West', '400601', 19.1970, 72.9630], ['Thane', 'Majiwada', '400601', 19.2135, 72.9790], ['Thane', 'Vartak Nagar', '400606', 19.2210, 72.9780],
 ];
-const DIDS = ['+912240000000', '+912240000001']; // Khar, Mahim IVR lines
+const DIDS = ['+918049368621']; // Hinduja helpline (MyOperator)
 const STREETS = ['Link Road', 'S.V. Road', 'Hill Road', 'Carter Road', 'L.B.S. Marg', 'Gokhale Road', 'Ghodbunder Road', 'J.P. Road', 'Turner Road', 'Ranade Road', 'Orchard Avenue', 'Central Avenue'];
 const BUILDINGS = ['Sai Krupa CHS', 'Shanti Niwas', 'Gulmohar Apts', 'Sea Breeze', 'Neelkanth Heights', 'Mahavir Tower', 'Ashirwad', 'Silver Oak', 'Kailash Darshan', 'Rustomjee Elanza', 'Lodha Amara', 'Hiranandani Eden'];
 const FIRST_M = ['Ramesh', 'Suresh', 'Vijay', 'Anil', 'Prakash', 'Mohan', 'Ashok', 'Dilip', 'Narayan', 'Jayant', 'Rajendra', 'Shashikant', 'Hasan', 'Joseph', 'Gurpreet'];
@@ -166,7 +166,7 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
       if (channel === 'phone') {
         const ring = Math.round(between(4, r() < 0.1 ? 45 : 26)), talk = Math.round(between(140, 420));
         call = { id: uuid(r), workspace_id: ws, provider: 'myoperator', session_id: 'demo-' + uuid(r).slice(0, 13), provider_call_id: null,
-          direction: 'inbound', customer_number: c.caller_mobile, did_number: DIDS[Math.floor(r() * 2)], agent_id: owner.id, agent_name: owner.full_name,
+          direction: 'inbound', customer_number: c.caller_mobile, did_number: DIDS[Math.floor(r() * 2) % DIDS.length], agent_id: owner.id, agent_name: owner.full_name,
           department: 'HHCS', status: 'completed', started_at: created, answered_at: new Date(created.getTime() + ring * 1000),
           ended_at: new Date(created.getTime() + (ring + talk) * 1000), ring_seconds: ring, talk_seconds: talk,
           recording_filename: 'demo-recording.mp3', patient_id: p.id, case_id: c.id, disposition: 'New enquiry', notes: null,
@@ -361,7 +361,7 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
       const ring = Math.round(between(3, 28)), talk = missed || aband ? 0 : Math.round(between(40, 260));
       const id = uuid(r);
       calls.push({ id, workspace_id: ws, provider: 'myoperator', session_id: 'demo-' + uuid(r).slice(0, 13), provider_call_id: null, direction: kind > 0.6 ? 'outbound' : 'inbound',
-        customer_number: p.mobile, did_number: DIDS[Math.floor(r() * 2)], agent_id: missed || aband ? null : ag.id, agent_name: missed || aband ? null : ag.full_name, department: 'HHCS',
+        customer_number: p.mobile, did_number: DIDS[Math.floor(r() * 2) % DIDS.length], agent_id: missed || aband ? null : ag.id, agent_name: missed || aband ? null : ag.full_name, department: 'HHCS',
         status: missed ? 'missed' : aband ? 'abandoned' : 'completed', started_at: at, answered_at: missed || aband ? null : new Date(at.getTime() + ring * 1000),
         ended_at: new Date(at.getTime() + (ring + talk) * 1000), ring_seconds: missed || aband ? null : ring, talk_seconds: talk, recording_filename: talk ? 'demo-recording.mp3' : null,
         patient_id: p.id, case_id: null, disposition: missed || aband ? null : pick(['Report query', 'Slot reschedule', 'Price enquiry', 'Follow-up', 'Feedback call']), notes: null,
@@ -383,7 +383,7 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
   for (const m of [3, 7]) {
     const p = pick(patients); const at = min(now, -m); const id = uuid(r);
     calls.push({ id, workspace_id: ws, provider: 'myoperator', session_id: 'demo-' + uuid(r).slice(0, 13), provider_call_id: null, direction: 'inbound', customer_number: p.mobile,
-      did_number: DIDS[Math.floor(r() * 2)], agent_id: null, agent_name: null, department: 'HHCS', status: 'missed', started_at: at, answered_at: null, ended_at: min(at, 0.5),
+      did_number: DIDS[Math.floor(r() * 2) % DIDS.length], agent_id: null, agent_name: null, department: 'HHCS', status: 'missed', started_at: at, answered_at: null, ended_at: min(at, 0.5),
       ring_seconds: null, talk_seconds: 0, recording_filename: null, patient_id: p.id, case_id: null, disposition: null, notes: null, transcript: null, ai_summary: null,
       ai_sentiment: null, ai_intent: null, ai_extracted: null, ai_flags: [], ai_processed_at: null, click_to_call_ref: null, raw: null, created_at: at });
     const cb = { id: uuid(r), workspace_id: ws, call_id: id, number: p.mobile, patient_id: p.id, reason: 'missed', due_at: min(at, 10), status: 'pending', assigned_to: null,

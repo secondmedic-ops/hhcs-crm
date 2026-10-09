@@ -28,7 +28,8 @@ export function CallProvider({ children }) {
   useEffect(() => { load(); if (!ops) return undefined; return subscribe(['calls'], load); }, [load, ops]);
 
   const active = calls.find((c) => c.agent_id === profile?.id && c.status === 'answered') || calls.find((c) => c.agent_id === profile?.id && c.direction === 'outbound');
-  const ringing = calls.filter((c) => c.status === 'ringing' && c.direction === 'inbound' && !dismissed[c.id]);
+  // a call still 'ringing' after 10 minutes never got its next event: no pop-up for it
+  const ringing = calls.filter((c) => c.status === 'ringing' && c.direction === 'inbound' && !dismissed[c.id] && Date.now() - new Date(c.started_at).getTime() < 10 * 60e3);
   return (
     <Ctx.Provider value={{ active, ringing, reload: load, dismiss: (id) => setDismissed((d) => ({ ...d, [id]: true })) }}>
       {children}

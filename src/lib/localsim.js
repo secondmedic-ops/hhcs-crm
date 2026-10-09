@@ -2,7 +2,7 @@
 // so a test call runs through exactly the code that handles live calls (call row, screen-pop, callback queue, timeline).
 // The key below exists only in the local test Worker (cloudflare/test/local.mjs); the live Worker has its own secret.
 export const LOCAL_WEBHOOK_KEY = 'local-test-webhook-key';
-const LINES = ['+912240000000', '+912240000001'];
+const LINES = ['+918049368621'];
 const now = () => Math.floor(Date.now() / 1000);
 
 async function hook(ev) {

@@ -1,5 +1,6 @@
 // MyOperator integration
-//  - Webhook v2 receiver (call.* and message.* events): POST /webhooks/myoperator, header x-webhook-key
+//  - Webhook receiver POST /webhooks/myoperator (key in header x-webhook-key, ?key=, or Basic auth password):
+//    Webhooks v2 (call.*, message.*), the after-call webhook and the in-call webhook (ringing / answered)
 //  - Click-to-call through the OBD API (the agent's phone rings first, then the patient; the number never reaches the browser)
 //  - Recording link lookup, WhatsApp send
 // Every raw event is stored in webhook_events first (duplicates from MyOperator retries are skipped), so field mappings
@@ -7,6 +8,7 @@
 import { asSystem, connect, normMobile, pgArray, type Tx } from '../db';
 import type { Env } from '../env';
 import { notifyLive } from './live';
+import { moEnv } from './myoperator-config';
 
 const OBD_URL = 'https://obd-api.myoperator.co/obd-api-v1';
 type J = Record<string, any>;
@@ -35,7 +37,7 @@ async function resolveWorkspace(tx: Tx, env: Env, did: unknown): Promise<string>
   return w.id;
 }
 
-async function matchAgent(tx: Tx, ws: string, legs: J[], payload: J) {
+async function matchAgent(tx: Tx, ws: string, legs: J[], payload: J, phones: unknown[] = []) {
   const cands: unknown[] = [];
   for (const l of legs) {
     const a = l.agent || {};
@@ -43,43 +45,93 @@ async function matchAgent(tx: Tx, ws: string, legs: J[], payload: J) {
   }
   cands.push(payload.agent?.uuid, payload.agent?.email, payload.user_id);
   const vals = cands.filter(Boolean).map(String);
-  if (!vals.length) return null;
+  const nums = phones.map(normMobile).filter(Boolean) as string[];
+  if (!vals.length && !nums.length) return null;
   const lower = vals.map((v) => v.toLowerCase());
-  const [p] = await tx`select id::text, full_name from profiles where workspace_id = ${ws}::uuid
-    and (myoperator_user_id = any(${pgArray(vals)}::text[]) or myoperator_extension = any(${pgArray(vals)}::text[]) or lower(email) = any(${pgArray(lower)}::text[])) limit 1`;
+  const [p] = await tx`select id::text, full_name from profiles where workspace_id = ${ws}::uuid and active
+    and (myoperator_user_id = any(${pgArray(vals)}::text[]) or myoperator_extension = any(${pgArray(vals)}::text[])
+      or lower(email) = any(${pgArray(lower)}::text[]) or phone = any(${pgArray(nums)}::text[]))
+    order by (myoperator_user_id = any(${pgArray(vals)}::text[])) desc nulls last limit 1`;
   return p ?? null;
 }
 
 const legsAnswered = (legs: J[]) => legs.some((l) => /answer|connect|complete/i.test(l.dial_status || l.status || '') || Number(l.talk_duration || 0) > 0);
 
-export async function handleMyOperatorWebhook(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
-  const expected = env.MYOPERATOR_WEBHOOK_KEY;
-  if (!expected) return new Response('webhook key not configured', { status: 503 });
-  const got = req.headers.get('x-webhook-key') || new URL(req.url).searchParams.get('key');
-  if (got !== expected) return new Response('unauthorized', { status: 401 });
-  const body = await req.json().catch(() => null);
-  if (!body) return new Response('bad json', { status: 400 });
-  const events: J[] = Array.isArray(body) ? body : [body];
-  const sql = connect(env);
+/** Basic auth (user:password@ in the URL, or MyOperator's "Credentials"): the password is the key. */
+function basicPassword(req: Request): string | null {
+  const h = req.headers.get('authorization') || '';
+  if (!/^basic /i.test(h)) return null;
+  try { const t = atob(h.slice(6).trim()); return t.slice(t.indexOf(':') + 1); } catch { return null; }
+}
+
+/**
+ * The three formats MyOperator sends, as one list of events:
+ *  - Webhooks v2: JSON with event_type (call.*, message.*), one event or an array
+ *  - After-call webhook (older): form or JSON field "myoperator" holding the call log (_ai, _cr, _su, _ld ...)
+ *  - In-call webhook: JSON with uid, clid, call_state (0 ringing, 1 answered), users
+ */
+async function readEvents(req: Request): Promise<J[] | null> {
+  const type = req.headers.get('content-type') || '';
+  const text = await req.text();
+  let body: unknown = null;
+  if (/x-www-form-urlencoded/i.test(type) || (!/json/i.test(type) && /^[\w%.-]+=/.test(text))) {
+    const f = new URLSearchParams(text);
+    body = Object.fromEntries(f.entries());
+  } else {
+    try { body = JSON.parse(text); } catch { return null; }
+  }
+  const list = Array.isArray(body) ? body : [body];
+  const out: J[] = [];
+  for (let item of list) {
+    if (!item || typeof item !== 'object') continue;
+    let o = item as J;
+    if (o.myoperator != null) {
+      const inner = typeof o.myoperator === 'string' ? (() => { try { return JSON.parse(o.myoperator); } catch { return null; } })() : o.myoperator;
+      if (inner && typeof inner === 'object') o = inner as J;
+    }
+    if (o.event_type) out.push(o);
+    else if (o._ai || o._ci || o._cr || o._cl) {
+      const uid = (o._pm || []).find((x: J) => x?.ky === 'ui')?.vl;
+      out.push({ event_id: `v1:${o._ai || uid || o._st}`, event_type: 'aftercall', v1: o });
+    } else if (o.uid != null && (o.call_state != null || o.clid != null)) {
+      out.push({ event_id: `incall:${o.uid}:${o.call_state ?? ''}:${o.event ?? ''}`, event_type: Number(o.call_state) === 1 ? 'incall.answered' : 'incall.ringing', incall: o });
+    } else out.push({ event_type: 'unknown', raw: o });
+  }
+  return out;
+}
+
+export async function handleMyOperatorWebhook(req: Request, env0: Env, exec: ExecutionContext): Promise<Response> {
+  const sql = connect(env0);
   const changedAll = new Set<string>();
   try {
+    const env = await moEnv(env0, sql);
+    const expected = env.MYOPERATOR_WEBHOOK_KEY;
+    if (!expected) return new Response('webhook key not configured', { status: 503 });
+    const got = req.headers.get('x-webhook-key') || new URL(req.url).searchParams.get('key') || basicPassword(req);
+    if (got !== expected) return new Response('unauthorized', { status: 401 });
+    const events = await readEvents(req);
+    if (!events) return new Response('bad body', { status: 400 });
     for (const ev of events) {
       const eventId = String(ev.event_id || `${ev.event_type}:${ev.session_id}:${ev.event_sequence ?? Date.now()}`);
+      const stored = ev.v1 || ev.incall || ev.raw || ev;
       const fresh = await sql`insert into webhook_events (event_id, source, event_type, payload)
-        values (${eventId}, 'myoperator', ${ev.event_type ?? null}, ${sql.json(ev)}) on conflict do nothing returning event_id`;
+        values (${eventId}, 'myoperator', ${ev.event_type ?? null}, ${sql.json(stored)}) on conflict do nothing returning event_id`;
       if (!fresh.length) continue; // duplicate delivery (MyOperator retries): already handled
       try {
         const { result: after, changed } = await asSystem(sql, async (tx) => {
           const t = String(ev.event_type || '');
           if (t.startsWith('call.')) return onCallEvent(tx, env, ev);
+          if (t === 'aftercall') return onAfterCall(tx, env, ev.v1);
+          if (t.startsWith('incall.')) { await onInCall(tx, env, ev.incall); return null; }
           if (t.startsWith('message.')) { await onMessageEvent(tx, env, ev); return null; }
+          if (t === 'unknown') throw new Error('Format not recognised (stored for checking)');
           return null;
         });
         changed.forEach((x) => changedAll.add(x));
         await sql`update webhook_events set processed = true where event_id = ${eventId}`;
         if (after?.aiCallId && env.GEMINI_API_KEY && env.AI_AUTO_PROCESS_CALLS !== 'false') {
           const { processCall } = await import('./ai');
-          exec.waitUntil(processCall(env, after.aiCallId, exec).catch((e) => console.log('ai call', (e as Error).message)));
+          exec.waitUntil(processCall(env0, after.aiCallId, exec).catch((e) => console.log('ai call', (e as Error).message)));
         }
       } catch (e) {
         await sql`update webhook_events set error = ${String((e as Error).message || e)} where event_id = ${eventId}`;
@@ -88,8 +140,99 @@ export async function handleMyOperatorWebhook(req: Request, env: Env, exec: Exec
   } finally {
     exec.waitUntil(sql.end({ timeout: 2 }).catch(() => {}));
   }
-  if (changedAll.size) notifyLive(env, exec, [...changedAll]);
+  if (changedAll.size) notifyLive(env0, exec, [...changedAll]);
   return Response.json({ ok: true }); // always 2xx after storing, so MyOperator does not retry forever
+}
+
+/** The CRM call for a provider session: by session id, else by our click-to-call reference, else a new one. */
+async function findOrCreateCall(tx: Tx, a: { ws: string; session: string; refId?: unknown; customer: string | null; direction: string;
+  did: string | null; startedAt: string | null; providerCallId?: string | null; first: J; adoptRecent?: boolean }): Promise<J> {
+  let [call] = await tx`select * from calls where provider = 'myoperator' and session_id = ${a.session} limit 1`;
+  if (!call && a.refId) {
+    [call] = await tx`update calls set session_id = ${a.session} where click_to_call_ref = ${String(a.refId)} returning *`;
+  }
+  if (!call && a.adoptRecent && a.customer) {
+    // the in-call webhook may have opened this call under another id: take over a live call from the same number
+    [call] = await tx`update calls set session_id = ${a.session} where id = (select id from calls where provider = 'myoperator'
+      and workspace_id = ${a.ws}::uuid and customer_number = ${a.customer} and status in ('ringing','answered')
+      and started_at > now() - interval '3 hours' order by started_at desc limit 1) returning *`;
+  }
+  if (!call) {
+    const [patient] = a.customer ? await tx`select id from patients where workspace_id = ${a.ws}::uuid and mobile = ${a.customer} limit 1` : [];
+    const [open] = patient ? await tx`select id from cases where patient_id = ${patient.id} and stage not in ('closed','cancelled') order by created_at desc limit 1` : [];
+    [call] = await tx`insert into calls (workspace_id, provider, session_id, provider_call_id, direction, customer_number, did_number, status,
+        started_at, patient_id, case_id, raw)
+      values (${a.ws}::uuid, 'myoperator', ${a.session}, ${a.providerCallId ?? null}, ${a.direction}, ${a.customer}, ${a.did}, 'ringing',
+        ${a.startedAt || new Date().toISOString()}, ${patient?.id ?? null}, ${open?.id ?? null}, ${tx.json({ first: a.first })})
+      returning *`;
+  }
+  return call;
+}
+
+/** The workspace's only line, when it has exactly one (the older webhooks do not say which number was called). */
+async function soleLine(tx: Tx, ws: string): Promise<string | null> {
+  const [w] = await tx`select settings from workspaces where id = ${ws}::uuid`;
+  const n = ((w?.settings?.did_numbers as string[]) || []).map(normMobile).filter(Boolean);
+  return n.length === 1 ? n[0] : null;
+}
+
+const hms = (v: unknown): number | null => {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Math.round(v);
+  const p = String(v).split(':').map(Number);
+  if (p.some((x) => isNaN(x))) return null;
+  return p.reduce((s, x) => s * 60 + x, 0);
+};
+
+/** After-call webhook: one message when the call is over, with status, times, agent legs and the recording. */
+async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string } | null> {
+  if (Number(o._ty || 1) === 2) return null; // SMS log
+  const ws = await resolveWorkspace(tx, env, o._did || o._vn || null);
+  const customer = normMobile(o._cl || o._cr);
+  const direction = Number(o._ev) === 2 ? 'outbound' : 'inbound';
+  const uid = (o._pm || []).find((x: J) => x?.ky === 'ui')?.vl;
+  const session = String(uid || o._ai);
+  const did = normMobile(o._did || o._vn) || (await soleLine(tx, ws));
+  let call = await findOrCreateCall(tx, { ws, session, refId: o._cri || o._ri, customer, direction, did, startedAt: toIso(o._st),
+    providerCallId: o._ai ? String(o._ai) : null, first: o, adoptRecent: true });
+
+  const legs: J[] = Array.isArray(o._ld) ? o._ld : [];
+  const agents: J[] = legs.flatMap((l) => (Array.isArray(l._rr) ? l._rr : l._rr ? [l._rr] : []));
+  const answeredLeg = legs.find((l) => /answer|connect/i.test(String(l._ds || l._ac || '')));
+  const pick = answeredLeg ? (Array.isArray(answeredLeg._rr) ? answeredLeg._rr : [answeredLeg._rr]).filter(Boolean) : agents;
+  const agent = await matchAgent(tx, ws, pick.map((a: J) => ({ user_id: a._id, agent: { email: a._em, id: a._id } })), {}, pick.map((a: J) => a._nr || a._ct));
+
+  const connected = Number(o._su) === 1;
+  const patch: J = {
+    status: connected ? 'completed' : direction === 'outbound' ? 'failed' : 'missed',
+    ended_at: toIso(o._et) || new Date().toISOString(),
+    talk_seconds: connected ? hms(o._dr) ?? int(o._ss) : 0,
+    raw: tx.json({ ...(call.raw || {}), end: o }),
+  };
+  if (connected && !call.answered_at) patch.answered_at = call.started_at;
+  if (o._fn) patch.recording_filename = String(o._fn);
+  if (o._dn) patch.department = String(o._dn);
+  if (agent && !call.agent_id) { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
+  else if (!call.agent_name && pick[0]?._na) patch.agent_name = String(pick[0]._na);
+  [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
+  return afterCallEnded(tx, call);
+}
+
+/** In-call webhook: ringing (screen pop for the agent being rung) and answered. */
+async function onInCall(tx: Tx, env: Env, o: J) {
+  const ws = await resolveWorkspace(tx, env, o.did || o.did_number || null);
+  const customer = normMobile(o.clid);
+  const session = String(o.uid);
+  const did = normMobile(o.did || o.did_number) || (await soleLine(tx, ws));
+  let call = await findOrCreateCall(tx, { ws, session, refId: o.client_ref_id || o.reference_id, customer, direction: 'inbound', did,
+    startedAt: new Date().toISOString(), first: o });
+  const users = (Array.isArray(o.users) ? o.users : o.users ? [o.users] : []).flatMap((u: unknown) =>
+    u && typeof u === 'object' ? Object.values(u as J) : [u]);
+  const agent = await matchAgent(tx, ws, [], {}, users);
+  const patch: J = {};
+  if (agent && call.agent_id !== agent.id && call.status !== 'completed') { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
+  if (Number(o.call_state) === 1 && call.status === 'ringing') { patch.status = 'answered'; patch.answered_at = new Date().toISOString(); }
+  if (Object.keys(patch).length) [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
 }
 
 async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string } | null> {
@@ -102,19 +245,8 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
   const session = String(ev.session_id || p.session_id || p.id || ev.event_id);
   const refId = p.client_ref_id || p.ref_id || ev.client_ref_id;
 
-  let [call] = await tx`select * from calls where provider = 'myoperator' and session_id = ${session} limit 1`;
-  if (!call && refId) {
-    [call] = await tx`update calls set session_id = ${session} where click_to_call_ref = ${String(refId)} returning *`;
-  }
-  if (!call) {
-    const [patient] = customer ? await tx`select id from patients where workspace_id = ${ws}::uuid and mobile = ${customer} limit 1` : [];
-    const [open] = patient ? await tx`select id from cases where patient_id = ${patient.id} and stage not in ('closed','cancelled') order by created_at desc limit 1` : [];
-    [call] = await tx`insert into calls (workspace_id, provider, session_id, provider_call_id, direction, customer_number, did_number, status,
-        started_at, patient_id, case_id, raw)
-      values (${ws}::uuid, 'myoperator', ${session}, ${p.id ? String(p.id) : null}, ${direction}, ${customer}, ${normMobile(did)}, 'ringing',
-        ${toIso(p.started_at || ev.timestamp) || new Date().toISOString()}, ${patient?.id ?? null}, ${open?.id ?? null}, ${tx.json({ first: ev })})
-      returning *`;
-  }
+  let call = await findOrCreateCall(tx, { ws, session, refId, customer, direction, did: normMobile(did),
+    startedAt: toIso(p.started_at || ev.timestamp), providerCallId: p.id ? String(p.id) : null, first: ev });
 
   const patch: J = {};
   const agent = await matchAgent(tx, ws, legs, p);

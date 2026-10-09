@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations } from '../lib/api.js';
+import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { inr, dateTime, ago, ROLE_LABEL } from '../lib/fmt.js';
@@ -159,7 +159,7 @@ function MfaPanel() {
   );
 }
 
-// "+912240000000 = Khar" lines → { did_numbers: [...], did_labels: {number: label} }
+// "+918049368621 = Hinduja helpline" lines → { did_numbers: [...], did_labels: {number: label} }
 function parseLines(text) {
   const did_numbers = [], did_labels = {};
   for (const line of String(text || '').split(/[\n,]+/)) {
@@ -213,7 +213,7 @@ function WorkspaceTab() {
             <Select value={f.collection_model} onChange={set('collection_model')} options={[['A', 'A: patient pays into Hinduja gateway'], ['B', 'B: SecondMedic collects and remits']]} />
           </Field>
           <Field label="MyOperator lines" hint="one per line: number = label · routes inbound calls here and tags each call with its line" className="span2">
-            <Textarea className="mono" rows={3} value={f.did_lines} onChange={set('did_lines')} placeholder={'+912240000000 = Khar\n+912240000001 = Mahim'} />
+            <Textarea className="mono" rows={3} value={f.did_lines} onChange={set('did_lines')} placeholder={'+918049368621 = Hinduja helpline'} />
           </Field>
           <Field label="Auto sign-out after idle (minutes)" hint="0 turns it off · wall-screen dashboards may need a longer value">
             <Input type="number" min="0" max="480" className="mono" value={f.idle_logout_minutes} onChange={set('idle_logout_minutes')} />
@@ -653,26 +653,146 @@ const EVENTS = [
   ['Call', ['Call initiated', 'Dial begin', 'Call answered', 'Call ended', 'Call summary', 'Disposition']],
   ['WhatsApp', ['Message received', 'Message sent']],
 ];
-const SECRETS = [
-  ['MYOPERATOR_WEBHOOK_KEY', 'Shared key, also entered in MyOperator as the x-webhook-key header'],
-  ['MYOPERATOR_COMPANY_ID', 'Click-to-call: company id'],
-  ['MYOPERATOR_SECRET_TOKEN', 'Click-to-call: secret token'],
-  ['MYOPERATOR_OBD_API_KEY', 'Click-to-call: OBD API key'],
-  ['MYOPERATOR_PUBLIC_IVR_ID', 'Click-to-call: public IVR id'],
-  ['MYOPERATOR_API_TOKEN', 'Call logs and recording links'],
-  ['MYOPERATOR_WABA_API_KEY · MYOPERATOR_WABA_PHONE_ID', 'WhatsApp sending (optional)'],
-  ['SUPABASE_SERVICE_ROLE_KEY', 'Settings > Users > Add user creates the login (optional)'],
-  ['GEMINI_API_KEY', 'AI transcripts, summaries, QA (optional)'],
-  ['RESEND_API_KEY · MIS_RECIPIENTS · MIS_FROM', 'MIS e-mail at 10:00 IST (optional)'],
-];
+// Where each MyOperator value is found in the panel (in.app.myoperator.com, admin login).
+const MO_WHERE = {
+  webhook_key: 'Made here with Generate key, then pasted into MyOperator',
+  company_id: 'APIs & Webhooks › Developer API › Calling API › Manage',
+  secret_token: 'APIs & Webhooks › Developer API › Calling API › Manage',
+  obd_api_key: 'APIs & Webhooks › Developer API › Calling API › Manage (x-api-key)',
+  public_ivr_id: 'Calling API page, or Campaigns / IVR',
+  api_token: 'Manage › API Integration, or Developer API',
+  caller_id: 'The helpline number, e.g. +918049368621',
+  region: 'Only if MyOperator support gives one',
+  waba_api_key: 'APIs & Webhooks › Developer API › WhatsApp API › Manage',
+  waba_phone_id: 'APIs & Webhooks › Developer API › WhatsApp API › Manage',
+};
+const okBadge = (r) => (!r ? null : r.ok ? <Badge kind="ok" dot>OK</Badge> : <Badge kind="warn" dot>Check</Badge>);
+
+function MyOperatorConnection() {
+  const toast = useToast();
+  const s = useLoad(() => moSettings(), []);
+  const [vals, setVals] = useState({});
+  const [test, setTest] = useState(null);
+  const [showKey, setShowKey] = useState(false);
+  const [confirmKey, setConfirmKey] = useState(false);
+  const [run, busy] = useAction();
+  const copy = (t) => navigator.clipboard?.writeText(t).then(() => toast('Copied'), () => toast.error('Copy failed'));
+  const changed = Object.keys(vals).length > 0;
+  const save = () => run(async () => {
+    await saveMoSettings({ values: vals });
+    setVals({}); setTest(null); s.reload();
+  }, 'MyOperator details saved');
+  const runTest = () => run(async () => setTest(await testMo()));
+  const genKey = () => run(async () => { await saveMoSettings({ generate_webhook_key: true }); setConfirmKey(false); setShowKey(true); s.reload(); }, 'New webhook key made. Update it in MyOperator.');
+  const d = s.data;
+  const wh = d?.webhook || {};
+  const hookUrl = wh.url_with_key || wh.url || '';
+  const shownUrl = showKey ? hookUrl : (wh.url_with_key ? wh.url + '?key=••••••' : wh.url);
+  return (
+    <div className="col gap-12">
+      <Panel title="MyOperator connection" sub="Values saved here are used at once; nothing to deploy. Saved credentials are never shown again, only their last 4 characters."
+        actions={<><Button size="sm" kind="ghost" icon="refresh" onClick={runTest} disabled={busy || d?.demo}>Test connection</Button>
+          <Button size="sm" kind="primary" onClick={save} disabled={!changed || busy}>Save</Button></>}>
+        <ErrorNote error={s.error} />
+        {d?.demo && <div className="small muted mb-8">Demo mode: MyOperator connects on the live site.</div>}
+        {test && (
+          <table className="t compact mb-12"><tbody>
+            {[['api', 'API token'], ['click_to_call', 'Click-to-call'], ['webhook', 'Webhook']].map(([k, l]) => (
+              <tr key={k}><td className="small strong nowrap">{l}</td><td>{okBadge(test[k])}</td><td className="small">{test[k]?.message}</td></tr>
+            ))}
+          </tbody></table>
+        )}
+        {s.loading ? <TableSkeleton rows={6} cols={3} /> : (
+          <div className="table-wrap"><table className="t">
+            <thead><tr><th>Detail</th><th>Where to find it</th><th>Now</th><th style={{ minWidth: 220 }}>New value</th></tr></thead>
+            <tbody>{(d?.fields || []).filter((f) => f.key !== 'webhook_key').map((f) => (
+              <tr key={f.key}>
+                <td className="small strong">{f.label}</td>
+                <td className="tiny muted">{MO_WHERE[f.key]}</td>
+                <td className="nowrap">{f.set ? <><span className="mono small">{f.value}</span> <Badge kind={f.source === 'app' ? 'ok' : 'info'}>{f.source === 'app' ? 'Saved here' : 'GitHub secret'}</Badge></> : <Badge kind="warn">Not set</Badge>}
+                  {f.source === 'app' && <Button size="xs" kind="ghost" onClick={() => setVals((v) => ({ ...v, [f.key]: '' }))}>Clear</Button>}</td>
+                <td><Input className="mono" type={f.secret ? 'password' : 'text'} autoComplete="off" placeholder={vals[f.key] === '' ? 'Will be cleared' : f.set ? 'Paste to replace' : 'Paste here'}
+                  value={vals[f.key] ?? ''} onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value }))} /></td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        )}
+        <div className="tiny faint mt-8">If Calling API › Manage is locked in MyOperator, ask MyOperator support to enable the Calling API and Webhooks v2 for the account.</div>
+      </Panel>
+
+      <Panel title="Calls into the CRM (webhooks)" sub="Add these in MyOperator so incoming calls pop up for the agent, and ended calls, missed calls and recordings reach the case."
+        actions={<Button size="sm" onClick={() => setConfirmKey(true)} disabled={busy || d?.demo}>{wh.key ? 'New key' : 'Generate key'}</Button>}>
+        {s.loading ? <Skeleton lines={4} /> : !wh.key ? (
+          <Empty title="No webhook key yet">Press Generate key. MyOperator sends the key with every call event, so only MyOperator can post calls into the CRM.</Empty>
+        ) : (
+          <ol className="st-steps small">
+            <li>Webhook address (the key is part of it)
+              <div className="row mt-4"><code className="st-code grow">{shownUrl}</code>
+                <Button size="xs" kind="ghost" onClick={() => setShowKey((x) => !x)}>{showKey ? 'Hide' : 'Show'}</Button>
+                <Button size="xs" onClick={() => copy(hookUrl)}>Copy</Button></div></li>
+            <li><strong>Live pop-up:</strong> MyOperator › APIs & Webhooks › Calling Webhooks › Add new. Type <strong>InCall</strong>, method POST, content type JSON, URL as above.</li>
+            <li><strong>Call end and recording:</strong> add a second one the same way with type <strong>AfterCall</strong>.</li>
+            <li><strong>Webhooks v2</strong> (once MyOperator support enables it): URL <code className="st-code">{wh.url}</code>, header <code className="st-code">x-webhook-key</code> = the key
+              <Button size="xs" kind="ghost" onClick={() => copy(wh.key)}>Copy key</Button>; events:
+              {EVENTS.map(([g, ev]) => <div key={g} className="mt-4"><span className="upper">{g}</span> <span className="row wrap" style={{ gap: 4, display: 'inline-flex' }}>{ev.map((e) => <Badge key={e} kind="outline">{e}</Badge>)}</span></div>)}
+              Use either v2 or the InCall + AfterCall pair, not both.</li>
+            <li>Call the helpline from a mobile while an agent is signed in. The call shows on the agent's screen and in the event log below.</li>
+          </ol>
+        )}
+        {d?.last_event && <div className="tiny muted mt-8">Last event: {dateTime(d.last_event.received_at)} · <span className="mono">{d.last_event.event_type}</span>{d.last_event.error ? ' · error, see log' : ''}</div>}
+      </Panel>
+
+      <MoUsers agents={d?.agents} disabled={d?.demo} />
+
+      {confirmKey && (
+        <Modal title={wh.key ? 'Make a new webhook key?' : 'Generate webhook key'} onClose={() => setConfirmKey(false)}
+          footer={<><Button onClick={() => setConfirmKey(false)}>Cancel</Button><Button kind="primary" onClick={genKey} disabled={busy}>{wh.key ? 'Make new key' : 'Generate'}</Button></>}>
+          <div className="small">{wh.key ? 'The current key stops working at once. Paste the new address into every MyOperator webhook straight after.' : 'A long random key is made and saved. Then copy the webhook address into MyOperator.'}</div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function MoUsers({ agents, disabled }) {
+  const [data, setData] = useState(null);
+  const [run, busy] = useAction();
+  const load = () => run(async () => setData(await moUsers()));
+  const link = (profileId, moId) => run(async () => { await linkMoUsers({ links: [{ profile_id: profileId, myoperator_user_id: moId || null }] }); setData(await moUsers()); }, 'Saved');
+  const auto = () => run(async () => { const r = await linkMoUsers({ auto: true }); setData(await moUsers()); return r; }, 'Linked by email / phone');
+  const suggested = (data?.users || []).filter((u) => u.suggested_profile).length;
+  const byProfile = (moId) => (data?.profiles || []).find((p) => p.myoperator_user_id === moId)?.id || '';
+  return (
+    <Panel tight title="Agents in MyOperator" sub={agents ? `${agents.linked} of ${agents.ops} call-centre logins linked. A linked agent gets the pop-up for calls ringing on their phone and can click to call.` : ''}
+      actions={<>{data && suggested > 0 && <Button size="sm" kind="primary" onClick={auto} disabled={busy}>Link {suggested} by email / phone</Button>}
+        <Button size="sm" onClick={load} disabled={busy || disabled}>{data ? 'Reload' : 'Load MyOperator users'}</Button></>}>
+      {!data ? <div className="small muted" style={{ padding: 12 }}>Loads the users on the MyOperator account (needs the API token) so each can be linked to their CareDesk login.</div>
+        : data.users.length ? (
+          <div className="table-wrap"><table className="t">
+            <thead><tr><th>MyOperator user</th><th>Email</th><th>Phone</th><th>Ext.</th><th style={{ minWidth: 220 }}>CareDesk login</th></tr></thead>
+            <tbody>{data.users.map((u) => (
+              <tr key={u.id}>
+                <td className="small strong">{u.name || '–'}<div className="tiny faint mono">{u.id}</div></td>
+                <td className="small">{u.email || '–'}</td>
+                <td className="small mono nowrap">{u.phone || '–'}</td>
+                <td className="small mono">{u.extension || '–'}</td>
+                <td><Select value={byProfile(u.id)} onChange={(e) => link(e.target.value || byProfile(u.id), e.target.value ? u.id : null)} disabled={busy}
+                  placeholder={u.suggested_name ? `Suggested: ${u.suggested_name}` : 'Not linked'}
+                  options={data.profiles.map((p) => [p.id, `${p.full_name} · ${ROLE_LABEL[p.role] || p.role}`])} /></td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        ) : <Empty title="No users on the MyOperator account">Add the agents in MyOperator first.</Empty>}
+    </Panel>
+  );
+}
 
 function TelephonyTab() {
-  const toast = useToast();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const h = useLoad(() => integrations(), []);
   const w = useLoad(() => webhookEvents(), []);
   const [openId, setOpenId] = useState(null);
-  const url = h.data?.webhook_url || `${location.origin}/webhooks/myoperator`;
-  const copy = (s) => navigator.clipboard?.writeText(s).then(() => toast('Copied'), () => toast.error('Copy failed'));
   const st = (v) => (v === true ? <Badge kind="ok" dot>Connected</Badge> : typeof v === 'string' ? <Badge kind="info" dot>{v[0].toUpperCase() + v.slice(1)}</Badge> : <Badge kind="warn" dot>Not configured</Badge>);
   const items = [['supabase', 'Database & sign-in', 'Supabase Postgres + Auth'], ['telephony', 'Click-to-call', 'MyOperator OBD'], ['recordings', 'Recordings & call logs', 'MyOperator API'],
     ['whatsapp', 'WhatsApp', 'MyOperator WABA'], ['ai', 'AI assist', 'Gemini']];
@@ -688,31 +808,15 @@ function TelephonyTab() {
             ))}
           </div>
         )}
-        {h.data?.demo && <div className="tiny faint mt-12">Demo mode: telephony and AI are simulated in the browser; production reads these from the Worker's secrets.</div>}
+        {h.data?.demo && <div className="tiny faint mt-12">Demo mode: telephony and AI are simulated in the browser.</div>}
       </Panel>
 
-      <div className="grid g2">
-        <Panel title="MyOperator Webhook v2 set-up">
-          <ol className="st-steps small">
-            <li>In the MyOperator panel open <strong>Integrations · Webhooks</strong> and add a webhook (version 2).</li>
-            <li>URL<div className="row mt-4"><code className="st-code grow">{url}</code><Button size="xs" onClick={() => copy(url)}>Copy</Button></div></li>
-            <li>Auth type <strong>API Key</strong>, sent in the header <code className="st-code">x-webhook-key</code>, with the same value as the Worker secret MYOPERATOR_WEBHOOK_KEY.</li>
-            <li>Tick these events:
-              {EVENTS.map(([g, ev]) => <div key={g} className="mt-4"><span className="upper">{g}</span> <span className="row wrap" style={{ gap: 4, display: 'inline-flex' }}>{ev.map((e) => <Badge key={e} kind="outline">{e}</Badge>)}</span></div>)}
-            </li>
-            <li>Save, place a test call to a DID number and confirm it appears in the event log below and on the Calls page.</li>
-            <li>For click-to-call, map each agent's MyOperator user id under Users.</li>
-          </ol>
-        </Panel>
-        <div className="col gap-12">
-          <Panel title="Worker secrets" sub="Set with wrangler secret put; never stored in the browser" tight>
-            <table className="t compact"><tbody>{SECRETS.map(([k, d]) => <tr key={k}><td className="mono small">{k}</td><td className="small muted">{d}</td></tr>)}</tbody></table>
-          </Panel>
-          <Panel title="Mailbox">
-            <div className="small">In Cloudflare <strong>Email Routing</strong>, route the HHCS support address to the CareDesk Worker (action: Send to a Worker). Each e-mail becomes a ticket on the patient timeline, matched by the case number in the subject or the sender address, and starts the 5-minute acknowledgement SLA.</div>
-          </Panel>
-        </div>
-      </div>
+      {isAdmin ? <MyOperatorConnection /> : (
+        <Panel title="MyOperator"><div className="small">The platform admin connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
+      )}
+      <Panel title="Mailbox">
+        <div className="small">In Cloudflare <strong>Email Routing</strong>, route the HHCS support address to the CareDesk Worker (action: Send to a Worker). Each e-mail becomes a ticket on the patient timeline, matched by the case number in the subject or the sender address, and starts the 5-minute acknowledgement SLA.</div>
+      </Panel>
 
       <Panel tight title="Webhook event log" sub="Latest 50 events received from MyOperator" actions={<Button size="sm" kind="ghost" icon="refresh" onClick={w.reload}>Refresh</Button>}>
         <ErrorNote error={w.error} />

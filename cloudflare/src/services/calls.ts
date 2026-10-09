@@ -6,6 +6,7 @@ import type { Ctx } from '../api/context';
 import { ApiError } from '../domain/errors';
 import { asSystem, asUser, normMobile, readAsUser } from '../db';
 import { clickToCall, recordingUrl, sendWhatsApp } from './myoperator';
+import { moEnv } from './myoperator-config';
 import { dbMessage } from './data';
 
 type J = Record<string, any>;
@@ -58,7 +59,7 @@ export async function dial(c: Ctx, body: J) {
   if (!result) throw new ApiError(400, 'No number to dial');
   c.changed.push(...changed);
   try {
-    const provider = await clickToCall(c.env, { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
+    const provider = await clickToCall(await moEnv(c.env, c.sql), { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
     return { ok: true, call_id: result.callId, provider };
   } catch (e) {
     await asSystem(c.sql, (tx) => tx`update calls set status = 'failed', notes = ${(e as Error).message} where id = ${result.callId}`);
@@ -74,7 +75,7 @@ export async function recording(c: Ctx): Promise<Response> {
   }).catch(wrap);
   if (!call?.recording_filename) throw new ApiError(404, 'No recording');
   await asUser(c.sql, c.user.id, (tx) => tx`select log_access('play_recording', 'call', ${id}, '{}'::jsonb)`);
-  const link = await recordingUrl(c.env, call.recording_filename);
+  const link = await recordingUrl(await moEnv(c.env, c.sql), call.recording_filename);
   const audio = await fetch(link);
   if (!audio.ok) throw new ApiError(502, 'Recording unavailable from MyOperator');
   return new Response(audio.body, { headers: { 'Content-Type': audio.headers.get('content-type') || 'audio/mpeg', 'Cache-Control': 'private, no-store' } });
@@ -86,7 +87,7 @@ async function deliver(c: Ctx, caseId: string, out: { text: string; channel: str
     const [k] = await c.sql`select c.caller_mobile, p.mobile from cases c join patients p on p.id = c.patient_id where c.id = ${caseId}`;
     const to = k?.caller_mobile || k?.mobile;
     if (!to) return { skipped: 'No mobile number on the case' };
-    return await sendWhatsApp(c.env, { to, text: out.text, templateName: out.provider_template_name });
+    return await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: out.text, templateName: out.provider_template_name });
   } catch (e) {
     return { error: (e as Error).message };
   }

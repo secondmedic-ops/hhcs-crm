@@ -33,6 +33,7 @@ export interface Env {
   /** Overridable endpoints (tests point these at a stand-in). */
   MYOPERATOR_OBD_URL?: string;
   MYOPERATOR_RECORDING_URL?: string;
+  MYOPERATOR_API_URL?: string;
   MYOPERATOR_WABA_URL?: string;
 
   // AI (Google AI Studio key) and MIS e-mail

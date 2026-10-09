@@ -3,6 +3,7 @@
 import { asSystem, connect, pgArray, readAsUser, type Sql } from '../db';
 import type { Env } from '../env';
 import { recordingUrl } from './myoperator';
+import { moEnv } from './myoperator-config';
 import { notifyLive } from './live';
 
 type J = Record<string, any>;
@@ -42,7 +43,7 @@ export async function processCall(env: Env, callId: string, exec?: ExecutionCont
   try {
     const [call] = await sql`select * from calls where id = ${callId}`;
     if (!call?.recording_filename) throw new Error('No recording on this call');
-    const link = await recordingUrl(env, call.recording_filename);
+    const link = await recordingUrl(await moEnv(env, sql), call.recording_filename);
     const audio = await fetch(link);
     if (!audio.ok) throw new Error('Could not download recording');
     const buf = await audio.arrayBuffer();

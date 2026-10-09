@@ -19,7 +19,7 @@ export async function simulateInboundCall(script) {
   const c = await one(`insert into calls (workspace_id, provider, session_id, direction, customer_number, did_number, agent_id, agent_name, status, patient_id, case_id, started_at, raw)
     values ($1,'myoperator',$2,'inbound',$3,$9,$4,$5,'ringing',$6,$7, now(), $8) returning *`,
     [agent.workspace_id, 'demo-' + crypto.randomUUID().slice(0, 13), number, agent.role === 'agent' ? agent.id : null, agent.full_name, p?.id || null, openCase?.id || null,
-      JSON.stringify({ demo_script: script || null }), Math.random() < 0.5 ? '+912240000000' : '+912240000001']);
+      JSON.stringify({ demo_script: script || null }), '+918049368621']);
   return c;
 }
 
@@ -156,7 +156,7 @@ const WEBHOOK_SAMPLE = (n) => ({
   event_id: 'evt_demo_' + n, source: 'myoperator', event_type: ['call.initiated', 'call.answered', 'call.end', 'call.summary'][n % 4], received_at: new Date(Date.now() - n * 47000).toISOString(),
   processed: true, error: null,
   payload: { event_id: 'evt_demo_' + n, event_type: ['call.initiated', 'call.answered', 'call.end', 'call.summary'][n % 4], event_sequence: n % 4 + 1, session_id: 'sess_demo_' + Math.floor(n / 4),
-    direction: 'inbound', customer_identifier: '+9198200XXXXX', system_identifier: '+912240000000', timestamp: Math.floor(Date.now() / 1000) - n * 47,
+    direction: 'inbound', customer_identifier: '+9198200XXXXX', system_identifier: '+918049368621', timestamp: Math.floor(Date.now() / 1000) - n * 47,
     payload: n % 4 === 2 ? { id: 'call_' + n, status: 'answered', duration: 271, recording_filename: 'rec_' + n + '.mp3', legs: [{ dial_status: 'answered', ring_duration: 14, talk_duration: 257, agent: { uuid: '5001', name: 'Priya Nair' } }] } : {} },
 });
 
