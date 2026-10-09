@@ -93,7 +93,7 @@ export function AuthProvider({ children }) {
     const t = setInterval(() => {
       if (Date.now() - last > mins * 60000) {
         sessionStorage.setItem('caredesk.idle', '1');
-        supabase.auth.signOut().finally(() => setProfile(null));
+        supabase.auth.signOut().finally(() => { try { window.history.replaceState(null, '', '/'); } catch { /* ignore */ } setProfile(null); });
       }
     }, 20000);
     return () => { clearInterval(t); evs.forEach((e) => window.removeEventListener(e, bump)); };
@@ -104,8 +104,12 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   };
   const signInDemo = async (userId) => { demoSession.set(userId); await load(userId); };
+  // after sign-out the address goes back to "/", so the next person who logs in lands on their own role's home page,
+  // not on the page the previous user was on (e.g. Settings)
+  const resetAddress = () => { try { window.history.replaceState(null, '', '/'); } catch { /* not a browser */ } };
   const signOut = async () => {
     if (isDemo || isLocal) demoSession.set(null); else await supabase.auth.signOut();
+    resetAddress();
     setProfile(null); setMfa(null); setNoProfile(false);
   };
   const can = (...roles) => !!profile && roles.includes(profile.role);

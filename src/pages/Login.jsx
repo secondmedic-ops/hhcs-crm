@@ -19,14 +19,17 @@ export default function Login({ next }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Deep links (a case, a lead) are kept after login; general pages are not, so each role starts on its own home
+  // page (agents: console, providers: leads, management: dashboard) instead of e.g. Settings.
+  const after = () => (next && /^\/(cases|patients|leads|approvals|escalations|complaints|callbacks)\/./.test(next) ? next : '/');
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr(null);
-    try { await signIn(email, password); nav(next && next !== '/' ? next : '/'); }
+    try { await signIn(email, password); nav(after(), { replace: true }); }
     catch (e2) { setErr(e2.message); } finally { setBusy(false); }
   };
   const submitCode = async (e) => {
     e.preventDefault(); setBusy(true); setErr(null);
-    try { await verifyMfa(code); nav(next && next !== '/' ? next : '/'); }
+    try { await verifyMfa(code); nav(after(), { replace: true }); }
     catch (e2) { setErr(e2.message); setCode(''); } finally { setBusy(false); }
   };
   const demo = async (u) => { await signInDemo(u.id); nav(homeFor(u.role)); };
