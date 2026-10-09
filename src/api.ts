@@ -51,7 +51,7 @@ export const api = {
   data: (table: string, spec: unknown) => request<QueryResult>(`/api/v1/data/${encodeURIComponent(table)}`, { method: 'POST', body: spec }),
   rpc: (fn: string, args: Record<string, unknown>) => request<{ data: unknown }>(`/api/v1/rpc/${encodeURIComponent(fn)}`, { method: 'POST', body: args }),
 
-  dial: (target: Record<string, unknown>) => request<{ ok: boolean; call_id: string }>('/api/v1/calls/dial', { method: 'POST', body: target }),
+  dial: (target: Record<string, unknown>) => request<{ ok: boolean; call_id: string; mode?: 'api' | 'app'; number?: string; patient_name?: string | null; reason?: string }>('/api/v1/calls/dial', { method: 'POST', body: target }),
   recording: (callId: string) => request<Response>(`/api/v1/calls/${callId}/recording`, { raw: true }),
   sendQuote: (caseId: string, templateId: string) => request<Record<string, unknown>>(`/api/v1/cases/${caseId}/quote`, { method: 'POST', body: { template_id: templateId } }),
   sendMessage: (caseId: string, templateId: string) => request<Record<string, unknown>>(`/api/v1/cases/${caseId}/message`, { method: 'POST', body: { template_id: templateId } }),

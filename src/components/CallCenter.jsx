@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { useNow } from '../lib/hooks.js';
 import { dur, date, STAGE_LABEL } from '../lib/fmt.js';
 import Icon from './icons.jsx';
-import { Button, Badge, StageBadge, useToast } from './ui.jsx';
+import { Button, Badge, StageBadge, Modal, useToast } from './ui.jsx';
 
 const Ctx = createContext({ active: null, ringing: [] });
 export const useCalls = () => useContext(Ctx);
@@ -27,13 +27,16 @@ export function CallProvider({ children }) {
 
   useEffect(() => { load(); if (!ops) return undefined; return subscribe(['calls'], load); }, [load, ops]);
 
-  const active = calls.find((c) => c.agent_id === profile?.id && c.status === 'answered') || calls.find((c) => c.agent_id === profile?.id && c.direction === 'outbound');
+  // an outbound call started from CareDesk shows as active for 10 minutes until MyOperator's record arrives
+  const active = calls.find((c) => c.agent_id === profile?.id && c.status === 'answered')
+    || calls.find((c) => c.agent_id === profile?.id && c.direction === 'outbound' && Date.now() - new Date(c.started_at).getTime() < 10 * 60e3);
   // a call still 'ringing' after 10 minutes never got its next event: no pop-up for it
   const ringing = calls.filter((c) => c.status === 'ringing' && c.direction === 'inbound' && !dismissed[c.id] && Date.now() - new Date(c.started_at).getTime() < 10 * 60e3);
   return (
     <Ctx.Provider value={{ active, ringing, reload: load, dismiss: (id) => setDismissed((d) => ({ ...d, [id]: true })) }}>
       {children}
       {ringing[0] && <ScreenPop call={ringing[0]} />}
+      <DialSheet />
     </Ctx.Provider>
   );
 }
@@ -114,3 +117,32 @@ export function LiveCallBar({ call }) {
 }
 
 export { STAGE_LABEL, Icon };
+
+const EXTENSION_URL = 'https://chromewebstore.google.com/detail/myoperator-click-to-call/hnlocbghekoeogmbhhphhpjldbipmnhd';
+
+/** Dial window: used when MyOperator's Calling API is not available. The number is shown for this call only; the MyOperator
+ *  Chrome extension adds its call button next to it (or the agent dials it in the MyOperator app). The call is placed and
+ *  recorded by MyOperator, and the call-log sync attaches it to the case within about a minute. */
+function DialSheet() {
+  const toast = useToast();
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    const on = (e) => setD(e.detail);
+    window.addEventListener('caredesk:dial', on);
+    return () => window.removeEventListener('caredesk:dial', on);
+  }, []);
+  if (!d) return null;
+  const copy = () => navigator.clipboard?.writeText(d.number).then(() => toast('Number copied'), () => toast.error('Copy failed'));
+  return (
+    <Modal title={`Call ${d.patient_name || 'patient'}`} onClose={() => setD(null)}
+      footer={<><Button onClick={copy}>Copy number</Button><Button kind="primary" onClick={() => setD(null)}>Done</Button></>}>
+      <div className="dial-number mono">{d.number}</div>
+      <ol className="st-steps small mt-12">
+        <li>Click the <strong>MyOperator call button</strong> next to the number above (MyOperator Click to Call extension), or dial it in the <strong>MyOperator app</strong>.</li>
+        <li>MyOperator places and records the call from your business number.</li>
+        <li>Within about a minute the call, with its recording, appears on this case and patient.</li>
+      </ol>
+      <div className="tiny faint mt-12">{d.reason}. Showing the number is written to the access log. No extension yet? <a href={EXTENSION_URL} target="_blank" rel="noreferrer">Add MyOperator Click to Call</a> to Chrome or Brave and sign in to MyOperator.</div>
+    </Modal>
+  );
+}

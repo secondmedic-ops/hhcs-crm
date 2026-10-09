@@ -690,6 +690,7 @@ const MO_WHERE = {
   api_token: 'Manage › API Integration, or Developer API',
   caller_id: 'The helpline number, e.g. +918049368621',
   region: 'Only if MyOperator support gives one',
+  dial_mode: 'Type app to always dial from the MyOperator extension / app. Empty: Calling API, and the app when the API refuses',
   waba_api_key: 'APIs & Webhooks › Developer API › WhatsApp API › Manage',
   waba_phone_id: 'APIs & Webhooks › Developer API › WhatsApp API › Manage',
 };

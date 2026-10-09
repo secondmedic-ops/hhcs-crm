@@ -40,6 +40,7 @@ const jwks = http.createServer(async (req, res) => {
   if (req.url === '/obd' && req.method === 'POST') {
     let raw = ''; for await (const ch of req) raw += ch;
     obdCalls.push({ body: JSON.parse(raw || '{}'), headers: req.headers });
+    if (obdCalls[obdCalls.length - 1].body.public_ivr_id === 'bad') return send(400, { status: 'error', code: 400, message: 'Public ID or Company id is invalid' });
     return send(200, { status: 'success', code: 200, message: 'Request accepted', unique_id: 'obd-' + obdCalls.length });
   }
   if (req.url.startsWith('/mo/search') && req.method === 'POST') { // MyOperator call-log search stand-in

@@ -54,17 +54,42 @@ export async function dial(c: Ctx, body: J) {
     if (!number) return null;
     const [call] = await tx`insert into calls (workspace_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, session_id, click_to_call_ref)
       values (${ws}, 'outbound', ${number}, ${c.user.id}, ${c.user.fullName}, 'ringing', ${patientId}, ${caseId}, ${ref}, ${ref}) returning id`;
-    return { callId: call.id as string, number };
+    const [pt] = patientId ? await tx`select full_name from patients where id = ${patientId}` : [];
+    return { callId: call.id as string, number, patientId, caseId, patientName: (pt?.full_name as string) || null };
   });
   if (!result) throw new ApiError(400, 'No number to dial');
   c.changed.push(...changed);
-  try {
-    const provider = await clickToCall(await moEnv(c.env, c.sql), { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
-    return { ok: true, call_id: result.callId, provider };
-  } catch (e) {
-    await asSystem(c.sql, (tx) => tx`update calls set status = 'failed', notes = ${(e as Error).message} where id = ${result.callId}`);
-    throw new ApiError(502, (e as Error).message);
+
+  // 1) MyOperator Calling API (rings the agent, then the patient) when it is fully set up
+  const env = await moEnv(c.env, c.sql);
+  const forceApp = String(env.MYOPERATOR_DIAL_MODE || '').trim().toLowerCase() === 'app';
+  const apiReady = !!(env.MYOPERATOR_OBD_API_KEY && env.MYOPERATOR_COMPANY_ID && env.MYOPERATOR_PUBLIC_IVR_ID && c.user.myoperatorUserId);
+  let apiError: string | null = null;
+  if (!forceApp && apiReady) {
+    try {
+      const provider = await clickToCall(env, { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
+      return { ok: true, mode: 'api', call_id: result.callId, provider };
+    } catch (e) {
+      apiError = (e as Error).message;
+    }
   }
+  // 2) Otherwise: the agent dials through MyOperator (Chrome extension button on the number, or the MyOperator app).
+  // The number is shown to this user only for this call (written to the access log); the call-log sync then attaches
+  // MyOperator's call record, recording included, to this call / case (same number, within 3 hours).
+  const reason = forceApp ? 'Outgoing calls are set to the MyOperator extension / app'
+    : apiError ? `MyOperator Calling API refused: ${apiError.replace(/^MyOperator:\s*/, '')}`
+      : 'MyOperator Calling API is not fully set up (Public IVR ID or your MyOperator user)';
+  const r2 = await asSystem(c.sql, async (tx) => {
+    await tx`insert into access_log (workspace_id, user_id, action, entity, entity_id, meta)
+      values (${ws}::uuid, ${c.user.id}::uuid, 'reveal_number', ${result.caseId ? 'case' : 'patient'}, ${result.caseId || result.patientId}, ${tx.json({ purpose: 'dial via MyOperator app', call_id: result.callId })})`;
+    if (result.caseId) {
+      await tx`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_id, actor_label, summary, call_id, meta)
+        values (${ws}::uuid, ${result.caseId}::uuid, ${result.patientId}, 'phone', 'outbound', ${c.user.id}::uuid, ${c.user.fullName}, 'Outbound call started via MyOperator (extension / app)', ${result.callId}::uuid, ${tx.json({ mode: 'app' })})`;
+    }
+    return null;
+  });
+  c.changed.push(...r2.changed);
+  return { ok: true, mode: 'app', call_id: result.callId, number: result.number, patient_name: result.patientName, reason };
 }
 
 export async function recording(c: Ctx): Promise<Response> {

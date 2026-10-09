@@ -6,7 +6,7 @@ import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { dial } from '../lib/api.js';
 import { num, pct, ago, time, istDayRange } from '../lib/fmt.js';
-import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, useAction } from '../components/ui.jsx';
+import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, useAction, useToast } from '../components/ui.jsx';
 
 const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id';
 const REASON = { missed: ['Missed', 'danger'], abandoned: ['Abandoned', 'warn'], requested: ['Requested', 'info'], followup: ['Follow-up', ''] };
@@ -19,6 +19,7 @@ export default function Callbacks() {
   const [tab, setTab] = useState('pending');
   const [unreach, setUnreach] = useState(null);
   const [run, busy] = useAction();
+  const toast = useToast();
 
   const { data, loading, error } = useLoad(async () => {
     const [from] = istDayRange(0);
@@ -36,7 +37,7 @@ export default function Callbacks() {
   const avgMin = data?.done.length ? data.done.reduce((a, x) => a + (new Date(x.completed_at) - new Date(x.created_at)), 0) / data.done.length / 60000 : null;
   const rows = data ? data[tab] : null;
 
-  const callBack = (cb) => run(() => dial({ callback_id: cb.id }), 'Dialling via MyOperator. Pick up on your phone.');
+  const callBack = (cb) => run(async () => { const r = await dial({ callback_id: cb.id }); if (r?.mode !== 'app') toast.ok('Dialling via MyOperator. Pick up on your phone.'); });
   const markDone = (cb) => run(() => rpc('callback_update', { p_id: cb.id, p_status: 'done', p_note: null }), 'Callback marked done');
   const markUnreachable = (reason) => run(async () => {
     const cb = unreach;

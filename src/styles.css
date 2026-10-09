@@ -615,3 +615,5 @@ textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 6
 
 /* Login: two-factor */
 .linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--ink-2, inherit); text-decoration: underline; cursor: pointer; align-self: flex-start; }
+
+.dial-number { font-size: 26px; font-weight: 600; letter-spacing: 0.5px; padding: 14px 16px; border: 1px solid var(--line); background: var(--panel-2); text-align: center; user-select: all; }

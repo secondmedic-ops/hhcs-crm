@@ -221,6 +221,19 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const ue = await one(`select processed, error from webhook_events where event_type = 'unknown' order by received_at desc limit 1`);
   check(unk.status === 200 && ue && !ue.processed && /not recognised/.test(ue.error || ''), 'unknown format stored for checking, not lost', JSON.stringify(ue));
 
+  // ---- 6b2. outgoing calls without the Calling API: dial window for the MyOperator extension / app
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'bad' } });
+  const fb = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(fb.status === 200 && fb.body?.mode === 'app' && /^\+91\d{10}$/.test(fb.body.number || '') && /refused/.test(fb.body.reason || ''),
+    'Calling API refuses -> dial window with the number (app mode)', JSON.stringify(fb.body));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: '', dial_mode: 'app' } });
+  const apd = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  const rv = await one(`select count(*)::int n from access_log where action = 'reveal_number' and user_id = $1`, U.agent);
+  check(apd.status === 200 && apd.body?.mode === 'app' && rv.n >= 2, 'dial mode "app": number shown, every reveal in the access log', JSON.stringify({ b: apd.body, rv }));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { dial_mode: '' } });
+  const back = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(back.status === 200 && back.body?.mode === 'api', 'Calling API used again when set up', JSON.stringify(back.body));
+
   // ---- 6c. call-log sync (no webhooks needed)
   check((await call('agent', 'POST', '/api/v1/admin/myoperator/sync', {})).status === 403, 'call-log sync: agents kept out');
   const sy = await call('sup', 'POST', '/api/v1/admin/myoperator/sync', {});

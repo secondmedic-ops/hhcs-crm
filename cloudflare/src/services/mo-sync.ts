@@ -67,6 +67,9 @@ export async function syncCallLogs(env0: Env, sql: Sql, exec: ExecutionContext, 
     }
     const calls = all.filter((o) => Number(o._ty || 1) !== 2);     // 2 = SMS log
     const r = await processEvents(sql, env, env0, exec, calls.map((o) => afterCallEvent(o, 'myoperator_sync')));
+    // calls started from CareDesk that MyOperator never logged (the agent did not place it): close them after 3 hours
+    await sql`update calls set status = 'failed', notes = coalesce(notes, 'No MyOperator call found within 3 hours')
+      where direction = 'outbound' and status = 'ringing' and click_to_call_ref is not null and started_at < now() - interval '3 hours'`;
     if (r.changed.size) notifyLive(env0, exec, [...r.changed]);
     Object.assign(state, { last_to: now, last_ok_at: state.last_run_at, last_error: null, last_seen: calls.length, last_new: r.stored,
       total_new: (prev.total_new || 0) + r.stored, last_failed: r.failed });

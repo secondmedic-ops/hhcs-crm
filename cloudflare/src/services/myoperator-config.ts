@@ -16,6 +16,7 @@ export const MO_FIELDS = [
   { key: 'api_token', env: 'MYOPERATOR_API_TOKEN', label: 'API token (users, call logs, recordings)', secret: true },
   { key: 'caller_id', env: 'MYOPERATOR_CALLER_ID', label: 'Outgoing caller ID (optional)', secret: false },
   { key: 'region', env: 'MYOPERATOR_REGION', label: 'Region (optional)', secret: false },
+  { key: 'dial_mode', env: 'MYOPERATOR_DIAL_MODE', label: 'Outgoing calls: auto or app', secret: false },
   { key: 'waba_api_key', env: 'MYOPERATOR_WABA_API_KEY', label: 'WhatsApp API key (optional)', secret: true },
   { key: 'waba_phone_id', env: 'MYOPERATOR_WABA_PHONE_ID', label: 'WhatsApp phone number ID (optional)', secret: false },
 ] as const;

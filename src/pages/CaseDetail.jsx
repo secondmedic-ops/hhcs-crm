@@ -128,7 +128,7 @@ export default function CaseDetail() {
           </div>
         </div>
         <div className="row wrap cd-actions">
-          {canDial && open && <Button kind="call" icon="phone" disabled={busy || onCall} onClick={() => run(() => dial({ case_id: id }), 'Dialling patient through MyOperator')}>Call patient</Button>}
+          {canDial && open && <Button kind="call" icon="phone" disabled={busy || onCall} onClick={() => run(async () => { const r = await dial({ case_id: id }); if (r?.mode !== 'app') toast.ok('Dialling through MyOperator · your phone rings first'); })}>Call patient</Button>}
           {canAct && open && updateTemplates.length > 0 && (
             <div className="cd-menu-wrap">
               <Button icon="chat" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>Send update<Icon name="down" size={12} /></Button>
