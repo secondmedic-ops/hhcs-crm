@@ -278,6 +278,14 @@
 | case_id | uuid | YES |
 | received_at | timestamp with time zone | NO |
 
+## integration_settings
+| column | type | nullable |
+|---|---|---|
+| provider | text | NO |
+| settings | jsonb | NO |
+| updated_at | timestamp with time zone | NO |
+| updated_by | uuid | YES |
+
 ## interactions
 | column | type | nullable |
 |---|---|---|

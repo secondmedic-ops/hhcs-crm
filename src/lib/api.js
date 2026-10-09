@@ -15,6 +15,13 @@ export const aiExtract = (text) => (isDemo ? demo('/ai/extract-enquiry', { text 
 export const createUser = (u) => (isDemo ? demo('/admin/users', u) : server.createUser(u));
 export const webhookEvents = () => (isDemo ? demo('/admin/webhooks', {}) : server.webhookEvents());
 export const integrations = () => (isDemo ? demo('/health', {}) : server.integrations());
+// MyOperator connection (admin). The demo has no MyOperator account: it shows the screen with nothing configured.
+const demoOnly = () => Promise.reject(new Error('Demo mode: MyOperator connects on the live site'));
+export const moSettings = () => (isDemo ? Promise.resolve({ demo: true, fields: [], webhook: { key: null, url: `${location.origin}/webhooks/myoperator`, url_with_key: null }, last_event: null, agents: { ops: 0, linked: 0 } }) : server.moSettings());
+export const saveMoSettings = (body) => (isDemo ? demoOnly() : server.saveMoSettings(body));
+export const testMo = () => (isDemo ? demoOnly() : server.testMo());
+export const moUsers = () => (isDemo ? demoOnly() : server.moUsers());
+export const linkMoUsers = (body) => (isDemo ? demoOnly() : server.linkMoUsers(body));
 
 // Returns an object URL for the call recording (fetched with the login, so the provider link is never exposed)
 export async function recordingUrl(callId) {

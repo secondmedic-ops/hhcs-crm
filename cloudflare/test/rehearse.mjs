@@ -42,6 +42,14 @@ const jwks = http.createServer(async (req, res) => {
     obdCalls.push({ body: JSON.parse(raw || '{}'), headers: req.headers });
     return send(200, { status: 'success', code: 200, message: 'Request accepted', unique_id: 'obd-' + obdCalls.length });
   }
+  if (req.url.startsWith('/mo/user')) { // MyOperator Users API stand-in
+    const tokenOk = new URL(req.url, 'http://x').searchParams.get('token') === 'api-tok';
+    if (!tokenOk) return send(200, { status: 'error', code: 401, message: 'Invalid token' });
+    return send(200, { status: 'success', code: 200, data: [
+      { uuid: 'mo-77', name: 'Agent One', email: 'agent@rehearsal.test', contact_number: '+919800000077', extension: '11' },
+      { uuid: 'mo-88', name: 'Agent Two', email: 'agent2@rehearsal.test', contact_number: '+919800000088', extension: '12' },
+    ] });
+  }
   if (req.url.startsWith('/auth/v1/admin/users')) {
     if (req.headers.apikey !== ADMIN_KEY) return send(401, { msg: 'Invalid API key' });
     let raw = ''; for await (const ch of req) raw += ch;
@@ -84,7 +92,7 @@ const envFile = join(tmp, 'rehearsal.env');
 writeFileSync(envFile, [
   `SUPABASE_URL=${SUPABASE}`, `SUPABASE_SERVICE_ROLE_KEY=${ADMIN_KEY}`, 'EXPOSE_CONTRACT=1', 'BUILD_SHA=rehearsal', 'GEMINI_API_KEY=',
   'MYOPERATOR_WEBHOOK_KEY=rehearsal-hook', 'MYOPERATOR_COMPANY_ID=co-1', 'MYOPERATOR_SECRET_TOKEN=st', 'MYOPERATOR_OBD_API_KEY=obd-key',
-  'MYOPERATOR_PUBLIC_IVR_ID=ivr-1', `MYOPERATOR_OBD_URL=${SUPABASE}/obd`,
+  'MYOPERATOR_PUBLIC_IVR_ID=ivr-1', `MYOPERATOR_OBD_URL=${SUPABASE}/obd`, `MYOPERATOR_API_URL=${SUPABASE}/mo`,
 ].join('\n') + '\n', { mode: 0o600 });
 let log = '';
 const noProxy = ['127.0.0.1', 'localhost', process.env.NO_PROXY].filter(Boolean).join(',');

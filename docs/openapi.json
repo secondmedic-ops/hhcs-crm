@@ -330,6 +330,67 @@
           }
         ]
       }
+    },
+    "/api/v1/admin/myoperator": {
+      "get": {
+        "summary": "MyOperator connection: fields set, webhook address, last event",
+        "x-access": [
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Save MyOperator connection values",
+        "x-access": [
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/myoperator/test": {
+      "post": {
+        "summary": "Test the MyOperator connection",
+        "x-access": [
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/myoperator/users": {
+      "get": {
+        "summary": "MyOperator users and the CRM logins linked to them",
+        "x-access": [
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Link CRM logins to MyOperator users",
+        "x-access": [
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
     }
   },
   "x-tables-read": {

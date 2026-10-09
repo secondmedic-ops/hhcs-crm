@@ -24,20 +24,24 @@ No Worker running (for example opening the built site on its own)? The app falls
 6. Double-click **`SHIP.bat`**. The pipeline checks everything (guard, lint, a fresh database from the migrations, typecheck, the case-workflow test, 60+ API checks on the real Worker, the frontend contract), then applies migrations, deploys the Worker, smoke-tests the live site and prints **LIVE**.
 7. Run the SQL it printed in Supabase > SQL Editor (makes you platform admin), log in, then:
    - Settings > Users: add agents (with their **MyOperator user ID**), coordinators, supervisors, field staff, and the Hinduja logins.
-   - Settings > Workspace > MyOperator lines: `+9122XXXXXXXX = Khar`, `+9122YYYYYYYY = Mahim`.
+   - Settings > Telephony: MyOperator details, webhook key, link agents (section 3).
    - Settings > Rate card, Templates, SLAs, Escalation matrix: load Hinduja's approved values (Hinduja management approves changes in-app).
 
 After that, every change is just **SHIP.bat**.
 
 ## 3. MyOperator settings
 
-| In MyOperator | Set |
-|---|---|
-| Webhooks (v2) | URL `https://<live URL>/webhooks/myoperator`, header `x-webhook-key` = your webhook key; events: call initiated, answered, end, summary, disposition, WhatsApp message received / sent |
-| Users | Copy each agent's user ID into CareDesk Settings > Users (click-to-call rings that agent; answered calls are matched to them) |
-| IVR | Greeting + language menu (English, Hindi, Marathi), "this call is recorded" line, route to the HHCS department, 100% recording |
+Everything is entered in CareDesk itself: **Settings > Telephony & integrations** (platform admin). Nothing to deploy.
 
-Settings > Telephony in CareDesk shows which keys are configured and the last 50 webhook events with their raw content, so the first real test call can be checked field by field.
+| Step | Where |
+|---|---|
+| Company ID, Secret token, Calling API key, Public IVR ID | MyOperator > APIs & Webhooks > Developer API > Calling API > Manage. Paste into CareDesk, Save. |
+| API token (users, call logs, recordings) | MyOperator > Manage > API Integration (or Developer API). Paste, Save, then **Test connection**. |
+| Webhook | In CareDesk press **Generate key** and copy the webhook address. In MyOperator > APIs & Webhooks > Calling Webhooks add two: type **InCall** (live pop-up) and type **AfterCall** (call end, recording), POST, JSON, that address. Or, once MyOperator support enables **Webhooks v2**, one v2 webhook with header `x-webhook-key`. |
+| Agents | **Load MyOperator users**, then **Link by email / phone** (or pick each login). A linked agent gets the pop-up and can click to call. |
+| Helpline | +91 80493 68621 (Hinduja), set as the workspace line. |
+
+Values saved in the app win over the `MYOPERATOR_*` GitHub secrets; clearing one falls back to the secret. Credentials are kept in a table only the Worker's system connection can read, and the screen only ever gets their last 4 characters. The event log on the same page shows every call event with its raw content, so the first real test call can be checked field by field.
 
 ## What is in it
 

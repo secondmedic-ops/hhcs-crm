@@ -131,8 +131,8 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   // ---- 6. MyOperator webhooks
   check((await hook({ event_type: 'call.initiated' }, 'wrong')).status === 401, 'webhook with a wrong key -> 401');
   const t0 = Math.floor(Date.now() / 1000);
-  const b1 = { session_id: 'sess-in-1', direction: 'inbound', customer_identifier: '+919820012012', system_identifier: '+912240000000' };
-  await hook({ ...b1, event_id: 'e1', event_type: 'call.initiated', timestamp: t0, payload: { did_number: '+912240000000' } });
+  const b1 = { session_id: 'sess-in-1', direction: 'inbound', customer_identifier: '+919820012012', system_identifier: '+918049368621' };
+  await hook({ ...b1, event_id: 'e1', event_type: 'call.initiated', timestamp: t0, payload: { did_number: '+918049368621' } });
   let c1 = await one(`select * from calls where session_id = 'sess-in-1'`);
   check(c1?.status === 'ringing' && c1?.case_id === cid, 'incoming call matched to the patient and open case', JSON.stringify(c1 && { s: c1.status, c: c1.case_id }));
   await hook({ ...b1, event_id: 'e2', event_type: 'call.answered', timestamp: t0 + 14, payload: { legs: [{ answered_at: t0 + 14, ring_duration: 14, agent: { uuid: 'mo-77' } }] } });
@@ -142,13 +142,13 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check(c1.status === 'completed' && c1.talk_seconds === 271 && c1.agent_id === U.agent && c1.ring_seconds === 14, 'answered call: agent, ring and talk time, recording', JSON.stringify(c1));
   const tl = await one(`select count(*)::int n, max(evidence) ev from interactions where call_id = $1`, c1.id);
   check(tl.n === 1 && tl.ev === 'Recording 4:31', 'one timeline entry (duplicate delivery ignored)', JSON.stringify(tl));
-  const b2 = { session_id: 'sess-miss-1', direction: 'inbound', customer_identifier: '9930011223', system_identifier: '+912240000001' };
+  const b2 = { session_id: 'sess-miss-1', direction: 'inbound', customer_identifier: '9930011223', system_identifier: '+918049368621' };
   await hook({ ...b2, event_id: 'm1', event_type: 'call.initiated', timestamp: t0 });
   await hook({ ...b2, event_id: 'm2', event_type: 'call.end', timestamp: t0 + 30, payload: { status: 'missed', legs: [{ ring_duration: 30 }] } });
   const cb = await one(`select id::text, status, round(extract(epoch from due_at - now()) / 60) m from callbacks where number = '+919930011223'`);
   check(cb?.status === 'pending' && Number(cb.m) >= 9 && Number(cb.m) <= 10, 'missed call queued for callback in 10 min', JSON.stringify(cb));
   const line = await batch('sup', [sel('v_calls', { cols: 'line_label', filters: [{ col: 'session_id', op: 'eq', val: 'sess-miss-1' }], mode: 'single' })]);
-  check(line.body?.results?.[0]?.data?.line_label === 'Mahim', 'call tagged with its line (Mahim)', JSON.stringify(line.body));
+  check(line.body?.results?.[0]?.data?.line_label === 'Hinduja helpline', 'call tagged with its line (Hinduja helpline)', JSON.stringify(line.body));
   check((await call('agent', 'POST', '/api/v1/calls/dial', { number: '9999999999' })).status === 400, 'agent cannot dial a typed number');
   const dial = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: cb.id });
   check(dial.status === 200 && dial.body?.ok, 'click-to-call accepted', JSON.stringify(dial.body));
@@ -161,12 +161,58 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const out = await one(`select session_id, status from calls where id = $1`, dial.body?.call_id);
   check(out?.session_id === 'sess-out-1' && out?.status === 'completed', 'webhook matched to the CRM call by reference', JSON.stringify(out));
   check((await one(`select status from callbacks where id = $1`, cb.id))?.status === 'done', 'answered call-back closes the queue item');
-  await hook({ event_id: 'w1', event_type: 'message.received', customer_identifier: '+919811122233', system_identifier: '+912240000000',
+  await hook({ event_id: 'w1', event_type: 'message.received', customer_identifier: '+919811122233', system_identifier: '+918049368621',
     payload: { conversation: { customer_name: 'Meera Joshi' }, data: { context: { body: 'Need ECG at home tomorrow in Khar' } } } });
   const wa = await one(`select c.source_channel, c.case_no from cases c join patients p on p.id = c.patient_id where p.mobile = '+919811122233'`);
   check(wa?.source_channel === 'whatsapp', 'WhatsApp message opens a case', JSON.stringify(wa));
   const wh = await call('sup', 'GET', '/api/v1/admin/webhooks');
   check(wh.status === 200 && wh.body.length >= 8, 'webhook log visible in Settings', String(wh.body?.length));
+
+  // ---- 6b. MyOperator connection entered in the app (Settings > Telephony)
+  check((await call('sup', 'GET', '/api/v1/admin/myoperator')).status === 403, 'MyOperator settings: admin only');
+  let mo = await call('admin', 'GET', '/api/v1/admin/myoperator');
+  const mfld = (r, k) => (r.body?.fields || []).find((f) => f.key === k) || {};
+  check(mo.status === 200 && mfld(mo, 'webhook_key').source === 'secret' && mo.body?.webhook?.url?.endsWith('/webhooks/myoperator'), 'MyOperator settings: secrets shown as configured', JSON.stringify(mo.body?.webhook));
+  mo = await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { api_token: 'api-tok', company_id: 'co-app' } });
+  check(mo.status === 200 && mfld(mo, 'api_token').source === 'app' && mfld(mo, 'api_token').value === '…-tok' && mfld(mo, 'company_id').value === 'co-app', 'MyOperator settings saved in the app (token masked)', JSON.stringify(mo.body?.fields));
+  check(!JSON.stringify(mo.body).includes('api-tok'), 'saved credential never sent back to the screen');
+  check((await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { nonsense: 'x' } })).status === 400, 'unknown MyOperator field refused');
+  const leak = await batch('admin', [sel('integration_settings')]);
+  check(!JSON.stringify(leak.body).includes('api-tok'), 'credentials table closed to screen queries', JSON.stringify(leak.body).slice(0, 160));
+  const dbWall = await sql.begin(async (tx) => { await tx`set local role caredesk_app`; await tx`select settings from integration_settings`; return 'readable'; }).catch((e) => String(e.message));
+  check(/permission denied/i.test(dbWall), 'database refuses the app role on the credentials table', dbWall);
+  const t = await call('admin', 'POST', '/api/v1/admin/myoperator/test', {});
+  check(t.status === 200 && t.body?.api?.ok && /2 MyOperator users/.test(t.body.api.message) && t.body?.click_to_call?.ok, 'Test connection: API token and click-to-call', JSON.stringify(t.body));
+  const mu = await call('admin', 'GET', '/api/v1/admin/myoperator/users');
+  const two = (mu.body?.users || []).find((u) => u.id === 'mo-88');
+  check(mu.status === 200 && two?.suggested_profile === U.agent2 && (mu.body.users.find((u) => u.id === 'mo-77') || {}).linked_profile === U.agent, 'MyOperator users with linked and suggested logins', JSON.stringify(mu.body?.users));
+  const ln = await call('admin', 'POST', '/api/v1/admin/myoperator/users', { auto: true });
+  check(ln.status === 200 && ln.body?.linked === 1 && (await one(`select myoperator_user_id m from profiles where id = $1`, U.agent2))?.m === 'mo-88', 'agents linked by email in one click', JSON.stringify(ln.body));
+  const gk = await call('admin', 'POST', '/api/v1/admin/myoperator', { generate_webhook_key: true });
+  const newKey = gk.body?.webhook?.key;
+  check(gk.status === 200 && /^hhcs_[0-9a-f]{48}$/.test(newKey || '') && gk.body.webhook.url_with_key.includes(newKey), 'new webhook key generated in the app', JSON.stringify(gk.body?.webhook));
+  check((await hook({ event_type: 'call.initiated' }, 'rehearsal-hook')).status === 401, 'old webhook key stops working');
+  const hookAs = (body, { key = newKey, type = 'application/json', auth } = {}) => fetch(base + '/webhooks/myoperator' + (auth ? '' : '?key=' + encodeURIComponent(key)), {
+    method: 'POST', headers: { 'Content-Type': type, ...(auth ? { Authorization: 'Basic ' + btoa('myoperator:' + key) } : {}) }, body });
+  await sql`update profiles set phone = '+919800000088' where id = ${U.agent2}`;
+  // in-call webhook: ringing pops up for the agent being rung, then answered
+  await hookAs(JSON.stringify({ uid: 'ic-1', clid: '+919876500001', call_state: 0, event: 1, users: ['+919800000088'] }));
+  let ic = await one(`select id::text, status, agent_id::text a, did_number from calls where session_id = 'ic-1'`);
+  check(ic?.status === 'ringing' && ic?.a === U.agent2 && ic?.did_number === '+918049368621', 'in-call webhook: ringing call for the right agent on the helpline', JSON.stringify(ic));
+  await hookAs(JSON.stringify({ uid: 'ic-1', clid: '+919876500001', call_state: 1, event: 2, users: ['+919800000088'] }));
+  check((await one(`select status from calls where session_id = 'ic-1'`))?.status === 'answered', 'in-call webhook: answered');
+  // after-call webhook (form field "myoperator"), different call id: completes the same call
+  const v1 = { _ai: 'log-1', _ci: 'co-app', _cr: '9876500001', _cl: '+919876500001', _ev: 1, _su: 1, _st: t0, _et: t0 + 130, _dr: '00:02:05',
+    _dn: 'HHCS', _fn: 'rec-v1.mp3', _pm: [{ ky: 'ui', vl: 'd5.other-id' }], _ld: [{ _ds: 'ANSWER', _rr: [{ _na: 'Agent Two', _id: 'mo-88', _nr: '+919800000088' }] }] };
+  const r1 = await hookAs('myoperator=' + encodeURIComponent(JSON.stringify(v1)), { type: 'application/x-www-form-urlencoded' });
+  const ac = await one(`select count(*)::int n, max(status) s, max(talk_seconds) t, max(recording_filename) f, max(agent_id::text) a, max(department) d from calls where customer_number = '+919876500001'`);
+  check(r1.status === 200 && ac.n === 1 && ac.s === 'completed' && ac.t === 125 && ac.f === 'rec-v1.mp3' && ac.a === U.agent2 && ac.d === 'HHCS', 'after-call webhook completes the in-call call (one row)', JSON.stringify(ac));
+  // after-call, missed, JSON body with Basic auth -> callback queued
+  await hookAs(JSON.stringify({ myoperator: JSON.stringify({ _ai: 'log-2', _cl: '+919876500002', _ev: 1, _su: 2, _st: t0, _et: t0 + 20, _ld: [] }) }), { auth: true });
+  check((await one(`select status from callbacks where number = '+919876500002'`))?.status === 'pending', 'missed call from the after-call webhook goes to the callback queue (Basic auth key)');
+  const unk = await hookAs(JSON.stringify({ hello: 'world' }));
+  const ue = await one(`select processed, error from webhook_events where event_type = 'unknown' order by received_at desc limit 1`);
+  check(unk.status === 200 && ue && !ue.processed && /not recognised/.test(ue.error || ''), 'unknown format stored for checking, not lost', JSON.stringify(ue));
 
   // ---- 7. live updates: a screen's WebSocket hears about another user's change
   if (typeof WebSocket !== 'undefined') {
