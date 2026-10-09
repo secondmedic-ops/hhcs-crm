@@ -48,11 +48,14 @@ const jwks = http.createServer(async (req, res) => {
     const f = new URLSearchParams(raw);
     if (f.get('token') !== 'api-tok') return send(200, { status: 'error', code: 401, message: 'Invalid token' });
     const t = Math.floor(Date.now() / 1000) - 300;
-    return send(200, { status: 'success', code: 200, data: { total: 3, hits: [
+    return send(200, { status: 'success', code: 200, data: { total: 4, hits: [
       { _source: { _ai: 'sync-1', _cl: '+919876500077', _ev: 1, _su: 2, _st: t, _et: t + 25, _ty: 1, _ld: [] } },
       { _source: { _ai: 'sync-2', _cl: '+919876500078', _ev: 1, _su: 1, _st: t, _et: t + 95, _dr: '00:01:30', _ty: 1, _fn: 'rec-sync-2.mp3', _dn: 'HHCS',
         _ld: [{ _ds: 'ANSWER', _rr: [{ _na: 'Agent Two', _id: 'mo-88' }] }] } },
       { _source: { _ai: 'sync-3', _cl: '+919876500079', _ty: 2 } },
+      // newer layout (seen on the live account): readable field names, no _ai; the id is the search hit's _id
+      { _id: 'doc-sync-4', _source: { allcaller_id: 'ac-1', source: 'ivr', company_id: 'c1', caller_number_raw: '9876500080', caller_number: '+919876500080',
+        country: 'IN', state: 'MH', start_time: new Date((t - 60) * 1000).toISOString().slice(0, 19).replace('T', ' ').replace(/^(.*)$/, (x) => x), seconds: 0, duration: '00:00:00', status: 'missed', department: 'Sales' } },
     ] } });
   }
   if (req.url.startsWith('/mo/user')) { // MyOperator Users API stand-in

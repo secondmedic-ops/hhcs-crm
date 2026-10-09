@@ -15,28 +15,94 @@ const FIRST_WINDOW_S = 6 * 3600; // first run looks back 6 hours
 const PAGE = 100, MAX_PAGES = 5;
 
 const LOG_KEYS = ['_ai', '_cr', '_cl'];
-const isLog = (o: J) => o && typeof o === 'object' && LOG_KEYS.some((k) => o[k] != null);
 
-/** The list of items in a search response, whatever the wrapping (hits / _source / data / logs). */
+/** The list of items in a search response, whatever the wrapping (hits / _source / data / logs). The search-engine
+ *  document id (hit._id) is kept as _doc_id: newer call logs carry no _ai. */
 function itemsFrom(j: J): J[] {
   const pools = [j?.data?.hits?.hits, j?.data?.hits, j?.hits?.hits, j?.hits, j?.data?.data, j?.data?.logs, j?.data?.list, j?.data, j?.logs, j?.result, Array.isArray(j) ? j : null];
   const list = (pools.find((x) => Array.isArray(x)) || []) as J[];
-  return list.map((x) => (x && typeof x === 'object' && x._source ? x._source : x));
+  return list.map((x) => (x && typeof x === 'object' && x._source && typeof x._source === 'object' ? { _doc_id: x._id, ...x._source } : x))
+    .filter((o) => o && typeof o === 'object');
 }
 
-/** The call-log entries in a search response. */
+const first = (o: J, keys: string[]) => { for (const k of keys) { const v = o?.[k]; if (v != null && v !== '') return v; } return null; };
+const pickStr = (o: J, keys: string[]) => { const v = first(o, keys); return v == null || typeof v === 'object' ? null : String(v); };
+
+/** A time from the newer log: epoch seconds / ms, ISO, or "2026-10-09 17:41:05" (MyOperator shows India time). */
+export function logTime(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' || /^\d+(\.\d+)?$/.test(String(v))) { const n = Number(v); return Math.round(n > 1e12 ? n / 1000 : n); }
+  let t = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(t)) t = t.replace(' ', 'T') + '+05:30';
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : Math.round(d.getTime() / 1000);
+}
+
+/** Seconds from 95, "95", "00:01:35" or "1:35". */
+function secs(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Math.round(v);
+  const p = String(v).trim().split(':').map(Number);
+  if (!p.length || p.some((x) => isNaN(x))) return null;
+  return p.reduce((a, x) => a * 60 + x, 0);
+}
+
+/** The newer call-log layout (caller_number, start_time, duration, ...) turned into the older short one (_ai, _cl, _st,
+ *  ...) that the after-call handling reads. Fields are looked up under every name MyOperator has used; anything not
+ *  found is left out and the call is still recorded with what is known. */
+export function normalizeLog(o: J): J | null {
+  if (LOG_KEYS.some((k) => o[k] != null)) return o; // already the short layout
+  const customer = pickStr(o, ['caller_number', 'customer_number', 'client_number', 'caller_number_raw', 'phone', 'number', 'caller']);
+  const st = logTime(first(o, ['start_time', 'started_at', 'call_start_time', 'created_at', 'synced_time', '_ms']));
+  if (!customer && !st) return null;
+  const et = logTime(first(o, ['end_time', 'ended_at', 'call_end_time']));
+  const id = pickStr(o, ['call_id', 'uid', 'unique_id', 'uuid', 'id', 'log_id', '_id', '_doc_id']) || `${customer || 'x'}-${st || 0}`;
+  const kind = String(first(o, ['call_type', 'direction', 'type', 'event', 'log_type', 'call_direction']) ?? '').toLowerCase();
+  const outbound = /out|obd|click|dial/.test(kind) || kind === '2';
+  const statusRaw = String(first(o, ['status', 'call_status', 'call_state', 'state_name', 'disposition', 'result', 'answered']) ?? '').toLowerCase();
+  const talk = secs(first(o, ['talk_time', 'talk_duration', 'billsec', 'bill_seconds', 'conversation_duration', 'seconds', 'duration']));
+  let connected: boolean;
+  if (/miss|no.?answer|unanswer|busy|fail|abandon|reject|cancel|not.?connect|voicemail/.test(statusRaw)) connected = false;
+  else if (/answer|connect|complete|success|true|^1$/.test(statusRaw)) connected = true;
+  else connected = (talk || 0) > 0 && !!first(o, ['recording', 'recording_url', 'filename', 'file_name', 'recording_file', '_fn']);
+  const agentName = pickStr(o, ['agent_name', 'user_name', 'answered_by', 'receiver_name', 'agent', 'user']);
+  const agentId = pickStr(o, ['agent_id', 'user_id', 'user_uuid', 'receiver_id']);
+  const agentPhone = pickStr(o, ['agent_number', 'user_number', 'receiver_number', 'agent_phone']);
+  const agentEmail = pickStr(o, ['agent_email', 'user_email']);
+  const hasAgent = agentName || agentId || agentPhone || agentEmail;
+  return {
+    _ai: id, _cl: customer, _st: st, _et: et ?? (st && talk != null ? st + talk : null),
+    _ev: outbound ? 2 : 1, _su: connected ? 1 : 2, _ss: connected ? talk : 0, _ty: 1,
+    _did: pickStr(o, ['did', 'did_number', 'virtual_number', 'display_number', 'company_number', 'called_number']),
+    _fn: pickStr(o, ['recording', 'recording_url', 'filename', 'file_name', 'recording_file', '_fn']),
+    _dn: pickStr(o, ['department', 'department_name', 'dept_name', 'group_name']),
+    _ld: hasAgent ? [{ _ds: connected ? 'ANSWER' : 'NOANSWER', _rr: [{ _na: agentName, _id: agentId, _nr: agentPhone, _em: agentEmail }] }] : [],
+    _layout: 'v2', _raw_keys: Object.keys(o).slice(0, 60),
+  };
+}
+
+/** The call-log entries in a search response, in the short layout. */
 export function logsFrom(j: J): J[] {
-  return itemsFrom(j).filter(isLog);
+  return itemsFrom(j).map(normalizeLog).filter((x): x is J => !!x);
 }
 
-/** What MyOperator answered, without any values: keys and counts only, so the settings screen can show why 0 calls came in. */
+/** What MyOperator answered, without personal values: every key of the first entry with its type, and the value only
+ *  for short status-like fields, so the settings screen shows how to read the log. */
 export function shapeOf(j: J, httpStatus: number): string {
   const keys = (o: unknown) => (o && typeof o === 'object' && !Array.isArray(o) ? Object.keys(o as J).slice(0, 15).join(',') : Array.isArray(o) ? `list(${(o as unknown[]).length})` : typeof o);
   const items = itemsFrom(j);
   const parts = [`HTTP ${httpStatus}`, `status=${String(j?.status ?? '-').slice(0, 20)}`, `code=${String(j?.code ?? '-').slice(0, 8)}`];
   if (j?.message) parts.push(`message=${String(j.message).slice(0, 120)}`);
-  parts.push(`top={${keys(j)}}`, `data={${keys(j?.data)}}`, `items=${items.length}`, `calls=${items.filter(isLog).length}`);
-  if (items[0]) parts.push(`first={${keys(items[0])}}`);
+  parts.push(`top={${keys(j)}}`, `data={${keys(j?.data)}}`, `items=${items.length}`, `calls=${logsFrom(j).length}`);
+  const f = items[0];
+  if (f) {
+    const show = /status|type|direction|event|state|source|disposition|answered|layout|_su|_ev|_ty/i;
+    parts.push('first={' + Object.keys(f).slice(0, 60).map((k) => {
+      const v = f[k];
+      const t = v == null ? 'null' : Array.isArray(v) ? `list${v.length}` : typeof v === 'object' ? `{${Object.keys(v).slice(0, 8).join('/')}}` : typeof v;
+      return show.test(k) && v != null && typeof v !== 'object' ? `${k}:${t}=${String(v).slice(0, 24)}` : `${k}:${t}`;
+    }).join(',') + '}');
+  }
   return parts.join(' ');
 }
 
@@ -80,7 +146,7 @@ async function search(env: Env, from: number, to: number, page: number): Promise
   }
   const j = best!.j;
   const total = Number(j?.data?.total?.value ?? j?.data?.total ?? j?.hits?.total?.value ?? j?.hits?.total ?? j?.total);
-  return { logs: best!.logs, total: Number.isFinite(total) ? total : null, shape: shapes.join(' | ').slice(0, 900) };
+  return { logs: best!.logs, total: Number.isFinite(total) ? total : null, shape: shapes.join(' | ').slice(0, 2000) };
 }
 
 export async function syncState(sql: Sql): Promise<J> {
