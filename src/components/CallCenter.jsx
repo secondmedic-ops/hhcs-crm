@@ -138,11 +138,14 @@ function DialSheet() {
       footer={<><Button onClick={copy}>Copy number</Button><Button kind="primary" onClick={() => setD(null)}>Done</Button></>}>
       <div className="dial-number mono">{d.number}</div>
       <ol className="st-steps small mt-12">
-        <li>Click the <strong>MyOperator call button</strong> next to the number above (MyOperator Click to Call extension), or dial it in the <strong>MyOperator app</strong>.</li>
-        <li>MyOperator places and records the call from your business number.</li>
+        <li>Click the green <strong>MyOperator call icon</strong> next to the number. A MyOperator Webcall window opens; press <strong>Call</strong> there. Or dial the number in the <strong>MyOperator app</strong>.</li>
+        <li>MyOperator places and records the call from the business number.</li>
         <li>Within about a minute the call, with its recording, appears on this case and patient.</li>
       </ol>
-      <div className="tiny faint mt-12">{d.reason}. Showing the number is written to the access log. No extension yet? <a href={EXTENSION_URL} target="_blank" rel="noreferrer">Add MyOperator Click to Call</a> to Chrome or Brave and sign in to MyOperator.</div>
+      <div className="small mt-12" style={{ padding: '8px 10px', background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
+        <strong>Nothing happens on click?</strong> The browser blocked MyOperator&apos;s pop-up: click the blocked pop-up icon at the right of the address bar and choose Always allow (in Brave, also put Shields down for this site). Check the extension is signed in (toolbar icon shows your name).
+      </div>
+      <div className="tiny faint mt-12">{d.reason ? `${d.reason}. ` : ''}Showing the number is written to the access log. No extension yet? <a href={EXTENSION_URL} target="_blank" rel="noreferrer">Add MyOperator Click to Call</a> to Chrome or Brave and sign in to MyOperator.</div>
     </Modal>
   );
 }

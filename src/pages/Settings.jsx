@@ -696,6 +696,34 @@ const MO_WHERE = {
 };
 const okBadge = (r) => (!r ? null : r.ok ? <Badge kind="ok" dot>OK</Badge> : <Badge kind="warn" dot>Check</Badge>);
 
+/** Outgoing calls without the Calling API: the MyOperator Click to Call extension places them. Its icon opens a
+ *  MyOperator Webcall pop-up, so a blocked pop-up or a signed-out extension looks like "nothing happens". */
+function ExtensionSetup({ onReset, busy, appMode }) {
+  const toast = useToast();
+  const crm = `${window.location.origin}/find?phone={{phone}}`;
+  const copy = (t) => navigator.clipboard?.writeText(t).then(() => toast('Copied'), () => toast.error('Copy failed'));
+  const steps = [
+    ['Reset CareDesk', <>Press <strong>Reset outgoing calls</strong> (right). It clears the Public IVR ID and sets dial mode to <span className="mono">app</span>, so the dial window opens with no Calling API error.</>],
+    ['Sign in to the extension', <>Click the puzzle icon in the toolbar, pin <strong>MyOperator Click to Call</strong>, click it and choose <strong>Login</strong> with Delvin&apos;s MyOperator login. Signed in = a green badge with the agent name.</>],
+    ['Allow pop-ups', <>The call icon opens a MyOperator Webcall pop-up. In the address bar of CareDesk, click the blocked pop-up icon and choose <strong>Always allow</strong>. In Brave also set <strong>Shields: Down</strong> for this site and for app.myoperator.com, or the extension cannot stay signed in.</>],
+    ['Allow the microphone', <>Webcall talks through the computer&apos;s headset. When asked, allow the microphone for MyOperator.</>],
+    ['Check MyOperator permissions', <>MyOperator › Users › Delvin N: <strong>Click to Call / Webcall</strong> allowed, outgoing calls allowed, a DID assigned for outgoing calls, call availability On. Then press <strong>Re-sync account</strong> in the extension settings.</>],
+    ['Optional: CRM link', <>In the extension settings, paste the CRM link below. Incoming and outgoing calls then open the patient in CareDesk.</>],
+  ];
+  return (
+    <Panel title="Outgoing calls with the MyOperator extension" sub={appMode ? 'Dial mode is app: Call patient opens the dial window straight away.' : 'Dial mode is not set: CareDesk tries the Calling API first.'}
+      actions={<Button size="sm" onClick={onReset} disabled={busy}>Reset outgoing calls</Button>}>
+      <ol className="st-steps small">{steps.map(([t, b]) => <li key={t}><strong>{t}.</strong> {b}</li>)}</ol>
+      <div className="row mt-12" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <span className="tiny muted">CRM link</span>
+        <span className="mono small" style={{ wordBreak: 'break-all' }}>{crm}</span>
+        <Button size="xs" kind="ghost" onClick={() => copy(crm)}>Copy</Button>
+      </div>
+      <div className="tiny faint mt-8">Test it: on any case press Call patient, then the green icon next to the number. A MyOperator window opens; press Call. It then shows in MyOperator › Call logs and on the case within about a minute.</div>
+    </Panel>
+  );
+}
+
 function MyOperatorConnection() {
   const toast = useToast();
   const s = useLoad(() => moSettings(), []);
@@ -711,6 +739,11 @@ function MyOperatorConnection() {
     setVals({}); setTest(null); s.reload();
   }, 'MyOperator details saved');
   const runTest = () => run(async () => setTest(await testMo()));
+  // Calling API needs a campaign (Public IVR ID) that MyOperator has not enabled: drop it and dial through the extension
+  const resetDial = () => run(async () => {
+    await saveMoSettings({ values: { public_ivr_id: '', dial_mode: 'app' } });
+    setVals({}); setTest(null); s.reload();
+  }, 'Outgoing calls reset: CareDesk now opens the dial window straight away');
   const genKey = () => run(async () => { await saveMoSettings({ generate_webhook_key: true }); setConfirmKey(false); setShowKey(true); s.reload(); }, 'New webhook key made. Update it in MyOperator.');
   const d = s.data;
   const wh = d?.webhook || {};
@@ -747,6 +780,7 @@ function MyOperatorConnection() {
         )}
         <div className="tiny faint mt-8">If Calling API › Manage is locked in MyOperator, ask MyOperator support to enable the Calling API and Webhooks v2 for the account.</div>
       </Panel>
+      <ExtensionSetup onReset={resetDial} busy={busy || d?.demo} appMode={(d?.fields || []).some((f) => f.key === 'dial_mode' && f.set)} />
 
       <Panel title="Calls into the CRM (webhooks)" sub="Add these in MyOperator so incoming calls pop up for the agent, and ended calls, missed calls and recordings reach the case."
         actions={<Button size="sm" onClick={() => setConfirmKey(true)} disabled={busy || d?.demo}>{wh.key ? 'New key' : 'Generate key'}</Button>}>

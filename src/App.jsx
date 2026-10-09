@@ -25,6 +25,7 @@ const Complaints = lazy(() => import('./pages/Complaints.jsx'));
 const Mis = lazy(() => import('./pages/Mis.jsx'));
 const Audit = lazy(() => import('./pages/Audit.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Find = lazy(() => import('./pages/Find.jsx'));
 
 function Boot({ children }) {
   const [ready, setReady] = useState(false);
@@ -56,7 +57,7 @@ function Routed() {
   const { profile, loading } = useAuth();
   const loc = useLocation();
   if (loading) return <div className="page"><Skeleton lines={6} /></div>;
-  if (!profile) return <Login next={loc.pathname} />;
+  if (!profile) return <Login next={loc.pathname + loc.search} />;
   const g = (path, el) => <Guard path={path}><Suspense fallback={<Skeleton lines={8} />}>{el}</Suspense></Guard>;
   return (
     <CallProvider>
@@ -79,6 +80,7 @@ function Routed() {
           <Route path="mis" element={g('/mis', <Mis />)} />
           <Route path="audit" element={g('/audit', <Audit />)} />
           <Route path="settings" element={g('/settings', <Settings />)} />
+          <Route path="find" element={g('/patients', <Find />)} />
           <Route path="*" element={<Navigate to={homeFor(profile.role)} replace />} />
         </Route>
       </Routes>

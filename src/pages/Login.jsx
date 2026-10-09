@@ -21,7 +21,7 @@ export default function Login({ next }) {
 
   // Deep links (a case, a lead) are kept after login; general pages are not, so each role starts on its own home
   // page (agents: console, providers: leads, management: dashboard) instead of e.g. Settings.
-  const after = () => (next && /^\/(cases|patients|leads|approvals|escalations|complaints|callbacks)\/./.test(next) ? next : '/');
+  const after = () => (next && /^\/((cases|patients|leads|approvals|escalations|complaints|callbacks)\/.|find\?)/.test(next) ? next : '/');
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr(null);
     try { await signIn(email, password); nav(after(), { replace: true }); }
