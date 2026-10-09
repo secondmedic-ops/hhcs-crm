@@ -832,9 +832,11 @@ function CallLogSync({ sync, hasToken, disabled, onDone }) {
           <tr><td className="small muted">Last successful run</td><td className="small">{st.last_ok_at ? dateTime(st.last_ok_at) : '–'}</td></tr>
           <tr><td className="small muted">Calls brought in</td><td className="small">{st.total_new ?? 0} in total{st.last_ok_at ? ` · ${st.last_new ?? 0} in the last run` : ''}</td></tr>
           {st.last_error && <tr><td className="small muted">Last error</td><td className="small danger-text">{st.last_error}</td></tr>}
+          {st.last_shape && <tr><td className="small muted nowrap">MyOperator answered</td><td className="tiny mono" style={{ wordBreak: 'break-all' }}>{st.last_shape}</td></tr>}
         </tbody></table>
       )}
-      {res && <div className={`small mt-8 ${res.ok === false ? 'danger-text' : ''}`}>{res.ok === false ? res.error : res.skipped ? res.skipped : `Read ${res.seen} call log entr${res.seen === 1 ? 'y' : 'ies'}, ${res.new} new, ${res.failed} with errors (see the event log below).`}</div>}
+      {res && <div className={`small mt-8 ${res.ok === false ? 'danger-text' : ''}`}>{res.ok === false ? res.error : res.skipped ? res.skipped : `Read ${res.seen} call log entr${res.seen === 1 ? 'y' : 'ies'} since ${dateTime(res.window_from)}, ${res.new} new, ${res.failed} with errors (see the event log below).`}
+        {res.shape && <div className="tiny mono faint mt-4" style={{ wordBreak: 'break-all' }}>{res.shape}</div>}</div>}
     </Panel>
   );
 }
