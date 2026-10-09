@@ -1,10 +1,12 @@
 // Scheduled jobs (wrangler.jsonc triggers)
-//   * * * * *    SLA scan: breaches -> auto escalation + notifications, at-risk flags, escalation level-ups
+//   * * * * *    SLA scan: breaches -> auto escalation + notifications, at-risk flags, escalation level-ups;
+//                MyOperator call-log sync (calls, missed-call callbacks, recordings without webhooks)
 //   30 4 * * *   10:00 IST: daily MIS for yesterday; Mondays also weekly; 1st of the month also monthly
 import { asSystem, connect } from '../db';
 import type { Env } from '../env';
 import { misNarrative } from './ai';
 import { notifyLive } from './live';
+import { syncCallLogs } from './mo-sync';
 
 const istDate = (offsetDays = 0) => new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 86400e3).toISOString().slice(0, 10);
 
@@ -12,6 +14,9 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
   const sql = connect(env);
   try {
     if (cron === '* * * * *') {
+      // call-log sync first, so a missed call it brings in gets its callback timer in this same minute
+      try { const r = await syncCallLogs(env, sql, exec); if (r.ok === false) console.log('myoperator sync', r.error); }
+      catch (e) { console.log('myoperator sync', (e as Error).message); }
       const { changed } = await asSystem(sql, (tx) => tx`select sla_scan()`);
       notifyLive(env, exec, changed);
       return;

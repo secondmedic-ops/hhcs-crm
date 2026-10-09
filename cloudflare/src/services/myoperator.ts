@@ -5,7 +5,7 @@
 //  - Recording link lookup, WhatsApp send
 // Every raw event is stored in webhook_events first (duplicates from MyOperator retries are skipped), so field mappings
 // can be checked from Settings > Telephony after the first test call.
-import { asSystem, connect, normMobile, pgArray, type Tx } from '../db';
+import { asSystem, connect, normMobile, pgArray, type Sql, type Tx } from '../db';
 import type { Env } from '../env';
 import { notifyLive } from './live';
 import { moEnv } from './myoperator-config';
@@ -90,10 +90,7 @@ async function readEvents(req: Request): Promise<J[] | null> {
       if (inner && typeof inner === 'object') o = inner as J;
     }
     if (o.event_type) out.push(o);
-    else if (o._ai || o._ci || o._cr || o._cl) {
-      const uid = (o._pm || []).find((x: J) => x?.ky === 'ui')?.vl;
-      out.push({ event_id: `v1:${o._ai || uid || o._st}`, event_type: 'aftercall', v1: o });
-    } else if (o.uid != null && (o.call_state != null || o.clid != null)) {
+    else if (o._ai || o._ci || o._cr || o._cl) out.push(afterCallEvent(o)); else if (o.uid != null && (o.call_state != null || o.clid != null)) {
       out.push({ event_id: `incall:${o.uid}:${o.call_state ?? ''}:${o.event ?? ''}`, event_type: Number(o.call_state) === 1 ? 'incall.answered' : 'incall.ringing', incall: o });
     } else out.push({ event_type: 'unknown', raw: o });
   }
@@ -111,37 +108,59 @@ export async function handleMyOperatorWebhook(req: Request, env0: Env, exec: Exe
     if (got !== expected) return new Response('unauthorized', { status: 401 });
     const events = await readEvents(req);
     if (!events) return new Response('bad body', { status: 400 });
-    for (const ev of events) {
-      const eventId = String(ev.event_id || `${ev.event_type}:${ev.session_id}:${ev.event_sequence ?? Date.now()}`);
-      const stored = ev.v1 || ev.incall || ev.raw || ev;
-      const fresh = await sql`insert into webhook_events (event_id, source, event_type, payload)
-        values (${eventId}, 'myoperator', ${ev.event_type ?? null}, ${sql.json(stored)}) on conflict do nothing returning event_id`;
-      if (!fresh.length) continue; // duplicate delivery (MyOperator retries): already handled
-      try {
-        const { result: after, changed } = await asSystem(sql, async (tx) => {
-          const t = String(ev.event_type || '');
-          if (t.startsWith('call.')) return onCallEvent(tx, env, ev);
-          if (t === 'aftercall') return onAfterCall(tx, env, ev.v1);
-          if (t.startsWith('incall.')) { await onInCall(tx, env, ev.incall); return null; }
-          if (t.startsWith('message.')) { await onMessageEvent(tx, env, ev); return null; }
-          if (t === 'unknown') throw new Error('Format not recognised (stored for checking)');
-          return null;
-        });
-        changed.forEach((x) => changedAll.add(x));
-        await sql`update webhook_events set processed = true where event_id = ${eventId}`;
-        if (after?.aiCallId && env.GEMINI_API_KEY && env.AI_AUTO_PROCESS_CALLS !== 'false') {
-          const { processCall } = await import('./ai');
-          exec.waitUntil(processCall(env0, after.aiCallId, exec).catch((e) => console.log('ai call', (e as Error).message)));
-        }
-      } catch (e) {
-        await sql`update webhook_events set error = ${String((e as Error).message || e)} where event_id = ${eventId}`;
-      }
-    }
+    const r = await processEvents(sql, env, env0, exec, events);
+    r.changed.forEach((x) => changedAll.add(x));
   } finally {
     exec.waitUntil(sql.end({ timeout: 2 }).catch(() => {}));
   }
   if (changedAll.size) notifyLive(env0, exec, [...changedAll]);
   return Response.json({ ok: true }); // always 2xx after storing, so MyOperator does not retry forever
+}
+
+/**
+ * Store each event once (webhook_events, unique event id) and apply it to calls / cases / callbacks.
+ * Used by the webhook and by the call-log sync (both use the same event id per MyOperator call log, so a call that
+ * arrives both ways is applied once).
+ */
+export async function processEvents(sql: Sql, env: Env, env0: Env, exec: ExecutionContext, events: J[]) {
+  const changed = new Set<string>();
+  let stored = 0, applied = 0, failed = 0;
+  for (const ev of events) {
+    const eventId = String(ev.event_id || `${ev.event_type}:${ev.session_id}:${ev.event_sequence ?? Date.now()}`);
+    const payload = ev.v1 || ev.incall || ev.raw || ev;
+    const fresh = await sql`insert into webhook_events (event_id, source, event_type, payload)
+      values (${eventId}, ${ev.source || 'myoperator'}, ${ev.event_type ?? null}, ${sql.json(payload)}) on conflict do nothing returning event_id`;
+    if (!fresh.length) continue; // already handled (MyOperator retry, or the same call from the other route)
+    stored++;
+    try {
+      const { result: after, changed: ch } = await asSystem(sql, async (tx) => {
+        const t = String(ev.event_type || '');
+        if (t.startsWith('call.')) return onCallEvent(tx, env, ev);
+        if (t === 'aftercall') return onAfterCall(tx, env, ev.v1);
+        if (t.startsWith('incall.')) { await onInCall(tx, env, ev.incall); return null; }
+        if (t.startsWith('message.')) { await onMessageEvent(tx, env, ev); return null; }
+        if (t === 'unknown') throw new Error('Format not recognised (stored for checking)');
+        return null;
+      });
+      ch.forEach((x) => changed.add(x));
+      await sql`update webhook_events set processed = true where event_id = ${eventId}`;
+      applied++;
+      if (after?.aiCallId && env.GEMINI_API_KEY && env.AI_AUTO_PROCESS_CALLS !== 'false') {
+        const { processCall } = await import('./ai');
+        exec.waitUntil(processCall(env0, after.aiCallId, exec).catch((e) => console.log('ai call', (e as Error).message)));
+      }
+    } catch (e) {
+      failed++;
+      await sql`update webhook_events set error = ${String((e as Error).message || e)} where event_id = ${eventId}`;
+    }
+  }
+  return { stored, applied, failed, changed };
+}
+
+/** A call-log entry (after-call webhook or call-log search) -> the event processEvents applies. */
+export function afterCallEvent(o: J, source = 'myoperator'): J {
+  const uid = (o._pm || []).find((x: J) => x?.ky === 'ui')?.vl;
+  return { event_id: `v1:${o._ai || uid || o._st}`, event_type: 'aftercall', v1: o, source };
 }
 
 /** The CRM call for a provider session: by session id, else by our click-to-call reference, else a new one. */

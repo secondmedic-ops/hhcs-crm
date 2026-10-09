@@ -364,6 +364,20 @@
         ]
       }
     },
+    "/api/v1/admin/myoperator/sync": {
+      "post": {
+        "summary": "Read new calls from the MyOperator call log now",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/myoperator/test": {
       "post": {
         "summary": "Test the MyOperator connection",

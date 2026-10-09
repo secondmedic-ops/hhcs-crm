@@ -5,6 +5,7 @@ import { ApiError } from '../domain/errors';
 import { asSystem, normMobile, pgArray } from '../db';
 import type { Env } from '../env';
 import { MO_FIELDS, clearMoCache, describeMo, moEnv, randomKey } from './myoperator-config';
+import { syncCallLogs, syncState } from './mo-sync';
 
 type J = Record<string, any>;
 
@@ -63,6 +64,7 @@ export async function moSettings(c: Ctx) {
     webhook: { key, url: origin + '/webhooks/myoperator', url_with_key: key ? `${origin}/webhooks/myoperator?key=${encodeURIComponent(key)}` : null },
     last_event: last ?? null,
     agents: agents ?? { ops: 0, linked: 0 },
+    sync: await syncState(c.sql),
   };
 }
 
@@ -205,4 +207,9 @@ export async function setTelephony(c: Ctx, b: J) {
   });
   c.changed.push(...changed);
   return result;
+}
+
+/** Run the call-log sync now (Settings > Telephony > Sync now). */
+export async function syncNow(c: Ctx) {
+  return syncCallLogs(c.env, c.sql, c.exec, { force: true });
 }

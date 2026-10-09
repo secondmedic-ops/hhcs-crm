@@ -221,6 +221,19 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const ue = await one(`select processed, error from webhook_events where event_type = 'unknown' order by received_at desc limit 1`);
   check(unk.status === 200 && ue && !ue.processed && /not recognised/.test(ue.error || ''), 'unknown format stored for checking, not lost', JSON.stringify(ue));
 
+  // ---- 6c. call-log sync (no webhooks needed)
+  check((await call('agent', 'POST', '/api/v1/admin/myoperator/sync', {})).status === 403, 'call-log sync: agents kept out');
+  const sy = await call('sup', 'POST', '/api/v1/admin/myoperator/sync', {});
+  check(sy.status === 200 && sy.body?.ok && sy.body.seen === 2 && sy.body.new === 2 && sy.body.failed === 0, 'call-log sync reads new calls (SMS log skipped)', JSON.stringify(sy.body));
+  const sm = await one(`select status from callbacks where number = '+919876500077'`);
+  const sc = await one(`select status, talk_seconds, recording_filename, agent_id::text a from calls where customer_number = '+919876500078'`);
+  check(sm?.status === 'pending' && sc?.status === 'completed' && sc.talk_seconds === 90 && sc.recording_filename === 'rec-sync-2.mp3' && sc.a === U.agent2,
+    'synced calls: missed -> callback queue; answered -> agent, talk time, recording', JSON.stringify({ sm, sc }));
+  const sy2 = await call('sup', 'POST', '/api/v1/admin/myoperator/sync', {});
+  check(sy2.status === 200 && sy2.body?.new === 0, 'second sync brings nothing twice', JSON.stringify(sy2.body));
+  const ms = await call('sup', 'GET', '/api/v1/admin/myoperator');
+  check(ms.body?.sync?.last_ok_at && ms.body.sync.total_new === 2 && !ms.body.sync.last_error, 'sync status shown in settings', JSON.stringify(ms.body?.sync));
+
   // ---- 7. live updates: a screen's WebSocket hears about another user's change
   if (typeof WebSocket !== 'undefined') {
     const heard = await new Promise((resolve) => {

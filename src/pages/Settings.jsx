@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony } from '../lib/api.js';
+import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { inr, dateTime, ago, ROLE_LABEL } from '../lib/fmt.js';
@@ -769,6 +769,8 @@ function MyOperatorConnection() {
         {d?.last_event && <div className="tiny muted mt-8">Last event: {dateTime(d.last_event.received_at)} · <span className="mono">{d.last_event.event_type}</span>{d.last_event.error ? ' · error, see log' : ''}</div>}
       </Panel>
 
+      <CallLogSync sync={d?.sync} hasToken={(d?.fields || []).some((f) => f.key === 'api_token' && f.set)} disabled={d?.demo} onDone={s.reload} />
+
       <MoUsers agents={d?.agents} disabled={d?.demo} />
 
       {confirmKey && (
@@ -778,6 +780,27 @@ function MyOperatorConnection() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function CallLogSync({ sync, hasToken, disabled, onDone }) {
+  const [res, setRes] = useState(null);
+  const [run, busy] = useAction();
+  const go = () => run(async () => { const r = await syncMo(); setRes(r); onDone?.(); });
+  const st = sync || {};
+  return (
+    <Panel title="Call-log sync" sub="Every minute CareDesk reads new calls from MyOperator's call log: calls, missed-call callbacks and recordings reach the right patient and case within about a minute. Works without webhooks; the live ringing pop-up needs webhooks."
+      actions={<Button size="sm" onClick={go} disabled={busy || disabled || !hasToken}>{busy ? 'Syncing' : 'Sync now'}</Button>}>
+      {!hasToken ? <div className="small warn-text">Needs the API token above (MyOperator › Manage › API Integration › Public API).</div> : (
+        <table className="t compact"><tbody>
+          <tr><td className="small muted">Status</td><td>{st.last_error ? <Badge kind="danger" dot>Error</Badge> : st.last_ok_at ? <Badge kind="ok" dot>Running every minute</Badge> : <Badge kind="info" dot>Starts within a minute</Badge>}</td></tr>
+          <tr><td className="small muted">Last successful run</td><td className="small">{st.last_ok_at ? dateTime(st.last_ok_at) : '–'}</td></tr>
+          <tr><td className="small muted">Calls brought in</td><td className="small">{st.total_new ?? 0} in total{st.last_ok_at ? ` · ${st.last_new ?? 0} in the last run` : ''}</td></tr>
+          {st.last_error && <tr><td className="small muted">Last error</td><td className="small danger-text">{st.last_error}</td></tr>}
+        </tbody></table>
+      )}
+      {res && <div className={`small mt-8 ${res.ok === false ? 'danger-text' : ''}`}>{res.ok === false ? res.error : res.skipped ? res.skipped : `Read ${res.seen} call log entr${res.seen === 1 ? 'y' : 'ies'}, ${res.new} new, ${res.failed} with errors (see the event log below).`}</div>}
+    </Panel>
   );
 }
 

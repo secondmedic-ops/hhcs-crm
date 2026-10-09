@@ -42,6 +42,18 @@ const jwks = http.createServer(async (req, res) => {
     obdCalls.push({ body: JSON.parse(raw || '{}'), headers: req.headers });
     return send(200, { status: 'success', code: 200, message: 'Request accepted', unique_id: 'obd-' + obdCalls.length });
   }
+  if (req.url.startsWith('/mo/search') && req.method === 'POST') { // MyOperator call-log search stand-in
+    let raw = ''; for await (const ch of req) raw += ch;
+    const f = new URLSearchParams(raw);
+    if (f.get('token') !== 'api-tok') return send(200, { status: 'error', code: 401, message: 'Invalid token' });
+    const t = Math.floor(Date.now() / 1000) - 300;
+    return send(200, { status: 'success', code: 200, data: { total: 3, hits: [
+      { _source: { _ai: 'sync-1', _cl: '+919876500077', _ev: 1, _su: 2, _st: t, _et: t + 25, _ty: 1, _ld: [] } },
+      { _source: { _ai: 'sync-2', _cl: '+919876500078', _ev: 1, _su: 1, _st: t, _et: t + 95, _dr: '00:01:30', _ty: 1, _fn: 'rec-sync-2.mp3', _dn: 'HHCS',
+        _ld: [{ _ds: 'ANSWER', _rr: [{ _na: 'Agent Two', _id: 'mo-88' }] }] } },
+      { _source: { _ai: 'sync-3', _cl: '+919876500079', _ty: 2 } },
+    ] } });
+  }
   if (req.url.startsWith('/mo/user')) { // MyOperator Users API stand-in
     const tokenOk = new URL(req.url, 'http://x').searchParams.get('token') === 'api-tok';
     if (!tokenOk) return send(200, { status: 'error', code: 401, message: 'Invalid token' });

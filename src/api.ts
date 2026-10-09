@@ -67,6 +67,7 @@ export const api = {
   setTelephony: (body: { profile_id: string; myoperator_user_id?: string | null; myoperator_extension?: string | null; phone?: string | null }) => request<Record<string, any>>('/api/v1/admin/users/telephony', { method: 'POST', body }),
   moSettings: () => request<Record<string, any>>('/api/v1/admin/myoperator'),
   saveMoSettings: (body: { values?: Record<string, string>; generate_webhook_key?: boolean }) => request<Record<string, any>>('/api/v1/admin/myoperator', { method: 'POST', body }),
+  syncMo: () => request<Record<string, any>>('/api/v1/admin/myoperator/sync', { method: 'POST', body: {} }),
   testMo: () => request<Record<string, { ok: boolean; message: string }>>('/api/v1/admin/myoperator/test', { method: 'POST', body: {} }),
   moUsers: () => request<{ users: Record<string, any>[]; profiles: Record<string, any>[] }>('/api/v1/admin/myoperator/users'),
   linkMoUsers: (body: { links?: { profile_id: string; myoperator_user_id: string | null }[]; auto?: boolean }) => request<{ linked: number; unlinked: number }>('/api/v1/admin/myoperator/users', { method: 'POST', body }),

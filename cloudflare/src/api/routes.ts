@@ -6,7 +6,7 @@ import type { Role } from './auth';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote } from '../services/calls';
 import { caseBrief, command, extractEnquiry, processCall } from '../services/ai';
-import { createUser, integrations, linkMoUsers, moSettings, moUsers, saveMoSettings, setTelephony, testMo, webhookEvents } from '../services/admin';
+import { createUser, integrations, linkMoUsers, moSettings, moUsers, saveMoSettings, setTelephony, syncNow, testMo, webhookEvents } from '../services/admin';
 
 export type Access = 'public' | 'login' | readonly Role[];
 export interface Route {
@@ -51,6 +51,7 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/admin/integrations', access: TECH, handler: (c) => integrations(c), summary: 'Which integrations are configured' },
   { method: 'GET', path: '/api/v1/admin/myoperator', access: TECH, handler: (c) => moSettings(c), summary: 'MyOperator connection: fields set, webhook address, last event' },
   { method: 'POST', path: '/api/v1/admin/myoperator', access: TECH, handler: (c, b) => saveMoSettings(c, b ?? {}), summary: 'Save MyOperator connection values' },
+  { method: 'POST', path: '/api/v1/admin/myoperator/sync', access: TECH, handler: (c) => syncNow(c), summary: 'Read new calls from the MyOperator call log now' },
   { method: 'POST', path: '/api/v1/admin/myoperator/test', access: TECH, handler: (c) => testMo(c), summary: 'Test the MyOperator connection' },
   { method: 'GET', path: '/api/v1/admin/myoperator/users', access: TECH, handler: (c) => moUsers(c), summary: 'MyOperator users and the CRM logins linked to them' },
   { method: 'POST', path: '/api/v1/admin/users/telephony', access: TECH, handler: (c, b) => setTelephony(c, b ?? {}), summary: 'Set a user\'s MyOperator user id, extension and phone' },
