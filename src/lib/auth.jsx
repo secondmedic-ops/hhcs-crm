@@ -8,7 +8,8 @@ export const useAuth = () => useContext(AuthCtx);
 export const NAV = [
   { to: '/', label: 'Live dashboard', icon: 'pulse', roles: ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'] },
   { to: '/console', label: 'Agent console', icon: 'headset', roles: ['agent', 'supervisor', 'coordinator'] },
-  { to: '/cases', label: 'Cases', icon: 'folder', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/leads', label: 'Provider leads', icon: 'swap', roles: ['provider', 'supervisor', 'coordinator', 'client_manager', 'agent'] },
+  { to: '/cases', label: 'Cases', icon: 'folder', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical', 'provider'] },
   { to: '/callbacks', label: 'Callback queue', icon: 'return', roles: ['agent', 'coordinator', 'supervisor', 'client_manager'] },
   { to: '/calls', label: 'Calls & recordings', icon: 'phone', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/patients', label: 'Patients', icon: 'person', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
@@ -19,10 +20,10 @@ export const NAV = [
   { to: '/complaints', label: 'Complaints', icon: 'alert', roles: ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'medical_desk'] },
   { to: '/mis', label: 'MIS reports', icon: 'report', roles: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'] },
   { to: '/audit', label: 'Audit trail', icon: 'shield', roles: ['supervisor', 'client_manager'] },
-  { to: '/settings', label: 'Settings', icon: 'gear', roles: ['admin', 'supervisor', 'client_manager', 'coordinator', 'agent', 'medical_desk', 'client_clinical', 'field_staff'] },
+  { to: '/settings', label: 'Settings', icon: 'gear', roles: ['admin', 'supervisor', 'client_manager', 'coordinator', 'agent', 'medical_desk', 'client_clinical', 'field_staff', 'provider'] },
 ];
 
-export const homeFor = (role) => ({ agent: '/console', field_staff: '/my-visits', admin: '/settings' }[role] || '/');
+export const homeFor = (role) => ({ agent: '/console', field_staff: '/my-visits', admin: '/settings', provider: '/leads' }[role] || '/');
 
 export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);

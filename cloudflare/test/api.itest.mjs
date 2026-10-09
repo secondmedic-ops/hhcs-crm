@@ -8,9 +8,10 @@ const U = {
   field: 'b0000000-0000-4000-8000-000000000005', client: 'b0000000-0000-4000-8000-000000000006',
   clinical: 'b0000000-0000-4000-8000-000000000007', admin: 'b0000000-0000-4000-8000-000000000008',
   medical: 'b0000000-0000-4000-8000-000000000009', nobody: 'b0000000-0000-4000-8000-000000000010',
+  bmm: 'b0000000-0000-4000-8000-000000000011',
 };
 const ROLE = { agent: 'agent', agent2: 'agent', coord: 'coordinator', sup: 'supervisor', field: 'field_staff', client: 'client_manager',
-  clinical: 'client_clinical', admin: 'admin', medical: 'medical_desk' };
+  clinical: 'client_clinical', admin: 'admin', medical: 'medical_desk', bmm: 'provider' };
 
 export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhookKey }) {
   const failed = [];
@@ -37,11 +38,12 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
 
   // ---- people
   const [{ id: ws }] = await sql`select id::text from workspaces where code = ${WS}`;
+  const [{ id: bmmProvider }] = await sql`select id::text from providers where workspace_id = ${ws} and code = 'BMM'`;
   for (const [k, id] of Object.entries(U)) {
     if (k === 'nobody') continue;
-    await sql`insert into profiles (id, workspace_id, full_name, email, role, agent_code, myoperator_user_id)
+    await sql`insert into profiles (id, workspace_id, full_name, email, role, agent_code, myoperator_user_id, provider_id)
       values (${id}, ${ws}, ${k.toUpperCase() + ' user'}, ${k + '@rehearsal.test'}, ${ROLE[k]}, ${k.startsWith('agent') ? 'A-0' + (k === 'agent' ? 7 : 8) : null},
-        ${k === 'agent' ? 'mo-77' : null}) on conflict (id) do nothing`;
+        ${k === 'agent' ? 'mo-77' : null}, ${k === 'bmm' ? bmmProvider : null}) on conflict (id) do nothing`;
   }
 
   // ---- 1. login required
@@ -233,6 +235,36 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
     });
     check(refused, 'live socket refused without a valid login');
   }
+
+  // ---- 7b. Book My Medicare login: its leads only, progress, no recordings
+  const nurse = (await sql`select id::text from services where workspace_id = ${ws} and code = 'NURS-HOME'`)[0].id;
+  const pe = await rpc('agent', 'create_enquiry', { p: { consent: true, branch: 'Mahim', additional_info: 'Needs night shift',
+    patient: { full_name: 'Provider Patient', mobile: '9811177001', address: 'Mahim W', pincode: '400016' }, services_requested: 'Nursing', service_ids: [nurse] } });
+  const pcid = pe.body?.data?.case_id;
+  check(pe.status === 200 && pcid, 'agent registers a nursing case with branch', JSON.stringify(pe.body));
+  const me = await call('bmm', 'GET', '/api/v1/me');
+  check(me.status === 200 && me.body?.role === 'provider', 'Book My Medicare login works', JSON.stringify(me.body));
+  const leads = await batch('bmm', [sel('v_referrals', { cols: 'id,case_no,patient_mobile,status,provider_code,branch,additional_info' }), sel('v_cases', { cols: 'id' })]);
+  const lead = (leads.body?.results?.[0]?.data || []).find((r) => r.branch === 'Mahim');
+  check(leads.status === 200 && lead?.status === 'new' && lead.provider_code === 'BMM' && lead.patient_mobile === '+919811177001' && lead.additional_info,
+    'provider lead list: case ID, full number, requirements', JSON.stringify(leads.body?.results?.[0]?.data?.slice?.(0, 2)));
+  check((leads.body?.results?.[1]?.data || []).every((r) => r.id !== cid), 'provider does not see SecondMedic-only cases');
+  const callId = (await one(`select id::text from calls where recording_filename is not null limit 1`))?.id;
+  check((await call('bmm', 'GET', `/api/v1/calls/${callId}/recording`)).status === 403, 'provider cannot play call recordings');
+  const pcalls = await batch('bmm', [sel('v_calls', { cols: 'id' })]);
+  check(pcalls.status === 403 || (pcalls.body?.results?.[0]?.data || []).length === 0, 'provider sees no calls', JSON.stringify(pcalls.body).slice(0, 120));
+  check((await call('bmm', 'GET', '/api/v1/admin/webhooks')).status === 403, 'provider kept out of telephony settings');
+  check((await rpc('bmm', 'advance_case', { p_case: pcid, p_note: null })).status === 403, 'provider cannot move SecondMedic stages');
+  const acc = await rpc('bmm', 'update_referral', { p_id: lead?.id, p_status: 'accepted', p_note: 'Nurse assigned' });
+  check(acc.status === 200 && acc.body?.data?.status === 'accepted', 'provider accepts the lead', JSON.stringify(acc.body));
+  const note = await data('bmm', 'interactions', { op: 'insert', rows: [{ workspace_id: ws, case_id: pcid, channel: 'note', actor_id: U.bmm, summary: 'Progress note', body: 'Night 1 fine' }] });
+  check(note.status === 200, 'provider adds a progress note', JSON.stringify(note.body));
+  const done = await rpc('bmm', 'update_referral', { p_id: lead?.id, p_status: 'completed', p_note: 'Shift done' });
+  const st = await batch('agent', [sel('v_cases', { cols: 'stage,provider_names', filters: [{ col: 'id', op: 'eq', val: pcid }], mode: 'single' })]);
+  check(done.status === 200 && st.body?.results?.[0]?.data?.stage === 'closed', 'provider completes -> case closed for the agent too', JSON.stringify(st.body));
+  check((await rpc('agent', 'import_cases', { p_rows: [] })).status === 403, 'agents cannot import old CRM data');
+  const im = await rpc('sup', 'import_cases', { p_rows: [{ ref: 'API-1', patient_name: 'Imported Via Api', mobile: '9811177002', services: 'physiotherapy', status: 'open', branch: 'Khar' }] });
+  check(im.status === 200 && im.body?.data?.imported === 1, 'supervisor imports a row from the old CRM', JSON.stringify(im.body));
 
   // ---- 8. users
   const nu = await call('admin', 'POST', '/api/v1/admin/users', { email: 'new.agent@rehearsal.test', password: 'longenough1', full_name: 'New Agent', role: 'agent', agent_code: 'A-20' });

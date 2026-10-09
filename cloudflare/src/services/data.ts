@@ -12,28 +12,33 @@ import { asUser, readAsUser, type Tx } from '../db';
 const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
 const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
 const MANAGERS: readonly Role[] = ['supervisor', 'client_manager'];
+/** ALL staff plus service-provider logins (Book My Medicare): only what a provider needs for its leads. */
+const WITH_PROVIDER: readonly Role[] = [...ALL, 'provider'];
 
-/** Who may read a table / view (rows are then filtered by RLS per role). Not listed = nobody. */
+/** Who may read a table / view (rows are then filtered by RLS per role). Not listed = nobody. Provider logins may query the
+ *  case-page tables; Row Level Security returns them nothing from calls, assignments, payments, approvals, SLA timers, complaints. */
 export const READ: Record<string, readonly Role[]> = {
-  workspaces: ALL, zones: ALL, profiles: ALL, services: ALL, templates: ALL, sla_policies: ALL, escalation_matrix: ALL,
-  patients: ALL, cases: ALL, case_items: ALL, case_stage_history: ALL, calls: ALL, interactions: ALL, callbacks: ALL,
-  approvals: ALL, sla_timers: ALL, complaints: ALL, escalations: ALL, assignments: ALL, samples: ALL, payments: ALL,
-  qa_reviews: ALL, notifications: ALL, inbound_emails: ALL,
+  workspaces: WITH_PROVIDER, zones: WITH_PROVIDER, profiles: WITH_PROVIDER, services: WITH_PROVIDER, templates: WITH_PROVIDER, sla_policies: WITH_PROVIDER, escalation_matrix: WITH_PROVIDER,
+  patients: WITH_PROVIDER, cases: WITH_PROVIDER, case_items: WITH_PROVIDER, case_stage_history: WITH_PROVIDER, calls: WITH_PROVIDER, interactions: WITH_PROVIDER, callbacks: WITH_PROVIDER,
+  approvals: WITH_PROVIDER, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER,
+  qa_reviews: WITH_PROVIDER, notifications: WITH_PROVIDER, inbound_emails: WITH_PROVIDER,
+  providers: WITH_PROVIDER, case_referrals: WITH_PROVIDER, v_referrals: WITH_PROVIDER,
   mis_snapshots: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   audit_log: MANAGERS, access_log: MANAGERS, v_audit: MANAGERS, v_access: MANAGERS,
-  v_cases: ALL, v_patients: ALL, v_calls: ALL, v_callbacks: ALL, v_assignments: ALL, v_escalations: ALL, v_approvals: ALL, v_complaints: ALL,
+  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER,
 };
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */
 export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert' | 'delete', readonly Role[]>>> = {
   case_items: { insert: OPS, delete: OPS },
   complaints: { insert: [...OPS, 'client_manager'], update: ['supervisor', 'coordinator', 'client_manager'] },
-  escalations: { insert: [...OPS, 'field_staff', 'client_manager', 'client_clinical'], update: ['supervisor', 'coordinator', 'medical_desk', 'client_manager', 'client_clinical'] },
+  escalations: { insert: [...OPS, 'field_staff', 'client_manager', 'client_clinical', 'provider'], update: ['supervisor', 'coordinator', 'medical_desk', 'client_manager', 'client_clinical'] },
   escalation_matrix: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
-  interactions: { insert: [...OPS, 'field_staff'] },
-  notifications: { update: ALL },
+  interactions: { insert: [...OPS, 'field_staff', 'provider'] },
+  notifications: { update: WITH_PROVIDER },
+  providers: { update: ['admin', 'client_manager'] },
   patients: { update: OPS },
-  profiles: { update: ALL },
+  profiles: { update: WITH_PROVIDER },
   qa_reviews: { insert: ['supervisor'] },
   sla_policies: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
   templates: { insert: ['admin', 'supervisor'], update: ['admin', 'supervisor'] },
@@ -54,7 +59,10 @@ export const RPC: Record<string, readonly Role[]> = {
   decide_approval: ['client_manager', 'client_clinical', 'supervisor', 'coordinator', 'admin'],
   request_rate_change: ['admin', 'supervisor'],
   submit_template: ['admin', 'supervisor'],
-  case_gates: ALL, render_template: ALL, log_access: ALL,
+  update_referral: ['provider', 'supervisor', 'client_manager', 'coordinator'],
+  refer_case: [...OPS, 'client_manager'],
+  import_cases: ['supervisor', 'client_manager'],
+  case_gates: WITH_PROVIDER, render_template: ALL, log_access: WITH_PROVIDER,
   dashboard_kpis: ALL,
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
 };
@@ -88,7 +96,9 @@ async function runSelect(tx: Tx, spec: QuerySpec) {
 async function runRpc(tx: Tx, fn: string, args: Record<string, unknown>) {
   const keys = Object.keys(args ?? {});
   const text = `select ${ident(fn)}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')}) as r`;
-  const [row] = await tx.unsafe(text, keys.map((k) => toParam(args[k], 'raw')) as never[]);
+  // a list of objects (e.g. import_cases rows) is a jsonb argument; plain lists stay Postgres arrays (text[] / uuid[])
+  const param = (v: unknown) => (Array.isArray(v) && v.some((x) => x !== null && typeof x === 'object') ? tx.json(v as never) : toParam(v, 'raw'));
+  const [row] = await tx.unsafe(text, keys.map((k) => param(args[k])) as never[]);
   return row?.r ?? null;
 }
 

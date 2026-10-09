@@ -133,5 +133,76 @@ const call2 = (await db.query(`insert into calls(workspace_id, direction, custom
 const [{ r: e3 }] = await as('agent', `select create_enquiry($1::jsonb) r`, [JSON.stringify({ call_id: call2, consent: true, patient: { full_name: 'New Caller', address: 'A', pincode: '400601' }, services_requested: 'CBC' })]);
 const [np] = await as('sup', `select full_name, mobile from patients where id = $1`, [e3.patient_id]);
 np.full_name === 'New Caller' && np.mobile === '+919811122233' ? ok('new caller: number taken from the call record') : fail(JSON.stringify(np));
+
+console.log('\nProviders: lead routing, visibility, progress, import');
+await db.exec(`reset role`);
+const prov = Object.fromEntries((await db.query(`select code, id from providers`)).rows.map((r) => [r.code, r.id]));
+users.bmm = '88888888-8888-8888-8888-888888888888';
+await db.query(`insert into profiles(id, workspace_id, full_name, role, provider_id) values ($1,$2,'BMM user','provider',$3)`, [users.bmm, ws, prov.BMM]);
+try { await db.query(`insert into profiles(id, workspace_id, full_name, role) values ('99999999-9999-9999-9999-999999999999',$1,'No provider','provider')`, [ws]); fail('provider login without provider accepted'); }
+catch { ok('provider login needs its provider'); }
+const mk = async (extra) => (await as('agent', `select create_enquiry($1::jsonb) r`, [JSON.stringify({ consent: true, ...extra })]))[0].r;
+const bm = await mk({ patient: { full_name: 'Nurse Patient', mobile: '9811100001', address: 'Khar W', pincode: '400052' }, branch: 'Khar',
+  additional_info: 'Bedridden, needs female nurse', services_requested: 'Nursing and physio', service_ids: [svc['NURS-HOME'], svc['PHYSIO-HOME']] });
+const mix = await mk({ patient: { full_name: 'Mixed Patient', mobile: '9811100002', address: 'Mahim', pincode: '400016' }, branch: 'Mahim',
+  services_requested: 'ECG and nursing', service_ids: [svc['ECG-12'], svc['NURS-HOME']] });
+const txt = await mk({ patient: { full_name: 'Text Patient', mobile: '9811100003', address: 'Dadar', pincode: '400028' }, services_requested: 'Needs a hospital bed and an attendant' });
+const refs = async (caseId) => (await db.query(`select pv.code, r.status, r.categories from case_referrals r join providers pv on pv.id = r.provider_id where r.case_id = $1 order by pv.code`, [caseId])).rows;
+const r1 = await refs(bm.case_id), r2 = await refs(mix.case_id), r3 = await refs(txt.case_id);
+r1.length === 1 && r1[0].code === 'BMM' && r1[0].categories.includes('physio') ? ok('nursing + physio -> Book My Medicare only') : fail('routing bm ' + JSON.stringify(r1));
+r2.map((r) => r.code).join() === 'BMM,SM' ? ok('ECG + nursing -> SecondMedic and Book My Medicare') : fail('routing mix ' + JSON.stringify(r2));
+r3.length === 1 && r3[0].code === 'BMM' && [...r3[0].categories].sort().join() === 'beds,eldercare' ? ok('free text "bed and attendant" -> Book My Medicare') : fail('routing text ' + JSON.stringify(r3));
+const [{ n: smRefs }] = await as('sup', `select count(*)::int n from case_referrals r join providers p on p.id = r.provider_id where r.case_id = $1 and p.code = 'SM'`, [cid]);
+smRefs === 1 ? ok('blood test + ECG case -> SecondMedic lead') : fail('sm refs ' + smRefs);
+const [bmc] = await as('agent', `select branch, additional_info, provider_names from v_cases where id = $1`, [bm.case_id]);
+bmc.branch === 'Khar' && bmc.additional_info.includes('female nurse') && bmc.provider_names === 'Book My Medicare' ? ok('branch, additional info and provider on the case') : fail(JSON.stringify(bmc));
+const bmmCases = (await as('bmm', `select id from v_cases`)).map((r) => r.id).sort();
+JSON.stringify(bmmCases) === JSON.stringify([bm.case_id, mix.case_id, txt.case_id].sort()) ? ok('Book My Medicare sees only its 3 leads') : fail('bmm sees ' + bmmCases.length);
+const [bmmRef] = await as('bmm', `select patient_name, patient_mobile, case_no, additional_info from v_referrals where case_id = $1`, [bm.case_id]);
+bmmRef?.patient_mobile === '+919811100001' && bmmRef.case_no && bmmRef.additional_info ? ok('provider gets case ID, patient details and requirements') : fail(JSON.stringify(bmmRef));
+const [{ n: bmmRefCount }] = await as('bmm', `select count(*)::int n from case_referrals where case_id = $1`, [mix.case_id]);
+bmmRefCount === 1 ? ok('provider sees its own lead only, not SecondMedic\'s') : fail('bmm sees refs ' + bmmRefCount);
+const [{ n: bmmCalls }] = await as('bmm', `select count(*)::int n from calls`);
+const [{ n: bmmSla }] = await as('bmm', `select count(*)::int n from sla_timers`);
+bmmCalls === 0 && bmmSla === 0 ? ok('provider sees no calls / recordings and no SLA timers') : fail(`bmm calls ${bmmCalls} sla ${bmmSla}`);
+for (const t of ['approvals', 'payments', 'callbacks', 'complaints', 'assignments', 'qa_reviews', 'inbound_emails', 'escalations', 'v_calls', 'v_callbacks', 'v_assignments', 'v_approvals', 'v_complaints']) {
+  const [{ n }] = await as('bmm', `select count(*)::int n from ${t}`);
+  n === 0 ? ok('provider reads nothing from ' + t) : fail(`provider sees ${n} rows of ${t}`);
+}
+const coordSees = (await as('coord', `select id from v_cases where id = any($1::uuid[])`, [[bm.case_id, mix.case_id, cid]])).map((r) => r.id);
+!coordSees.includes(bm.case_id) && coordSees.includes(mix.case_id) && coordSees.includes(cid) ? ok('SecondMedic coordinator sees SecondMedic leads only') : fail('coord sees ' + coordSees.length);
+const [{ n: supAll }] = await as('sup', `select count(*)::int n from v_cases where id = any($1::uuid[])`, [[bm.case_id, mix.case_id, txt.case_id]]);
+supAll === 3 ? ok('supervisor sees every lead') : fail('sup ' + supAll);
+await expectError('bmm', `select advance_case($1, null)`, [bm.case_id], 'Not allowed');
+const smRefId = (await db.query(`select r.id from case_referrals r join providers p on p.id = r.provider_id where r.case_id = $1 and p.code = 'SM'`, [mix.case_id])).rows[0].id;
+await expectError('bmm', `select update_referral($1, 'accepted')`, [smRefId], 'Not allowed');
+await expectError('bmm', `update profiles set provider_id = $1 where id = $2`, [prov.SM, users.bmm], 'Only the platform admin');
+const bmRefId = (await db.query(`select id from case_referrals where case_id = $1`, [bm.case_id])).rows[0].id;
+await expectError('bmm', `select update_referral($1, 'declined', '')`, [bmRefId], 'reason');
+await as('bmm', `select update_referral($1, 'accepted', 'Nurse Sunita assigned')`, [bmRefId]);
+await expectError('bmm', `select update_referral($1, 'scheduled')`, [bmRefId], 'date');
+await as('bmm', `select update_referral($1, 'scheduled', null, now() + interval '1 day')`, [bmRefId]);
+await as('bmm', `insert into interactions(workspace_id, case_id, channel, actor_id, summary, body) values ($1, $2, 'note', $3, 'Progress note', 'Day 1: vitals stable')`, [ws, bm.case_id, users.bmm]);
+await as('bmm', `select update_referral($1, 'completed', 'Course of 5 visits done')`, [bmRefId]);
+const [closed] = await as('agent', `select stage from v_cases where id = $1`, [bm.case_id]);
+closed.stage === 'closed' ? ok('Book My Medicare completes -> case closes by itself') : fail('stage ' + closed.stage);
+const notes = (await as('agent', `select summary from interactions where case_id = $1 order by occurred_at`, [bm.case_id])).map((r) => r.summary);
+notes.some((s) => s.startsWith('Lead transferred to Book My Medicare')) && notes.some((s) => s.includes('visit scheduled')) && notes.includes('Progress note')
+  && notes.some((s) => s.startsWith('Case closed')) ? ok('timeline: transfer, schedule, progress note, closure (' + notes.length + ')') : fail(JSON.stringify(notes));
+await expectError('agent', `select import_cases('[]'::jsonb)`, [], 'Only a supervisor');
+const rows = [
+  { ref: 'OLD-1001', patient_name: 'Old Patient One', mobile: '9822200001', address: 'Khar', pincode: '400052', branch: 'khar', services: 'Nursing care 12 hrs', status: 'Completed', date: '2026-08-01', notes: 'Served by BMM' },
+  { ref: 'OLD-1002', patient_name: 'Old Patient Two', mobile: '9822200002', services: 'ECG at home', status: 'Open', date: '2026-09-15' },
+  { ref: 'OLD-1003', patient_name: '', mobile: '9822200003' },
+];
+const [{ r: imp }] = await as('sup', `select import_cases($1::jsonb) r`, [JSON.stringify(rows)]);
+imp.imported === 2 && imp.errors.length === 1 && imp.errors[0].row === 3 ? ok('import: 2 rows in, 1 row reported with its error') : fail('import ' + JSON.stringify(imp));
+const [{ r: imp2 }] = await as('sup', `select import_cases($1::jsonb) r`, [JSON.stringify(rows.slice(0, 2))]);
+imp2.skipped === 2 && imp2.imported === 0 ? ok('import again: already-imported rows skipped') : fail('reimport ' + JSON.stringify(imp2));
+const [old1] = await as('sup', `select stage, branch, external_ref, (created_at at time zone 'Asia/Kolkata')::date::text d, providers_status from v_cases where external_ref = 'OLD-1001'`);
+old1?.stage === 'closed' && old1.branch === 'Khar' && old1.d === '2026-08-01' && old1.providers_status?.[0]?.status === 'completed'
+  ? ok('imported case keeps old ID, date, branch, status; routed to its provider') : fail(JSON.stringify(old1));
+const [old2] = await as('agent', `select stage, case_no from v_cases where external_ref = 'OLD-1002'`);
+old2?.stage === 'enquiry' && /^HHC-/.test(old2.case_no) ? ok('open imported case visible to agents with a new Case ID') : fail(JSON.stringify(old2));
 expect(problems).toEqual([]);
 }, 120000);

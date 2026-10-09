@@ -6,7 +6,7 @@ import type { Db } from '../db';
 import { databaseUrl, isLocalDb } from '../db';
 import type { Env } from '../env';
 
-export const ROLES = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'] as const;
+export const ROLES = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider'] as const;
 export type Role = (typeof ROLES)[number];
 
 export interface User {

@@ -19,12 +19,13 @@ const BLANK = {
   full_name: '', age: '', gender: '', mobile: '', email: '',
   address: '', landmark: '', locality: '', pincode: '',
   services_requested: '', preferred_slot: '', priority: 'routine', source_channel: 'phone', clinical_notes: '',
-  service_ids: [], consent: false, confirm_mobile: '',
+  service_ids: [], consent: false, confirm_mobile: '', branch: '', additional_info: '',
 };
 const RELATIONS = [['self', 'Self'], ['son', 'Son'], ['daughter', 'Daughter'], ['wife', 'Wife'], ['husband', 'Husband'], ['parent', 'Parent'], ['relative', 'Relative'], ['caregiver', 'Caregiver'], ['doctor', 'Doctor / clinic'], ['other', 'Other']];
 const GENDERS = [['M', 'Male'], ['F', 'Female'], ['O', 'Other']];
 const CHANNELS = [['phone', 'Phone'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['chat', 'Chat'], ['walkin', 'Walk-in'], ['referral', 'Referral']];
-const CATEGORY = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', other: 'Other' };
+const CATEGORY = { lab: 'Blood tests · sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy',
+  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home healthcare', other: 'Other' };
 const PATIENT_KEYS = ['full_name', 'age', 'gender', 'mobile'];
 const FALLBACK_CONSENT = 'This call is recorded for quality and your records. May we record and use these details to arrange your service?';
 
@@ -99,6 +100,15 @@ export default function Console() {
     ? q(db.from('v_patients').select('id,full_name,age,gender,mobile,email,address,landmark,locality,pincode,zone_name,case_count,last_case_at,consent_verbal_at').eq('id', c.patient_id).maybeSingle())
     : Promise.resolve(null)), [c?.patient_id]);
   const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours').is('active', true).order('category').order('name')), []);
+  const providers = useLoad(() => q(db.from('providers').select('id,code,name,categories').is('active', true)), []);
+  const providerFor = (cat) => (providers.data || []).find((p) => (p.categories || []).includes(cat))?.name;
+  const branches = workspace?.settings?.branches || [];
+  // the IVR department of the call names the branch (Press 1 Khar, 2 Mahim): pre-select it
+  useEffect(() => {
+    const d = (c?.department || '').toLowerCase();
+    const b = branches.find((x) => d && d.includes(x.toLowerCase()));
+    if (b) setF((x) => (x.branch ? x : { ...x, branch: b }));
+  }, [c?.id, c?.department]); // eslint-disable-line react-hooks/exhaustive-deps
   const scripts = useLoad(() => q(db.from('templates').select('id,code,title,body,version').eq('kind', 'script').eq('status', 'approved').order('code')), []);
   const queue = useLoad(() => q(db.from('v_cases').select('id,case_no,patient_name,stage,priority,next_sla_due,next_sla_key,service_names,created_at')
     .eq('owner_id', profile.id).not('stage', 'in', '(closed,cancelled)').order('next_sla_due', { ascending: true }).limit(12)), [], ['cases']);
@@ -183,7 +193,7 @@ export default function Console() {
   const svcGroups = useMemo(() => {
     const g = {};
     (services.data || []).forEach((s) => { (g[s.category] = g[s.category] || []).push(s); });
-    const order = ['lab', 'xray', 'ecg', 'visit', 'other'];
+    const order = ['ecg', 'xray', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'visit', 'other'];
     return Object.entries(g).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
   }, [services.data]);
   const toggleSvc = (id) => setF((x) => ({ ...x, service_ids: x.service_ids.includes(id) ? x.service_ids.filter((i) => i !== id) : [...x.service_ids, id] }));
@@ -212,6 +222,7 @@ export default function Console() {
   if (f.pincode && !/^\d{6}$/.test(f.pincode)) problems.push('6-digit pincode');
   if (!f.service_ids.length && !f.services_requested.trim()) problems.push('services');
   if (f.caller_mobile && !normMobile(f.caller_mobile)) problems.push('valid caller mobile');
+  if (branches.length && !f.branch) problems.push('branch');
   if (!f.consent) problems.push('consent');
 
   const submit = async (e) => {
@@ -233,7 +244,7 @@ export default function Console() {
         patient,
         caller_name: f.caller_name, caller_relation: f.caller_relation, caller_mobile: normMobile(f.caller_mobile) || '',
         source_channel: c ? 'phone' : f.source_channel, priority: f.priority,
-        services_requested: f.services_requested, clinical_notes: f.clinical_notes,
+        services_requested: f.services_requested, clinical_notes: f.clinical_notes, branch: f.branch || null, additional_info: f.additional_info.trim() || null,
         preferred_slot: fromLocalInput(f.preferred_slot),
         consent: true, call_id: c?.id || null, service_ids: f.service_ids,
       },
@@ -258,7 +269,7 @@ export default function Console() {
 
   return (
     <>
-      <PageHead title="Agent console" sub={<>{workspace?.name || 'Hinduja Home Care Services'} · sample collection, portable X-ray and ECG at home across MMR · prices only from the rate card</>}>
+      <PageHead title="Agent console" sub={<>{workspace?.name || 'Hinduja Home Care Services'} · ECG, X-ray and blood tests by SecondMedic; nursing, physiotherapy, beds and elder care by Book My Medicare</>}>
         {(callParam || f !== BLANK) && <Button size="sm" icon="refresh" onClick={() => { setF(BLANK); setAiKeys({}); setExtracted(null); if (callParam) setSp({}); }}>Clear form</Button>}
       </PageHead>
 
@@ -407,21 +418,28 @@ export default function Console() {
                     <div className="col gap-12">
                       {svcGroups.map(([cat, list]) => (
                         <div key={cat}>
-                          <div className="tiny muted mb-8">{CATEGORY[cat] || cat}</div>
+                          <div className="tiny muted mb-8">{CATEGORY[cat] || cat}{providerFor(cat) && <span className="faint"> · {providerFor(cat)}</span>}</div>
                           <div className="svc-chips">
                             {list.map((s) => (
                               <button key={s.id} type="button" className={`pill-filter svc-chip ${f.service_ids.includes(s.id) ? 'on' : ''}`} onClick={() => toggleSvc(s.id)} aria-pressed={f.service_ids.includes(s.id)} title={s.code}>
                                 {f.service_ids.includes(s.id) && <Icon name="check" size={12} />}
-                                {s.name} <span className="price">{inr(s.price)}</span>
+                                {s.name} <span className="price">{Number(s.price) > 0 ? inr(s.price) : 'quote'}</span>
                               </button>
                             ))}
                           </div>
                         </div>
                       ))}
-                      <div className="tiny faint">Prices are locked to the approved rate card. Discounts are set on the case and need approval above the band.</div>
+                      <div className="tiny faint">Prices are locked to the approved rate card. "quote" = priced by the provider after assessment. Each service goes to its provider automatically.</div>
                     </div>
                   )}
                   <div className="form-grid mt-12">
+                    {branches.length > 0 && (
+                      <Field label="Hinduja branch">
+                        <div className="btn-group">
+                          {branches.map((b) => <button key={b} type="button" className={`btn ${f.branch === b ? 'on' : ''}`} onClick={() => set('branch')(b)}>{b}</button>)}
+                        </div>
+                      </Field>
+                    )}
                     <Field label="Request note" hint="as the caller said it" className="span2"><Input value={f.services_requested} onChange={set('services_requested')} placeholder="e.g. Fasting blood sugar, doctor's prescription on WhatsApp" /></Field>
                     <Field label="Preferred slot" hint="IST"><Input type="datetime-local" className={cls('preferred_slot')} value={f.preferred_slot} onChange={set('preferred_slot')} /></Field>
                     <Field label="Priority">
@@ -432,6 +450,7 @@ export default function Console() {
                       </div>
                     </Field>
                     <Field label="Clinical notes" hint="symptoms, prescriptions, mobility, fasting" className="span2"><Textarea rows={2} value={f.clinical_notes} onChange={set('clinical_notes')} /></Field>
+                    <Field label="Additional information" hint="customer requirements, timings, preferences: shared with the provider" className="span2"><Textarea rows={2} value={f.additional_info} onChange={set('additional_info')} /></Field>
                   </div>
                 </section>
 

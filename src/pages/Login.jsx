@@ -6,7 +6,7 @@ import { ROLE_LABEL } from '../lib/fmt.js';
 import { DEMO_USERS } from '../demo/seed.js';
 import { Button, Field, Input, ErrorNote } from '../components/ui.jsx';
 
-const DEMO_PICKS = ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'field_staff', 'medical_desk', 'admin'];
+const DEMO_PICKS = ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'field_staff', 'medical_desk', 'provider', 'admin'];
 
 export default function Login({ next }) {
   const { signIn, signInDemo, mfa, noProfile, verifyMfa, signOut, retry } = useAuth();

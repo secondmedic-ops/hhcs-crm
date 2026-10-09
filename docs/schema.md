@@ -140,6 +140,27 @@
 | line_total | numeric | NO |
 | created_at | timestamp with time zone | NO |
 
+## case_referrals
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| provider_id | uuid | NO |
+| categories | ARRAY | NO |
+| status | text | NO |
+| auto | boolean | NO |
+| assigned_to | uuid | YES |
+| scheduled_at | timestamp with time zone | YES |
+| accepted_at | timestamp with time zone | YES |
+| started_at | timestamp with time zone | YES |
+| completed_at | timestamp with time zone | YES |
+| decline_reason | text | YES |
+| last_note | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| updated_at | timestamp with time zone | NO |
+
 ## case_stage_history
 | column | type | nullable |
 |---|---|---|
@@ -197,6 +218,9 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
+| branch | text | YES |
+| additional_info | text | YES |
+| external_ref | text | YES |
 
 ## complaints
 | column | type | nullable |
@@ -395,6 +419,20 @@
 | on_duty | boolean | NO |
 | active | boolean | NO |
 | last_seen_at | timestamp with time zone | YES |
+| created_at | timestamp with time zone | NO |
+| provider_id | uuid | YES |
+
+## providers
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| code | text | NO |
+| name | text | NO |
+| categories | ARRAY | NO |
+| contact_phone | text | YES |
+| contact_email | text | YES |
+| active | boolean | NO |
 | created_at | timestamp with time zone | NO |
 
 ## qa_reviews
@@ -687,6 +725,9 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | YES |
+| branch | text | YES |
+| additional_info | text | YES |
+| external_ref | text | YES |
 | patient_name | text | YES |
 | patient_age | integer | YES |
 | patient_gender | text | YES |
@@ -708,6 +749,8 @@
 | next_sla_key | text | YES |
 | open_escalations | bigint | YES |
 | open_complaints | bigint | YES |
+| provider_names | text | YES |
+| providers_status | jsonb | YES |
 
 ## v_complaints
 | column | type | nullable |
@@ -786,6 +829,52 @@
 | case_count | bigint | YES |
 | last_case_at | timestamp with time zone | YES |
 | lifetime_value | numeric | YES |
+
+## v_referrals
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| provider_id | uuid | YES |
+| categories | ARRAY | YES |
+| status | text | YES |
+| auto | boolean | YES |
+| assigned_to | uuid | YES |
+| scheduled_at | timestamp with time zone | YES |
+| accepted_at | timestamp with time zone | YES |
+| started_at | timestamp with time zone | YES |
+| completed_at | timestamp with time zone | YES |
+| decline_reason | text | YES |
+| last_note | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | YES |
+| provider_code | text | YES |
+| provider_name | text | YES |
+| case_no | text | YES |
+| case_stage | USER-DEFINED | YES |
+| priority | text | YES |
+| branch | text | YES |
+| services_requested | text | YES |
+| additional_info | text | YES |
+| clinical_notes | text | YES |
+| preferred_slot | timestamp with time zone | YES |
+| address | text | YES |
+| pincode | text | YES |
+| case_created_at | timestamp with time zone | YES |
+| patient_id | uuid | YES |
+| patient_name | text | YES |
+| patient_age | integer | YES |
+| patient_gender | text | YES |
+| patient_mobile | text | YES |
+| caller_mobile | text | YES |
+| caller_name | text | YES |
+| caller_relation | text | YES |
+| landmark | text | YES |
+| locality | text | YES |
+| assigned_name | text | YES |
+| service_names | text | YES |
 
 ## webhook_events
 | column | type | nullable |

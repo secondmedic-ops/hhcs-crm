@@ -41,13 +41,13 @@ export const STAGE_LABEL = {
   payment: 'Payment', closure: 'Closure', closed: 'Closed', cancelled: 'Cancelled',
 };
 export const SLA_LABEL = {
-  call_answer: 'Call answer', missed_callback: 'Missed-call callback', ack: 'Acknowledgement', quote: 'Quote shared',
+  call_answer: 'Call answer', missed_callback: 'Missed-call callback', ack: 'Acknowledgement', quote: 'Quote shared', provider_accept: 'Provider accepts lead',
   booking: 'Booking confirmation', arrival_urgent: 'Arrival (urgent)', arrival_slot: 'Arrival (slot)',
   complaint_ack: 'Complaint ack', complaint_resolve: 'Complaint resolution', critical_finding: 'Critical finding',
 };
 export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
-  medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin',
+  medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider',
 };
 export const CHANNEL_LABEL = { phone: 'Phone', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email', chat: 'Chat', note: 'Note', system: 'System', crm_edit: 'CRM edit', field: 'Field', lab: 'Lab', payment: 'Payment', walkin: 'Walk-in', referral: 'Referral' };
 

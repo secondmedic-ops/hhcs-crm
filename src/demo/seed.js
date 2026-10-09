@@ -16,11 +16,13 @@ export const DEMO_USERS = [
   { id: 'a0000000-0000-4000-8000-000000000012', full_name: 'Neha Kulkarni', role: 'client_manager', email: 'programme.owner@hinduja.demo' },
   { id: 'a0000000-0000-4000-8000-000000000013', full_name: 'Dr. S. Mehta', role: 'client_clinical', email: 'clinical@hinduja.demo' },
   { id: 'a0000000-0000-4000-8000-000000000014', full_name: 'Platform Admin', role: 'admin', email: 'admin@secondmedic.demo' },
+  { id: 'a0000000-0000-4000-8000-000000000015', full_name: 'Ritu Sawant', role: 'provider', provider: 'BMM', email: 'ritu@bookmymedicare.demo' },
+  { id: 'a0000000-0000-4000-8000-000000000016', full_name: 'Sachin Bhalerao', role: 'provider', provider: 'BMM', email: 'sachin@bookmymedicare.demo' },
 ];
 
 export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
-  medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin',
+  medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider',
 };
 
 const LOCALITIES = [
@@ -81,11 +83,15 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
   const agents = DEMO_USERS.filter((u) => u.role === 'agent');
   const field = DEMO_USERS.filter((u) => u.role === 'field_staff');
 
-  ins('profiles', DEMO_USERS.map((u) => ({
+  ins('profiles', DEMO_USERS.filter((u) => u.role !== 'provider').map((u) => ({
     id: u.id, workspace_id: ws, full_name: u.full_name, email: u.email || null, phone: u.phone || null, role: u.role,
     agent_code: u.agent_code || null, myoperator_user_id: u.myoperator_user_id || null, skills: u.skills || [],
     zone_id: null, on_duty: true, active: true,
   })));
+  // provider logins point at their provider (made by the migrations)
+  for (const u of DEMO_USERS.filter((x) => x.role === 'provider')) {
+    out.push(`insert into profiles (id, workspace_id, full_name, email, role, provider_id, on_duty, active) values (${q(u.id)}, ${q(ws)}, ${q(u.full_name)}, ${q(u.email)}, 'provider', (select id from providers where workspace_id = ${q(ws)} and code = ${q(u.provider)}), true, true);`);
+  }
 
   // ---------- patients
   const patients = [];
@@ -430,11 +436,96 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
     { workspace_id: ws, user_id: u.id, action: 'view_case', entity: 'case', entity_id: cases[i * 3].id, meta: {}, at: min(istMidnight(0), (9 + i) * 60) },
   ]), { workspace_id: ws, user_id: U.neha.id, action: 'export', entity: 'mis', entity_id: 'daily', meta: { format: 'xlsx' }, at: min(istMidnight(0), 10.3 * 60) });
 
+  // ---------- branches, provider leads (lead assignment), Book My Medicare cases
+  const zoneNameById = Object.fromEntries(zones.map((z) => [z.id, z.name]));
+  const branchFor = (zid) => ({ 'Bandra–Khar': 'Khar', 'Mahim–Dadar': 'Mahim' }[zoneNameById[zid]] || (r() < 0.55 ? 'Khar' : 'Mahim'));
+  const refs = [];
+  const REF_BY_STAGE = { enquiry: 'new', pricing: 'new', booking: 'accepted', deployment: 'scheduled', completion: 'in_progress', payment: 'completed', closure: 'completed', closed: 'completed', cancelled: 'cancelled' };
+  for (const c of cases) {
+    c.branch = branchFor(c.zone_id);
+    c.additional_info = null;
+    c.external_ref = null;
+    const cats = [...new Set(items.filter((i) => i.case_id === c.id).map((i) => i.category))].filter((k) => ['lab', 'xray', 'ecg', 'visit'].includes(k));
+    refs.push({ id: uuid(r), case_id: c.id, code: 'SM', categories: cats, status: REF_BY_STAGE[c.stage] || 'new', created_at: min(c.created_at, 3), updated_at: c.updated_at,
+      accepted_at: ['booking', 'deployment', 'completion', 'payment', 'closure', 'closed'].includes(c.stage) ? c.booking_confirmed_at || c.updated_at : null,
+      scheduled_at: c.booked_slot || null, completed_at: ['payment', 'closure', 'closed'].includes(c.stage) ? c.service_completed_at || c.updated_at : null,
+      decline_reason: null, last_note: null, assigned_to: null });
+  }
+  const bmmUsers = DEMO_USERS.filter((u) => u.role === 'provider');
+  const BMM_COMBOS = [
+    [['NURS-HOME'], 'Nursing care at home', 'Bedridden after hip surgery, needs female nurse for 12-hour day shift'],
+    [['PHYSIO-HOME'], 'Physiotherapy at home', 'Post-stroke rehab, 5 sessions a week, mornings preferred'],
+    [['BED-HOSP', 'ELDER-CARE'], 'Hospital bed and attendant', 'Fowler bed needed by tomorrow; attendant for nights'],
+    [['NURS-HOME', 'PHYSIO-HOME'], 'Nursing and physiotherapy', 'Discharged from Hinduja Mahim, wound dressing daily plus physio'],
+    [['ELDER-CARE'], 'Elder care attendant', 'Mother 86, dementia; attendant who speaks Marathi'],
+    [['HOMECARE'], 'Oxygen concentrator on rent', 'Concentrator 5L for 2 weeks; doctor prescription shared on WhatsApp'],
+  ];
+  const BMM_FLOW = ['completed', 'completed', 'completed', 'in_progress', 'in_progress', 'scheduled', 'scheduled', 'accepted', 'completed', 'declined', 'scheduled', 'accepted', 'new', 'in_progress', 'new', 'new'];
+  BMM_FLOW.forEach((status, i) => {
+    const created = min(istMidnight(-6 + Math.floor(i * 6.4 / BMM_FLOW.length)), between(9 * 60, 19 * 60));
+    if (created > min(now, -40)) return;
+    const p = patients[(i * 7 + 3) % patients.length];
+    const owner = pick(agents);
+    const [codes, request, info] = BMM_COMBOS[i % BMM_COMBOS.length];
+    const dk = fmtDay(created);
+    counters[dk] = (counters[dk] || 0) + 1;
+    const done = status === 'completed';
+    const cap = (d) => (d > min(now, -6) ? min(now, -6 - Math.floor(r() * 30)) : d);   // demo history never in the future
+    const tAcc = cap(min(created, between(8, 35))), tSch = cap(min(tAcc, between(30, 240))), tStart = cap(min(tSch, between(600, 1400))), tDone = cap(min(tStart, between(1500, 3500)));
+    const lastAt = { new: created, accepted: tAcc, scheduled: tSch, in_progress: tStart, completed: tDone, declined: tAcc }[status];
+    const c = { ...cases[0], id: uuid(r), case_no: `HHC-${dk}-${String(counters[dk]).padStart(5, '0')}`, patient_id: p.id,
+      caller_name: `${pick([...FIRST_M, ...FIRST_F])} ${p.full_name.split(' ').pop()}`, caller_relation: pick(RELATIONS), caller_mobile: '+9198' + String(Math.floor(between(20000000, 99999999))),
+      source_channel: 'phone', stage: done ? 'closed' : 'enquiry', priority: i % 5 === 2 ? 'urgent' : 'routine', services_requested: request, clinical_notes: null,
+      preferred_slot: null, booked_slot: null, address: p.address, pincode: p.pincode, zone_id: p.zone_id, owner_id: owner.id, coordinator_id: null,
+      subtotal: 0, discount_pct: 0, discount_amount: 0, total: 0, quote_status: 'draft', quote_template_id: null, quote_sent_at: null, booking_confirmed_at: null,
+      service_completed_at: done ? tDone : null, amount_collected: 0, payment_status: 'unpaid', report_status: 'na', report_delivered_at: null,
+      feedback_rating: done && i % 2 === 0 ? 5 : null, feedback_text: null, cancel_reason: null, reopen_reason: null, closed_at: done ? tDone : null, closed_by: done ? bmmUsers[0].id : null,
+      sla_state: 'ok', ai_brief: null, created_by: owner.id, created_at: created, updated_at: lastAt,
+      branch: branchFor(p.zone_id), additional_info: info, external_ref: null };
+    if (!p.consent_verbal_at) p.consent_verbal_at = min(created, 2);
+    cases.push(c);
+    const cats = [];
+    for (const k of codes) {
+      const sv = svc[k];
+      if (!sv) continue;
+      cats.push(sv.category);
+      items.push({ id: uuid(r), case_id: c.id, service_id: sv.id, service_code: sv.code, service_name: sv.name, category: sv.category, unit_price: 0, qty: 1, line_total: 0, created_at: min(created, 3) });
+    }
+    history.push({ case_id: c.id, from_stage: null, to_stage: 'enquiry', changed_by: owner.id, changed_at: min(created, 2), note: 'Case created' });
+    addI(c, min(created, 2), 'phone', 'inbound', owner, 'Enquiry captured from call · case ID generated', { body: request });
+    addI(c, min(created, 3), 'system', 'internal', null, `Lead transferred to Book My Medicare · ${[...new Set(cats)].map((x) => x[0].toUpperCase() + x.slice(1)).join(', ')}`,
+      { body: 'Shared: case ID, patient details, address and requirements. Call recordings are not shared.' });
+    const who = bmmUsers[i % bmmUsers.length];
+    const visit = min(tSch, between(900, 1500));
+    if (status !== 'new') addI(c, tAcc, status === 'declined' ? 'note' : 'note', 'internal', who, status === 'declined' ? 'Book My Medicare: lead declined' : 'Book My Medicare: lead accepted',
+      { body: status === 'declined' ? 'No Marathi-speaking attendant free in this area this week' : `Coordinator ${who.full_name} assigned` });
+    if (['scheduled', 'in_progress', 'completed'].includes(status)) addI(c, tSch, 'system', 'internal', who, `Book My Medicare: visit scheduled ${visit.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}`);
+    if (['in_progress', 'completed'].includes(status)) {
+      addI(c, tStart, 'note', 'internal', who, 'Book My Medicare: service started', { body: 'Nurse / therapist reached on time; family briefed' });
+      addI(c, cap(min(tStart, 240)), 'note', 'internal', who, 'Progress note', { body: pick(['Vitals stable, wound clean', 'Mobility improving, walked 20 m with support', 'Bed installed, patient comfortable', 'Medicines given on schedule']) });
+    }
+    if (done) {
+      addI(c, tDone, 'note', 'internal', who, 'Book My Medicare: service completed', { body: 'Course finished; family satisfied' });
+      addI(c, tDone, 'system', 'internal', null, 'Case closed: all provider services completed');
+      history.push({ case_id: c.id, from_stage: 'enquiry', to_stage: 'closed', changed_by: who.id, changed_at: tDone, note: 'All provider services completed' });
+    }
+    refs.push({ id: uuid(r), case_id: c.id, code: 'BMM', categories: [...new Set(cats)], status, created_at: min(created, 3), updated_at: lastAt,
+      accepted_at: ['accepted', 'scheduled', 'in_progress', 'completed'].includes(status) ? tAcc : null,
+      scheduled_at: ['scheduled', 'in_progress', 'completed'].includes(status) ? visit : null, completed_at: done ? tDone : null,
+      decline_reason: status === 'declined' ? 'No Marathi-speaking attendant free in this area this week' : null,
+      last_note: status === 'new' ? null : 'Updated by ' + who.full_name, assigned_to: status === 'new' ? null : who.id });
+    if (status === 'new') timers.push({ id: uuid(r), workspace_id: ws, policy_key: 'provider_accept', case_id: c.id, complaint_id: null, callback_id: null,
+      started_at: min(created, 3), due_at: min(created, 33), met_at: null, breached_at: null, status: min(created, 33) < now ? 'breached' : 'running' });
+  });
+
   // ---------- write
   patients.forEach((p) => { p.created_at = p.created_at || min(istMidnight(-6), 9 * 60); });
   ins('patients', patients);
   ins('cases', cases);
   ins('case_items', items);
+  for (const f of refs) {
+    out.push(`insert into case_referrals (id, workspace_id, case_id, provider_id, categories, status, auto, assigned_to, scheduled_at, accepted_at, completed_at, decline_reason, last_note, created_at, updated_at) values (${q(f.id)}, ${q(ws)}, ${q(f.case_id)}, (select id from providers where workspace_id = ${q(ws)} and code = ${q(f.code)}), ${q(f.categories)}, ${q(f.status)}, true, ${q(f.assigned_to)}, ${q(f.scheduled_at)}, ${q(f.accepted_at)}, ${q(f.completed_at)}, ${q(f.decline_reason)}, ${q(f.last_note)}, ${q(f.created_at)}, ${q(f.updated_at)});`);
+  }
   ins('case_stage_history', history);
   ins('calls', calls);
   ins('interactions', inter);

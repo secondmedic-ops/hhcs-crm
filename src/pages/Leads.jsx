@@ -1,0 +1,224 @@
+// Provider leads: cases sent to SecondMedic or Book My Medicare by service (lead assignment and transfer).
+// Book My Medicare staff land here and see only their own leads (row-level security); supervisors, coordinators,
+// agents and Hinduja management use it to track every transfer. Recordings are never shown here.
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { db, q, rpc } from '../lib/db.js';
+import { useLoad, useNow } from '../lib/hooks.js';
+import { useAuth } from '../lib/auth.jsx';
+import { num, ago, dateTime } from '../lib/fmt.js';
+import { PageHead, Panel, Kpi, Tabs, Button, Badge, Modal, Field, Input, Textarea, Select, TableSkeleton, Empty, ErrorNote, useAction } from '../components/ui.jsx';
+
+export const REF_STATUS = {
+  new: ['New', 'warn'], accepted: ['Accepted', 'info'], scheduled: ['Scheduled', 'accent'], in_progress: ['In service', 'plum'],
+  completed: ['Completed', 'ok'], declined: ['Declined', 'danger'], cancelled: ['Cancelled', ''],
+};
+export const RefBadge = ({ status }) => { const [l, k] = REF_STATUS[status] || [status, '']; return <Badge kind={k}>{l}</Badge>; };
+const OPEN = ['new', 'accepted', 'scheduled', 'in_progress'];
+const COLS = 'id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,branch,priority,patient_id,patient_name,patient_age,patient_gender,'
+  + 'patient_mobile,caller_name,caller_relation,address,landmark,locality,pincode,services_requested,additional_info,clinical_notes,service_names,'
+  + 'preferred_slot,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,created_at,case_created_at';
+
+// The next steps a lead can take, for whoever may move it.
+const NEXT = {
+  new: [['accepted', 'Accept', 'primary'], ['declined', 'Decline']],
+  accepted: [['scheduled', 'Schedule visit', 'primary'], ['declined', 'Decline']],
+  scheduled: [['in_progress', 'Start service', 'primary'], ['scheduled', 'Reschedule']],
+  in_progress: [['completed', 'Mark completed', 'primary']],
+};
+
+/** Who may move this lead: its own provider's staff, supervisors and Hinduja management. SecondMedic's own leads are not moved
+ *  by hand: they follow the case stages (booking = accepted, deployment = scheduled ... closure = completed). */
+export function canMove(profile, lead) {
+  if (!profile || !lead || lead.provider_code === 'SM') return false;
+  if (profile.role === 'provider') return profile.provider_id === lead.provider_id;
+  return ['supervisor', 'client_manager'].includes(profile.role);
+}
+
+/** Buttons for one lead (also used on the case page). */
+export function LeadActions({ lead, onDone, size = 'xs' }) {
+  const { profile } = useAuth();
+  const [dlg, setDlg] = useState(null);
+  if (!canMove(profile, lead)) return lead?.provider_code === 'SM' && OPEN.includes(lead.status) ? <span className="tiny faint">Follows case stages</span> : null;
+  const steps = NEXT[lead.status] || [];
+  if (!steps.length && !['supervisor', 'client_manager'].includes(profile.role)) return null;
+  return (
+    <>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
+        {steps.map(([to, label, kind]) => <Button key={to + label} size={size} kind={kind} onClick={() => setDlg(to)}>{label}</Button>)}
+        {['completed', 'declined', 'cancelled'].includes(lead.status) && ['supervisor', 'client_manager'].includes(profile.role) &&
+          <Button size={size} onClick={() => setDlg('new')}>Reopen</Button>}
+        {OPEN.includes(lead.status) && ['supervisor', 'client_manager'].includes(profile.role) && lead.provider_code !== 'SM' &&
+          <Button size={size} kind="ghost" onClick={() => setDlg('cancelled')}>Cancel</Button>}
+      </div>
+      {dlg && <LeadStep lead={lead} to={dlg} onClose={() => setDlg(null)} onDone={() => { setDlg(null); onDone?.(); }} />}
+    </>
+  );
+}
+
+const STEP_TITLE = { accepted: 'Accept lead', scheduled: 'Schedule the visit', in_progress: 'Start service', completed: 'Mark service completed',
+  declined: 'Decline lead', cancelled: 'Cancel lead', new: 'Reopen lead' };
+
+function LeadStep({ lead, to, onClose, onDone }) {
+  const [note, setNote] = useState('');
+  const [when, setWhen] = useState(() => {
+    const d = lead.scheduled_at || lead.preferred_slot;
+    if (!d) return '';
+    const t = new Date(new Date(d).getTime() + 5.5 * 3600e3);
+    return t.toISOString().slice(0, 16);
+  });
+  const [run, busy] = useAction();
+  const needWhen = to === 'scheduled';
+  const needNote = to === 'declined' || to === 'cancelled';
+  const ok = (!needWhen || when) && (!needNote || note.trim());
+  const save = () => run(async () => {
+    const iso = when ? new Date(when + ':00+05:30').toISOString() : null;
+    await rpc('update_referral', { p_id: lead.id, p_status: to, p_note: note.trim() || null, p_when: needWhen ? iso : null });
+    onDone();
+  }, STEP_TITLE[to] + ': saved');
+  return (
+    <Modal title={`${STEP_TITLE[to]} · ${lead.case_no}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind={to === 'declined' || to === 'cancelled' ? 'danger' : 'primary'} disabled={!ok || busy} onClick={save}>Save</Button></>}>
+      <div className="small muted mb-8">{lead.patient_name} · {lead.service_names || lead.services_requested || 'Services not listed'}</div>
+      {needWhen && <Field label="Visit date and time (IST)"><Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></Field>}
+      <Field label={needNote ? 'Reason' : 'Progress note (optional)'} hint={needNote ? 'shown to the call centre and supervisor' : 'goes on the patient timeline'} className="mt-12">
+        <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} autoFocus={!needWhen} />
+      </Field>
+    </Modal>
+  );
+}
+
+export default function Leads() {
+  const nav = useNavigate();
+  const now = useNow(30000);
+  const { profile } = useAuth();
+  const isProvider = profile?.role === 'provider';
+  const [tab, setTab] = useState('open');
+  const [provider, setProvider] = useState('');
+  const [branch, setBranch] = useState('');
+  const [open, setOpen] = useState(null);
+
+  const { data, loading, error, reload } = useLoad(async () => {
+    const [rows, providers] = await Promise.all([
+      q(db.from('v_referrals').select(COLS).order('created_at', { ascending: false }).limit(500)),
+      q(db.from('providers').select('id,code,name').order('code', { ascending: false })),
+    ]);
+    return { rows, providers };
+  }, [], ['case_referrals', 'cases']);
+
+  const all = (data?.rows || []).filter((r) => r.status !== 'cancelled' || tab === 'closed')
+    .filter((r) => !provider || r.provider_id === provider).filter((r) => !branch || r.branch === branch);
+  const byTab = {
+    open: all.filter((r) => OPEN.includes(r.status)),
+    new: all.filter((r) => r.status === 'new'),
+    completed: all.filter((r) => r.status === 'completed'),
+    closed: all.filter((r) => ['declined', 'cancelled'].includes(r.status)),
+  };
+  const rows = byTab[tab];
+  const waiting = byTab.new.length;
+  const oldestNew = byTab.new.reduce((m, r) => Math.min(m, new Date(r.created_at).getTime()), Infinity);
+  const doneWeek = all.filter((r) => r.status === 'completed' && r.completed_at && now - new Date(r.completed_at) < 7 * 86400e3).length;
+  const branches = [...new Set((data?.rows || []).map((r) => r.branch).filter(Boolean))].sort();
+  const providerName = isProvider ? data?.providers?.find((p) => p.id === profile.provider_id)?.name : null;
+
+  return (
+    <>
+      <PageHead title={providerName ? `${providerName} · leads` : 'Provider leads'}
+        sub={isProvider ? 'Cases sent to you by the Hinduja call centre: case ID, patient details and requirements. Accept, schedule, add progress notes and complete.'
+          : 'Every case is sent to SecondMedic (ECG, X-ray, blood tests) or Book My Medicare (nursing, physiotherapy, beds, elder care) by its services.'} />
+      <ErrorNote error={error} />
+      <div className="kpis mb-16">
+        <Kpi label="New, waiting to be accepted" value={data && num(waiting)} detail={waiting ? `oldest ${ago(new Date(oldestNew), now)}` : 'none waiting'} tone={waiting ? 'warn' : 'ok'} onClick={() => setTab('new')} />
+        <Kpi label="Open leads" value={data && num(byTab.open.length)} detail="accepted, scheduled or in service" onClick={() => setTab('open')} />
+        <Kpi label="Completed in 7 days" value={data && num(doneWeek)} tone="ok" onClick={() => setTab('completed')} />
+        <Kpi label="Declined or cancelled" value={data && num(byTab.closed.length)} detail="sent back to the call centre" tone={byTab.closed.length ? 'warn' : ''} onClick={() => setTab('closed')} />
+      </div>
+      <Panel tight>
+        <div className="panel-body row wrap" style={{ paddingBottom: 0, justifyContent: 'space-between', gap: 12 }}>
+          <Tabs value={tab} onChange={setTab} tabs={[['open', 'Open', byTab.open.length], ['new', 'New', byTab.new.length], ['completed', 'Completed', byTab.completed.length], ['closed', 'Declined / cancelled', byTab.closed.length]]} />
+          <div className="row" style={{ gap: 8 }}>
+            {!isProvider && <Select value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="All providers" options={(data?.providers || []).map((p) => [p.id, p.name])} />}
+            {branches.length > 0 && <Select value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="All branches" options={branches} />}
+          </div>
+        </div>
+        {loading ? <TableSkeleton rows={6} cols={7} /> : !rows?.length ? (
+          <Empty title={tab === 'new' ? 'No new leads' : 'No leads here'}>{isProvider ? 'New leads appear here the moment the call centre registers a case for your services.' : null}</Empty>
+        ) : (
+          <div className="table-wrap"><table className="t">
+            <thead><tr><th>Case</th><th>Patient</th><th>Services and requirements</th>{!isProvider && <th>Provider</th>}<th>Branch</th><th>Status</th><th>Received</th><th /></tr></thead>
+            <tbody>{rows.map((r) => (
+              <tr key={r.id} className="click" onClick={() => setOpen(r)}>
+                <td className="mono small nowrap">{r.case_no}{r.priority === 'urgent' && <div><Badge kind="danger">Urgent</Badge></div>}</td>
+                <td style={{ maxWidth: 200 }}><div className="small strong truncate">{r.patient_name}</div>
+                  <div className="tiny muted">{[r.patient_age, r.patient_gender].filter(Boolean).join('')}{r.patient_mobile ? ` · ${r.patient_mobile}` : ''}</div></td>
+                <td style={{ maxWidth: 300 }}><div className="small truncate">{r.service_names || r.services_requested || '–'}</div>
+                  {r.additional_info && <div className="tiny muted truncate" title={r.additional_info}>{r.additional_info}</div>}</td>
+                {!isProvider && <td className="small nowrap">{r.provider_name}</td>}
+                <td className="small">{r.branch || <span className="faint">–</span>}</td>
+                <td className="nowrap"><RefBadge status={r.status} />{r.status === 'scheduled' && r.scheduled_at && <div className="tiny muted">{dateTime(r.scheduled_at)}</div>}</td>
+                <td className="small nowrap" title={dateTime(r.created_at)}>{ago(r.created_at, now)}</td>
+                <td className="right nowrap" onClick={(e) => e.stopPropagation()}><LeadActions lead={r} onDone={reload} /></td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        )}
+      </Panel>
+      {open && <LeadDrawer lead={(data?.rows || []).find((x) => x.id === open.id) || open} onClose={() => setOpen(null)} onOpenCase={() => nav(`/cases/${open.case_id}`)} reload={reload} />}
+    </>
+  );
+}
+
+function LeadDrawer({ lead: r, onClose, onOpenCase, reload }) {
+  const { profile } = useAuth();
+  const [note, setNote] = useState('');
+  const [run, busy] = useAction();
+  const tl = useLoad(() => q(db.from('interactions').select('id,channel,summary,body,actor_label,occurred_at').eq('case_id', r.case_id).order('occurred_at', { ascending: false }).limit(50)), [r.case_id], ['interactions']);
+  const addNote = () => run(async () => {
+    await q(db.from('interactions').insert({ workspace_id: profile.workspace_id, case_id: r.case_id, patient_id: r.patient_id, channel: 'note', direction: 'internal',
+      actor_id: profile.id, actor_label: profile.agent_code || profile.full_name, summary: 'Progress note', body: note.trim() }));
+    setNote(''); tl.reload();
+  }, 'Progress note added');
+  const dl = (k, v) => v ? <><dt>{k}</dt><dd className="small">{v}</dd></> : null;
+  return (
+    <Modal wide title={`${r.case_no} · ${r.patient_name}`} onClose={onClose}
+      footer={<><Button onClick={onOpenCase}>Open full case</Button><div className="grow" /><LeadActions lead={r} onDone={reload} size="sm" /></>}>
+      <div className="grid g2" style={{ gap: 16 }}>
+        <div>
+          <div className="row mb-8" style={{ gap: 8 }}><RefBadge status={r.status} /><span className="small muted">{r.provider_name}{r.assigned_name ? ` · ${r.assigned_name}` : ''}</span></div>
+          <dl className="kv">
+            {dl('Patient', [r.patient_name, [r.patient_age, r.patient_gender].filter(Boolean).join('')].filter(Boolean).join(' · '))}
+            {dl('Mobile', r.patient_mobile)}
+            {dl('Caller', [r.caller_name, r.caller_relation].filter(Boolean).join(' · '))}
+            {dl('Address', [r.address, r.landmark, r.locality, r.pincode].filter(Boolean).join(', '))}
+            {dl('Branch', r.branch)}
+            {dl('Services', r.service_names || r.services_requested)}
+            {dl('Requirements', r.additional_info)}
+            {dl('Clinical notes', r.clinical_notes)}
+            {dl('Preferred slot', r.preferred_slot && dateTime(r.preferred_slot))}
+            {dl('Visit', r.scheduled_at && dateTime(r.scheduled_at))}
+            {dl('Declined because', r.decline_reason)}
+          </dl>
+          <div className="tiny faint mt-8">Call recordings are not shared with service providers.</div>
+        </div>
+        <div className="col gap-12">
+          <div className="section-title">Progress notes and history</div>
+          <div className="row" style={{ gap: 6 }}>
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a progress note" className="grow" onKeyDown={(e) => { if (e.key === 'Enter' && note.trim()) addNote(); }} />
+            <Button size="sm" disabled={!note.trim() || busy} onClick={addNote}>Add</Button>
+          </div>
+          {tl.loading ? <TableSkeleton rows={4} cols={1} /> : (
+            <div className="tl">
+              {(tl.data || []).map((i) => (
+                <div key={i.id} className="tl-item" style={{ gridTemplateColumns: '92px 1fr' }}>
+                  <div className="tl-time">{dateTime(i.occurred_at)}</div>
+                  <div className="tl-body"><div className="s small">{i.summary}</div><div className="meta">{i.actor_label || 'System'}</div>
+                    {i.body && <div className="b">{i.body}</div>}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}

@@ -120,7 +120,7 @@ export async function asSystem<T>(sql: Sql, fn: (tx: Tx) => Promise<T>): Promise
  */
 export const SCHEMA: Record<string, string[]> = {
   workspaces: ['id', 'code', 'settings'],
-  profiles: ['id', 'workspace_id', 'full_name', 'email', 'phone', 'role', 'agent_code', 'myoperator_user_id', 'myoperator_extension', 'skills', 'active'],
+  profiles: ['id', 'workspace_id', 'full_name', 'email', 'phone', 'role', 'agent_code', 'myoperator_user_id', 'myoperator_extension', 'skills', 'active', 'provider_id'],
   patients: ['id', 'workspace_id', 'mobile', 'email', 'full_name'],
   cases: ['id', 'workspace_id', 'patient_id', 'case_no', 'stage', 'caller_mobile', 'ai_brief', 'created_at'],
   calls: ['id', 'workspace_id', 'provider', 'session_id', 'provider_call_id', 'direction', 'customer_number', 'did_number', 'agent_id',

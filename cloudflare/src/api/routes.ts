@@ -17,7 +17,7 @@ export interface Route {
   summary?: string;
 }
 
-const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
+const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider'];
 const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
 const RECORDINGS: readonly Role[] = ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'];
 const AI_CALLS: readonly Role[] = ['supervisor', 'coordinator', 'agent', 'client_manager'];

@@ -64,7 +64,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -84,7 +85,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -104,7 +106,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -124,7 +127,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -144,7 +148,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -245,7 +250,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -265,7 +271,8 @@
           "medical_desk",
           "client_manager",
           "client_clinical",
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {
@@ -402,7 +409,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "zones": [
       "agent",
@@ -412,7 +420,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "profiles": [
       "agent",
@@ -422,7 +431,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "services": [
       "agent",
@@ -432,7 +442,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "templates": [
       "agent",
@@ -442,7 +453,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "sla_policies": [
       "agent",
@@ -452,7 +464,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "escalation_matrix": [
       "agent",
@@ -462,7 +475,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "patients": [
       "agent",
@@ -472,7 +486,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "cases": [
       "agent",
@@ -482,7 +497,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "case_items": [
       "agent",
@@ -492,7 +508,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "case_stage_history": [
       "agent",
@@ -502,7 +519,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "calls": [
       "agent",
@@ -512,7 +530,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "interactions": [
       "agent",
@@ -522,7 +541,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "callbacks": [
       "agent",
@@ -532,7 +552,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "approvals": [
       "agent",
@@ -542,7 +563,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "sla_timers": [
       "agent",
@@ -552,7 +574,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "complaints": [
       "agent",
@@ -562,7 +585,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "escalations": [
       "agent",
@@ -572,7 +596,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "assignments": [
       "agent",
@@ -582,7 +607,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "samples": [
       "agent",
@@ -592,7 +618,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "payments": [
       "agent",
@@ -602,7 +629,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "qa_reviews": [
       "agent",
@@ -612,7 +640,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "notifications": [
       "agent",
@@ -622,7 +651,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "inbound_emails": [
       "agent",
@@ -632,7 +662,41 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
+    ],
+    "providers": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "case_referrals": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "v_referrals": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
     ],
     "mis_snapshots": [
       "supervisor",
@@ -664,7 +728,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_patients": [
       "agent",
@@ -674,7 +739,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_calls": [
       "agent",
@@ -684,7 +750,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_callbacks": [
       "agent",
@@ -694,7 +761,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_assignments": [
       "agent",
@@ -704,7 +772,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_escalations": [
       "agent",
@@ -714,7 +783,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_approvals": [
       "agent",
@@ -724,7 +794,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "v_complaints": [
       "agent",
@@ -734,7 +805,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ]
   },
   "x-tables-write": {
@@ -774,7 +846,8 @@
         "medical_desk",
         "field_staff",
         "client_manager",
-        "client_clinical"
+        "client_clinical",
+        "provider"
       ],
       "update": [
         "supervisor",
@@ -802,7 +875,8 @@
         "coordinator",
         "supervisor",
         "medical_desk",
-        "field_staff"
+        "field_staff",
+        "provider"
       ]
     },
     "notifications": {
@@ -814,7 +888,14 @@
         "medical_desk",
         "client_manager",
         "client_clinical",
-        "admin"
+        "admin",
+        "provider"
+      ]
+    },
+    "providers": {
+      "update": [
+        "admin",
+        "client_manager"
       ]
     },
     "patients": {
@@ -834,7 +915,8 @@
         "medical_desk",
         "client_manager",
         "client_clinical",
-        "admin"
+        "admin",
+        "provider"
       ]
     },
     "qa_reviews": {
@@ -996,6 +1078,23 @@
       "admin",
       "supervisor"
     ],
+    "update_referral": [
+      "provider",
+      "supervisor",
+      "client_manager",
+      "coordinator"
+    ],
+    "refer_case": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "client_manager"
+    ],
+    "import_cases": [
+      "supervisor",
+      "client_manager"
+    ],
     "case_gates": [
       "agent",
       "coordinator",
@@ -1004,7 +1103,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "render_template": [
       "agent",
@@ -1024,7 +1124,8 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin"
+      "admin",
+      "provider"
     ],
     "dashboard_kpis": [
       "agent",

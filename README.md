@@ -43,6 +43,10 @@ Everything is entered in CareDesk itself: **Settings > Telephony & integrations*
 
 Values saved in the app win over the `MYOPERATOR_*` GitHub secrets; clearing one falls back to the secret. Credentials are kept in a table only the Worker's system connection can read, and the screen only ever gets their last 4 characters. The event log on the same page shows every call event with its raw content, so the first real test call can be checked field by field.
 
+## Service providers (lead assignment)
+
+Every case goes to its provider by its services: **SecondMedic** (ECG, X-ray, blood tests) and **Book My Medicare** (nursing, physiotherapy, hospital beds, elder care, other home care). A mixed case goes to both. The provider sees the case ID, patient details, address and requirements on **Provider leads**, never call recordings. Book My Medicare staff log in with the role *Service provider* (Settings > Users, pick the provider) and accept, schedule, start and complete their leads, adding progress notes; a case served only by Book My Medicare closes when its lead is completed. SecondMedic's lead follows the normal case stages. Call centre agents choose the Hinduja branch (Khar / Mahim) on every enquiry. **Settings > Import from old CRM** brings in the previous Hinduja CRM from Excel or CSV.
+
 ## What is in it
 
 | # | Hinduja requirement (deck slides 3-4) | Where |

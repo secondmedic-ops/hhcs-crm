@@ -13,7 +13,7 @@ import {
 } from '../components/ui.jsx';
 
 const LIMIT = 200;
-const COLS = 'id,case_no,patient_id,patient_name,patient_age,patient_gender,service_names,services_requested,stage,priority,zone_name,sla_state,next_sla_due,next_sla_key,total,owner_id,owner_code,owner_name,created_at,source_channel,quote_status,payment_status,open_escalations,open_complaints';
+const COLS = 'id,case_no,patient_id,patient_name,patient_age,patient_gender,service_names,services_requested,stage,priority,zone_name,sla_state,next_sla_due,next_sla_key,total,owner_id,owner_code,owner_name,created_at,source_channel,quote_status,payment_status,open_escalations,open_complaints,branch,provider_names';
 
 const VIEWS = [
   ['open', 'All open'], ['mine', 'My cases'], ['attention', 'Needs attention'], ['urgent', 'Urgent'],
@@ -192,7 +192,7 @@ export default function Cases() {
               <div className="table-wrap cs-table">
                 <table className="t">
                   <thead><tr>
-                    <th>Case</th><th>Patient</th><th>Services</th><th>Stage</th><th>Zone</th><th>SLA · next deadline</th><th className="num">Total</th><th>Owner</th><th>Created</th>
+                    <th>Case</th><th>Patient</th><th>Services · provider</th><th>Stage</th><th>Branch · zone</th><th>SLA · next deadline</th><th className="num">Total</th><th>Owner</th><th>Created</th>
                   </tr></thead>
                   <tbody>{rows.map((r) => (
                     <tr key={r.id} className="click" onClick={() => nav(`/cases/${r.id}`)}>
@@ -201,9 +201,10 @@ export default function Cases() {
                         <div className="truncate strong">{r.patient_name}</div>
                         <div className="tiny muted">{ageGender(r) || '–'} · {CHANNEL_LABEL[r.source_channel] || r.source_channel}</div>
                       </td>
-                      <td style={{ maxWidth: 210 }}><div className="truncate small" title={r.service_names || r.services_requested || ''}>{r.service_names || r.services_requested || <span className="faint">–</span>}</div></td>
+                      <td style={{ maxWidth: 210 }}><div className="truncate small" title={r.service_names || r.services_requested || ''}>{r.service_names || r.services_requested || <span className="faint">–</span>}</div>
+                        {r.provider_names && <div className="tiny muted truncate">{r.provider_names}</div>}</td>
                       <td><div className="row wrap gap-4"><StageBadge stage={r.stage} /><PriorityBadge p={r.priority} />{r.quote_status === 'pending_approval' && <Badge kind="warn" title="Discount awaiting Hinduja approval">Approval</Badge>}</div></td>
-                      <td className="nowrap">{r.zone_name || <span className="faint">–</span>}</td>
+                      <td className="nowrap">{r.branch && <div className="small">{r.branch}</div>}<div className={r.branch ? 'tiny muted' : ''}>{r.zone_name || <span className="faint">–</span>}</div></td>
                       <td><div className="cs-sla"><SlaBadge state={r.sla_state} />{r.next_sla_due && <Countdown due={r.next_sla_due} label={r.next_sla_key} />}</div></td>
                       <td className="num">{inr(r.total)}</td>
                       <td className="mono small" title={r.owner_name || ''}>{r.owner_code || r.owner_name || '–'}</td>

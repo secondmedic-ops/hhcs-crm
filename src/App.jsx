@@ -11,6 +11,7 @@ import { Terms, Privacy } from './pages/Legal.jsx';
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Console = lazy(() => import('./pages/Console.jsx'));
 const Cases = lazy(() => import('./pages/Cases.jsx'));
+const Leads = lazy(() => import('./pages/Leads.jsx'));
 const CaseDetail = lazy(() => import('./pages/CaseDetail.jsx'));
 const Callbacks = lazy(() => import('./pages/Callbacks.jsx'));
 const Calls = lazy(() => import('./pages/Calls.jsx'));
@@ -63,6 +64,7 @@ function Routed() {
         <Route element={<Shell />}>
           <Route index element={profile && homeFor(profile.role) !== '/' ? <Navigate to={homeFor(profile.role)} replace /> : g('/', <Dashboard />)} />
           <Route path="console" element={g('/console', <Console />)} />
+          <Route path="leads" element={g('/leads', <Leads />)} />
           <Route path="cases" element={g('/cases', <Cases />)} />
           <Route path="cases/:id" element={g('/cases', <CaseDetail />)} />
           <Route path="callbacks" element={g('/callbacks', <Callbacks />)} />

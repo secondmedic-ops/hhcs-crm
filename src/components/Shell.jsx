@@ -10,7 +10,7 @@ import { Avatar, Button, Badge, useToast } from './ui.jsx';
 import { DEMO_USERS } from '../demo/seed.js';
 
 const GROUPS = [
-  ['Operate', ['/', '/console', '/cases', '/callbacks', '/calls', '/patients', '/field', '/my-visits']],
+  ['Operate', ['/', '/leads', '/console', '/cases', '/callbacks', '/calls', '/patients', '/field', '/my-visits']],
   ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
   ['Configure', ['/settings']],
 ];
@@ -24,9 +24,10 @@ export default function Shell() {
   useEffect(() => setMenu(false), [loc.pathname]);
 
   const counts = useLoad(async () => {
+    const sees = (to) => NAV.some((n) => n.to === to && n.roles.includes(profile?.role));   // only badges this role has menu items for
     const [a, e] = await Promise.all([
-      q(db.from('approvals').select('id', { count: 'exact', head: true }).eq('status', 'pending')).catch(() => 0),
-      q(db.from('escalations').select('id', { count: 'exact', head: true }).neq('status', 'resolved')).catch(() => 0),
+      sees('/approvals') ? q(db.from('approvals').select('id', { count: 'exact', head: true }).eq('status', 'pending')).catch(() => 0) : 0,
+      sees('/escalations') ? q(db.from('escalations').select('id', { count: 'exact', head: true }).neq('status', 'resolved')).catch(() => 0) : 0,
     ]);
     return { approvals: a, escalations: e };
   }, [profile?.id], ['approvals', 'escalations']);

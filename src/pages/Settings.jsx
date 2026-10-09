@@ -9,12 +9,12 @@ import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { inr, dateTime, ago, ROLE_LABEL } from '../lib/fmt.js';
 import {
-  PageHead, Panel, Tabs, Badge, Button, Modal, Drawer, Field, Input, Select, Textarea, Check, Segmented,
+  PageHead, Panel, Tabs, Badge, Button, Modal, Drawer, Field, Input, Select, Textarea, Check, Segmented, Kpi,
   TableSkeleton, Skeleton, Empty, ErrorNote, useAction, useToast,
 } from '../components/ui.jsx';
 import Icon from '../components/icons.jsx';
 
-const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
+const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider'];
 const TABS = [
   ['profile', 'Profile & security', ALL],
   ['workspace', 'Workspace', ['client_manager', 'admin']],
@@ -25,9 +25,10 @@ const TABS = [
   ['zones', 'Zones', ['supervisor', 'admin']],
   ['users', 'Users', ['admin', 'supervisor']],
   ['telephony', 'Telephony & integrations', ['admin', 'supervisor']],
+  ['import', 'Import from old CRM', ['supervisor', 'client_manager']],
   ['data', 'Data & exit', ['client_manager']],
 ];
-const CAT = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', other: 'Other' };
+const CAT = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home care', other: 'Other' };
 const KIND = { script: 'Call script', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email' };
 const T_STATUS = { approved: 'ok', pending: 'warn', draft: 'info', retired: '' };
 const ESC_TYPE = { clinical: 'Clinical', emergency: 'Emergency', delay: 'Field delay', complaint: 'Complaint', privacy: 'Privacy / data' };
@@ -53,6 +54,7 @@ export default function Settings() {
       {tab === 'zones' && <ZonesTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'telephony' && <TelephonyTab />}
+      {tab === 'import' && <ImportTab />}
       {tab === 'data' && <DataTab />}
     </>
   );
@@ -581,6 +583,8 @@ function UsersTab() {
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState(null);
   const u = useLoad(() => q(db.from('profiles').select('*').order('role').order('full_name')), [], ['profiles']);
+  const prov = useLoad(() => q(db.from('providers').select('id,code,name').order('code', { ascending: false })), []);
+  const provName = (id) => (prov.data || []).find((p) => p.id === id)?.name;
   const rows = (u.data || []).filter((x) => !role || x.role === role);
   return (
     <>
@@ -593,7 +597,7 @@ function UsersTab() {
             <tbody>{rows.map((x) => (
               <tr key={x.id} className={x.active ? '' : 'muted'}>
                 <td><div>{x.full_name}</div><div className="tiny muted">{x.email || x.phone || '–'}</div></td>
-                <td className="small nowrap">{ROLE_LABEL[x.role]}</td>
+                <td className="small nowrap">{ROLE_LABEL[x.role]}{x.provider_id && <div className="tiny muted">{provName(x.provider_id)}</div>}</td>
                 <td className="mono small">{dash(x.agent_code)}</td>
                 <td className="mono small">{dash(x.myoperator_user_id)}</td>
                 <td className="mono small">{dash(x.myoperator_extension)}</td>
@@ -607,24 +611,25 @@ function UsersTab() {
         ) : <Empty title="No users for this role" />}
       </Panel>
       {!admin && <div className="small muted mt-8">Read-only. The platform admin creates users and changes roles; quarterly access reviews use this list.</div>}
-      {add && <UserForm onClose={() => setAdd(false)} onSaved={() => { setAdd(false); u.reload(); }} />}
-      {edit && <UserForm u={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); u.reload(); }} />}
+      {add && <UserForm providers={prov.data || []} onClose={() => setAdd(false)} onSaved={() => { setAdd(false); u.reload(); }} />}
+      {edit && <UserForm providers={prov.data || []} u={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); u.reload(); }} />}
     </>
   );
 }
 
-function UserForm({ u, onClose, onSaved }) {
+function UserForm({ u, onClose, onSaved, providers = [] }) {
   const isNew = !u;
   const [f, setF] = useState({
     email: u?.email || '', password: '', full_name: u?.full_name || '', role: u?.role || 'agent', phone: u?.phone || '', agent_code: u?.agent_code || '',
     myoperator_user_id: u?.myoperator_user_id || '', myoperator_extension: u?.myoperator_extension || '', skills: (u?.skills || []).join(', '), active: u?.active ?? true,
+    provider_id: u?.provider_id || '',
   });
   const [run, busy] = useAction();
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
-  const ok = f.full_name.trim() && (!isNew || (/\S+@\S+\.\S+/.test(f.email) && f.password.length >= 10));
+  const ok = f.full_name.trim() && (f.role !== 'provider' || f.provider_id) && (!isNew || (/\S+@\S+\.\S+/.test(f.email) && f.password.length >= 10));
   const save = () => run(async () => {
     const base = { full_name: f.full_name.trim(), role: f.role, agent_code: f.agent_code.trim() || null, myoperator_user_id: f.myoperator_user_id.trim() || null,
-      myoperator_extension: f.myoperator_extension.trim() || null, skills: list(f.skills) };
+      myoperator_extension: f.myoperator_extension.trim() || null, skills: list(f.skills), provider_id: f.role === 'provider' ? f.provider_id : null };
     if (isNew) await createUser({ ...base, email: f.email.trim(), password: f.password, phone: f.phone.trim() || null });
     else await q(db.from('profiles').update({ ...base, phone: f.phone.trim() || null, active: f.active }).eq('id', u.id));
     onSaved();
@@ -636,6 +641,7 @@ function UserForm({ u, onClose, onSaved }) {
         {isNew && <Field label="Email" hint="sign-in id"><Input type="email" value={f.email} onChange={set('email')} /></Field>}
         {isNew && <Field label="Temporary password" hint="10+ characters"><Input type="text" className="mono" value={f.password} onChange={set('password')} autoComplete="new-password" /></Field>}
         <Field label="Role"><Select value={f.role} onChange={set('role')} options={ALL.map((r) => [r, ROLE_LABEL[r]])} /></Field>
+        {f.role === 'provider' && <Field label="Provider" hint="sees only this provider's leads"><Select value={f.provider_id} onChange={set('provider_id')} placeholder="Pick provider" options={providers.map((p) => [p.id, p.name])} /></Field>}
         <Field label="Phone"><Input className="mono" value={f.phone} onChange={set('phone')} /></Field>
         <Field label="Agent code" hint="e.g. A-12"><Input className="mono" value={f.agent_code} onChange={set('agent_code')} /></Field>
         <Field label="Skills" hint="phlebotomy, xray, ecg"><Input value={f.skills} onChange={set('skills')} /></Field>
@@ -838,6 +844,127 @@ function TelephonyTab() {
           </table></div>
         ) : <Empty title="No webhook events yet">Events appear as soon as MyOperator posts the first call.</Empty>}
       </Panel>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ import from the old Hinduja CRM
+// Excel / CSV from the previous CRM -> patients and cases. Column names are matched loosely (e.g. "Phone",
+// "Contact No" -> mobile). Each row gets a new CareDesk Case ID; the old ID is kept, so importing the same file
+// again skips rows already in. Done in steps of 200 rows; errors are listed by row number.
+const IMPORT_FIELDS = [
+  ['ref', 'Old case / lead ID', ['ref', 'oldid', 'caseid', 'leadid', 'enquiryid', 'ticketid', 'id', 'srno', 'caseno', 'leadno']],
+  ['patient_name', 'Patient name', ['patientname', 'patient', 'name', 'customername', 'clientname', 'fullname']],
+  ['mobile', 'Mobile', ['mobile', 'mobileno', 'mobilenumber', 'phone', 'phoneno', 'phonenumber', 'contact', 'contactno', 'contactnumber']],
+  ['alt_mobile', 'Alternate mobile', ['alternatemobile', 'altmobile', 'alternatenumber', 'alternatephone', 'mobile2', 'phone2']],
+  ['email', 'Email', ['email', 'emailid', 'mail']],
+  ['age', 'Age', ['age']],
+  ['gender', 'Gender', ['gender', 'sex']],
+  ['address', 'Address', ['address', 'patientaddress', 'fulladdress']],
+  ['locality', 'Locality', ['locality', 'area', 'location']],
+  ['pincode', 'Pincode', ['pincode', 'pin', 'zip', 'postalcode']],
+  ['branch', 'Branch', ['branch', 'hospital', 'hospitalbranch', 'centre', 'center']],
+  ['services', 'Services', ['services', 'service', 'servicerequired', 'servicetype', 'requirementtype', 'test', 'tests', 'category']],
+  ['requirements', 'Requirements', ['requirements', 'requirement', 'remarks', 'additionalinfo', 'additionalinformation', 'description', 'details']],
+  ['notes', 'Notes / history', ['notes', 'note', 'comments', 'comment', 'progress', 'progressnotes', 'history', 'followup']],
+  ['status', 'Status', ['status', 'stage', 'leadstatus', 'casestatus']],
+  ['date', 'Date', ['date', 'createdon', 'createdat', 'created', 'enquirydate', 'leaddate', 'registrationdate']],
+];
+const normHead = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const cellText = (v) => (v == null ? '' : v instanceof Date ? v.toISOString() : String(v).trim());
+
+function ImportTab() {
+  const [file, setFile] = useState(null);       // { name, rows, map, unmapped }
+  const [res, setRes] = useState(null);         // { imported, skipped, errors, done, total }
+  const [run, busy] = useAction();
+  const template = () => {
+    const ws = XLSX.utils.json_to_sheet([
+      { 'Old ID': 'HHC-OLD-1001', 'Patient name': 'Asha Mehta', Mobile: '9820012345', Age: 78, Gender: 'F', Address: '12 Carter Road, Bandra West', Pincode: '400050',
+        Branch: 'Khar', Services: 'Nursing care, physiotherapy', Requirements: 'Female nurse, 12-hour day shift', Notes: 'Started 1 Aug; family prefers WhatsApp', Status: 'Open', Date: '2026-08-01' },
+      { 'Old ID': 'HHC-OLD-1002', 'Patient name': 'Ravi Kulkarni', Mobile: '9820054321', Age: 64, Gender: 'M', Address: 'Mahim Causeway', Pincode: '400016',
+        Branch: 'Mahim', Services: 'ECG at home', Requirements: '', Notes: 'Report shared', Status: 'Completed', Date: '2026-07-20' },
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Cases');
+    XLSX.writeFile(wb, 'CareDesk-import-template.xlsx');
+  };
+  const read = async (f) => {
+    setRes(null);
+    if (!f) return;
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+    const heads = raw.length ? Object.keys(raw[0]) : [];
+    const map = {};
+    for (const [key, , aliases] of IMPORT_FIELDS) {
+      const h = heads.find((x) => aliases.includes(normHead(x))) || heads.find((x) => aliases.some((a) => a.length > 3 && normHead(x).includes(a)));
+      if (h && !Object.values(map).includes(h)) map[key] = h;
+    }
+    const rows = raw.map((r) => Object.fromEntries(Object.entries(map).map(([k, h]) => [k, cellText(r[h])])))
+      .filter((r) => Object.values(r).some(Boolean));
+    setFile({ name: f.name, rows, map, unmapped: heads.filter((h) => !Object.values(map).includes(h)) });
+  };
+  const go = () => run(async () => {
+    const total = file.rows.length;
+    const acc = { imported: 0, skipped: 0, errors: [], done: 0, total };
+    setRes({ ...acc });
+    for (let i = 0; i < total; i += 200) {
+      const chunk = file.rows.slice(i, i + 200);
+      const r = await rpc('import_cases', { p_rows: chunk });
+      acc.imported += r.imported; acc.skipped += r.skipped;
+      acc.errors.push(...(r.errors || []).map((e) => ({ ...e, row: e.row + i + 1 })));   // +1: header row in the file
+      acc.done = Math.min(total, i + chunk.length);
+      setRes({ ...acc });
+    }
+  }, 'Import finished');
+  const missing = file ? ['patient_name'].filter((k) => !file.map[k]).concat(!file.map.mobile && !file.map.ref ? ['mobile or old ID'] : []) : [];
+  return (
+    <div className="col gap-12">
+      <Panel title="Import from the previous Hinduja CRM" sub="Excel or CSV export of patients and cases. Each row becomes a case with a new CareDesk Case ID; the old ID is kept on the case.">
+        <ol className="st-steps small">
+          <li>Export the old CRM's cases to Excel or CSV, one row per case. Column names do not have to match exactly. <Button size="xs" kind="ghost" icon="download" onClick={template}>Download template</Button></li>
+          <li>Choose the file. CareDesk shows which columns it recognised and a preview.</li>
+          <li>Import. Rows with a mobile number join the existing patient; services (nursing, ECG, ...) send each case to its provider; closed and cancelled cases keep their status. Importing the same file again skips rows already in.</li>
+        </ol>
+        <div className="row mt-12" style={{ gap: 8 }}>
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => read(e.target.files?.[0]).catch((err) => setFile({ error: err.message }))} />
+        </div>
+        {file?.error && <ErrorNote error={`Could not read the file: ${file.error}`} />}
+      </Panel>
+      {file?.rows && (
+        <Panel tight title={`${file.name} · ${file.rows.length.toLocaleString('en-IN')} rows`}
+          actions={<Button kind="primary" disabled={busy || !file.rows.length || missing.length > 0 || (res && res.done === res.total)} onClick={go}>{busy ? 'Importing' : `Import ${file.rows.length.toLocaleString('en-IN')} rows`}</Button>}>
+          <div className="panel-body">
+            <div className="row wrap" style={{ gap: 6 }}>
+              {IMPORT_FIELDS.map(([k, label]) => file.map[k]
+                ? <Badge key={k} kind="ok" title={`from column "${file.map[k]}"`}>{label} ← {file.map[k]}</Badge>
+                : <Badge key={k} kind={k === 'patient_name' ? 'danger' : ''}>{label}: not found</Badge>)}
+            </div>
+            {file.unmapped.length > 0 && <div className="tiny muted mt-8">Not imported (no matching field): {file.unmapped.join(', ')}. Rename a column to one of the names above to include it.</div>}
+            {missing.length > 0 && <div className="small danger-text mt-8">Needed before importing: {missing.join(', ')}.</div>}
+          </div>
+          <div className="table-wrap"><table className="t compact">
+            <thead><tr><th>#</th>{IMPORT_FIELDS.filter(([k]) => file.map[k]).map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
+            <tbody>{file.rows.slice(0, 8).map((r, i) => (
+              <tr key={i}><td className="mono tiny">{i + 2}</td>{IMPORT_FIELDS.filter(([k]) => file.map[k]).map(([k]) => <td key={k} className="small truncate" style={{ maxWidth: 180 }}>{r[k] || <span className="faint">–</span>}</td>)}</tr>
+            ))}</tbody>
+          </table></div>
+          {file.rows.length > 8 && <div className="tiny faint panel-body">First 8 of {file.rows.length} rows shown.</div>}
+        </Panel>
+      )}
+      {res && (
+        <Panel title="Result" sub={res.done < res.total ? `Importing ${res.done} of ${res.total}...` : `Done: ${res.total} rows read`}>
+          <div className="kpis">
+            <Kpi label="Imported" value={res.imported} tone="ok" />
+            <Kpi label="Already in (skipped)" value={res.skipped} />
+            <Kpi label="Rows with errors" value={res.errors.length} tone={res.errors.length ? 'warn' : ''} />
+          </div>
+          {res.errors.length > 0 && (
+            <table className="t compact mt-12"><thead><tr><th>File row</th><th>Old ID</th><th>Problem</th></tr></thead>
+              <tbody>{res.errors.slice(0, 200).map((e) => <tr key={e.row}><td className="mono">{e.row}</td><td className="mono small">{e.ref || '–'}</td><td className="small">{e.message}</td></tr>)}</tbody></table>
+          )}
+        </Panel>
+      )}
     </div>
   );
 }

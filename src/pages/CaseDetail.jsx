@@ -11,12 +11,13 @@ import {
 } from '../lib/fmt.js';
 import Icon, { channelIcon } from '../components/icons.jsx';
 import { useCalls, LiveCallBar } from '../components/CallCenter.jsx';
+import { LeadActions, RefBadge } from './Leads.jsx';
 import {
   Panel, Button, Badge, StageBadge, SlaBadge, PriorityBadge, Countdown, AiTag, Tabs, Modal, Field, Input, Select, Textarea,
   Segmented, Confirm, Empty, TableSkeleton, Skeleton, ErrorNote, useToast, useAction,
 } from '../components/ui.jsx';
 
-const LIVE = ['cases', 'interactions', 'case_items', 'assignments', 'samples', 'payments', 'approvals', 'escalations', 'complaints', 'calls'];
+const LIVE = ['cases', 'interactions', 'case_items', 'assignments', 'samples', 'payments', 'approvals', 'escalations', 'complaints', 'calls', 'case_referrals'];
 const DASH = '–';
 const QUOTE_KIND = { draft: ['', 'Draft'], pending_approval: ['warn', 'Awaiting approval'], approved: ['ok', 'Approved'], rejected: ['danger', 'Rejected'], sent: ['accent', 'Sent'] };
 const PAY_KIND = { unpaid: ['', 'Unpaid'], partial: ['warn', 'Part paid'], paid: ['accent', 'Paid, not reconciled'], reconciled: ['ok', 'Reconciled'], refund: ['danger', 'Refund'], waived: ['info', 'Waived'] };
@@ -24,7 +25,7 @@ const ASG_KIND = { assigned: 'info', en_route: 'warn', checked_in: 'accent', com
 const ASG_LABEL = { assigned: 'Assigned', en_route: 'En route', checked_in: 'Checked in', completed: 'Completed', cancelled: 'Cancelled', reassigned: 'Reassigned' };
 const TASK_LABEL = { phlebotomy: 'Phlebotomy', xray: 'Portable X-ray', ecg: 'ECG', visit: 'Visit' };
 const CAT_TASK = { lab: 'phlebotomy', ecg: 'ecg', xray: 'xray' };
-const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge', other: 'Other' };
+const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Home care', other: 'Other' };
 const HOPS = [
   ['collected_at', 'Collected'], ['handover_at', 'Handover'], ['dispatched_at', 'Dispatched'], ['transport_temp_c', 'Temp'],
   ['received_at', 'Received at lab'], ['accessioned_at', 'Accessioned'], ['report_released_at', 'Report released'], ['delivered_at', 'Delivered'],
@@ -64,6 +65,7 @@ export default function CaseDetail() {
   const calls = L(() => q(db.from('v_calls').select('id,direction,status,started_at,ring_seconds,talk_seconds,agent_label,has_recording,ai_summary,ai_sentiment,ai_flags,disposition').eq('case_id', id).order('started_at', { ascending: false })));
   const escs = L(() => q(db.from('v_escalations').select('*').eq('case_id', id).order('raised_at', { ascending: false })));
   const cmps = L(() => q(db.from('v_complaints').select('*').eq('case_id', id).order('opened_at', { ascending: false })));
+  const refs = L(() => q(db.from('v_referrals').select('id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,service_names,services_requested,patient_name,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,preferred_slot,created_at').eq('case_id', id).order('created_at')));
   const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours').is('active', true).order('category').order('price')), []);
   const templates = useLoad(() => q(db.from('templates').select('id,kind,code,title,body,status,version').eq('status', 'approved').order('code')), []);
   const people = useLoad(() => q(db.from('profiles').select('id,full_name,role,skills,on_duty,agent_code,zone_id').in('role', ['coordinator', 'field_staff']).is('active', true).order('full_name')), []);
@@ -118,6 +120,7 @@ export default function CaseDetail() {
           </div>
           <div className="cd-meta">
             <span><strong>{c.patient_name}</strong>{ageGender(c) && <span className="muted"> · {ageGender(c)}</span>}</span>
+            {c.branch && <span><span className="muted">Branch</span> {c.branch}</span>}
             <span className="muted">{c.zone_name || 'Zone not mapped'}</span>
             <span><span className="muted">Owner</span> {c.owner_name || DASH}{c.owner_code ? <span className="mono muted"> {c.owner_code}</span> : null}</span>
             <span><span className="muted">Coordinator</span> {c.coordinator_name || DASH}</span>
@@ -161,25 +164,27 @@ export default function CaseDetail() {
       )}
 
       {/* ---------- stepper */}
-      <Stepper c={c} hist={hrows} loading={hist.loading} cancelledFrom={cancelledFrom} />
+      {!can('provider') && <Stepper c={c} hist={hrows} loading={hist.loading} cancelledFrom={cancelledFrom} />}
 
       <div className="grid g-main-side mt-12 cd-grid">
         <div className="col gap-12 cd-main">
-          <GateCard c={c} gates={gates} canAct={canAct} />
+          {!can('provider') && <GateCard c={c} gates={gates} canAct={canAct} />}
           <ServicesQuote c={c} items={items} services={services.data || []} templates={tpl} approvals={appr.data || []} canAct={canAct} band={workspace?.discount_band_pct} />
           {phase >= 2 && <Booking c={c} coordinators={(people.data || []).filter((p) => p.role === 'coordinator')} templates={tpl} canAct={canAct} me={profile} />}
           {phase >= 2 && <FieldPanel c={c} items={items.data || []} asg={asg} staff={(people.data || []).filter((p) => p.role === 'field_staff')} canDispatch={canDispatch && open} />}
           {(phase >= 3 || (samples.data || []).length > 0) && <LabPanel c={c} samples={samples} canAct={canAct && open} />}
           {(phase >= 2 || (pays.data || []).length > 0) && <PaymentPanel c={c} pays={pays} canAct={canAct && open} canReconcile={can('supervisor', 'coordinator')} allowCash={!!workspace?.settings?.allow_cash} />}
           {(c.stage === 'closure' || c.feedback_rating != null) && <Feedback c={c} canAct={canAct && c.stage === 'closure'} />}
-          <BottomTabs c={c} inter={inter} calls={calls} escs={escs} cmps={cmps} ids={[...(pays.data || []), ...(asg.data || []), ...(samples.data || []), ...(escs.data || []), ...(cmps.data || []), ...(appr.data || [])].map((x) => x.id)} canNote={canAct} />
+          <BottomTabs c={c} inter={inter} calls={calls} escs={escs} cmps={cmps} ids={[...(pays.data || []), ...(asg.data || []), ...(samples.data || []), ...(escs.data || []), ...(cmps.data || []), ...(appr.data || [])].map((x) => x.id)} canNote={canAct || can('provider')} />
         </div>
 
         <div className="col gap-12 cd-side">
-          <BriefCard c={c} brief={brief} canAct={canAct} />
+          {!can('provider') && <BriefCard c={c} brief={brief} canAct={canAct} />}
+          <ProvidersPanel c={c} refs={refs} canRefer={(canAct || can('client_manager')) && open} />
+          <RequirementsPanel c={c} canEdit={canAct && open} branches={workspace?.settings?.branches || []} />
           <PatientPanel c={c} canAct={canAct && open} />
-          <SlaPanel timers={timers} />
-          <OpenItems c={c} gates={gates.data} escs={escs.data} cmps={cmps.data} appr={appr.data} pays={pays.data} phase={phase} />
+          {!can('provider') && <SlaPanel timers={timers} />}
+          {!can('provider') && <OpenItems c={c} gates={gates.data} escs={escs.data} cmps={cmps.data} appr={appr.data} pays={pays.data} phase={phase} />}
         </div>
       </div>
 
@@ -316,6 +321,74 @@ function BriefCard({ c, brief, canAct }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* =========================================================== providers and requirements */
+
+function ProvidersPanel({ c, refs, canRefer }) {
+  const [pick, setPick] = useState('');
+  const [note, setNote] = useState('');
+  const [run, busy] = useAction();
+  const providers = useLoad(() => (canRefer ? q(db.from('providers').select('id,code,name').is('active', true).order('code', { ascending: false })) : []), [canRefer]);
+  const rows = refs.data || [];
+  const others = (providers.data || []).filter((p) => !rows.some((r) => r.provider_id === p.id && !['cancelled', 'declined'].includes(r.status)));
+  const send = () => run(async () => { await rpc('refer_case', { p_case: c.id, p_provider: pick, p_note: note.trim() || null }); setPick(''); setNote(''); refs.reload(); }, 'Lead sent');
+  return (
+    <Panel title="Providers" sub="Who delivers this case. Shared: case ID, patient details, requirements. Never recordings.">
+      {refs.loading ? <Skeleton lines={2} /> : rows.length ? (
+        <div className="col gap-12">
+          {rows.map((r) => (
+            <div key={r.id} className="col gap-4">
+              <div className="row between"><strong className="small">{r.provider_name}</strong><RefBadge status={r.status} /></div>
+              <div className="tiny muted">{r.service_names || (r.categories || []).join(', ') || 'Sent by hand'}{r.assigned_name ? ` · ${r.assigned_name}` : ''}</div>
+              {r.scheduled_at && r.status === 'scheduled' && <div className="tiny">Visit {dateTime(r.scheduled_at)}</div>}
+              {r.decline_reason && r.status === 'declined' && <div className="tiny danger-text">Declined: {r.decline_reason}</div>}
+              {r.last_note && r.status !== 'declined' && <div className="tiny muted">Last note: {r.last_note}</div>}
+              <LeadActions lead={r} onDone={refs.reload} />
+            </div>
+          ))}
+        </div>
+      ) : <div className="small muted">Not sent to a provider yet. Add services, or send it by hand below.</div>}
+      {canRefer && others.length > 0 && (
+        <div className="col gap-8 mt-12">
+          <hr />
+          <Select value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Send to provider..." options={others.map((p) => [p.id, p.name])} />
+          {pick && <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the provider (optional)" />}
+          {pick && <div><Button size="sm" kind="primary" disabled={busy} onClick={send}>Send lead</Button></div>}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function RequirementsPanel({ c, canEdit, branches }) {
+  const [edit, setEdit] = useState(false);
+  const [f, setF] = useState({});
+  const [run, busy] = useAction();
+  const start = () => { setF({ branch: c.branch || '', services_requested: c.services_requested || '', additional_info: c.additional_info || '' }); setEdit(true); };
+  const save = () => run(async () => {
+    await q(db.from('cases').update({ branch: f.branch || null, services_requested: f.services_requested.trim() || null, additional_info: f.additional_info.trim() || null }).eq('id', c.id));
+    setEdit(false);
+  }, 'Requirements saved');
+  return (
+    <Panel title="Requirements" actions={canEdit && <Button size="xs" kind="ghost" icon="edit" onClick={start}>Edit</Button>}>
+      <dl className="kv">
+        <dt>Branch</dt><dd>{c.branch || <span className="warn-text">Not set</span>}</dd>
+        <dt>Request</dt><dd className="small">{c.services_requested || DASH}</dd>
+        <dt>Additional info</dt><dd className="small" style={{ whiteSpace: 'pre-wrap' }}>{c.additional_info || DASH}</dd>
+        {c.external_ref && <><dt>Old CRM ID</dt><dd className="mono small">{c.external_ref}</dd></>}
+      </dl>
+      {edit && (
+        <Modal title={`Requirements · ${c.case_no}`} onClose={() => setEdit(false)} footer={<><Button onClick={() => setEdit(false)}>Cancel</Button><Button kind="primary" disabled={busy} onClick={save}>Save</Button></>}>
+          <div className="form-grid">
+            <Field label="Branch"><Select value={f.branch} onChange={(e) => setF((x) => ({ ...x, branch: e.target.value }))} placeholder="Not set" options={branches} /></Field>
+            <Field label="Request" hint="as the caller said it" className="span2"><Input value={f.services_requested} onChange={(e) => setF((x) => ({ ...x, services_requested: e.target.value }))} /></Field>
+            <Field label="Additional information" hint="customer requirements, timings, preferences" className="span2"><Textarea rows={4} value={f.additional_info} onChange={(e) => setF((x) => ({ ...x, additional_info: e.target.value }))} /></Field>
+          </div>
+        </Modal>
+      )}
+    </Panel>
   );
 }
 
@@ -858,7 +931,8 @@ function BottomTabs({ c, inter, calls, escs, cmps, ids, canNote }) {
   const canAudit = can('supervisor', 'client_manager');
   const [tab, setTab] = useState('timeline');
   const openEsc = (escs.data || []).filter((e) => e.status !== 'resolved').length + (cmps.data || []).filter((k) => ['open', 'acknowledged'].includes(k.status)).length;
-  const tabs = [['timeline', 'Timeline', (inter.data || []).length], ['calls', 'Calls', (calls.data || []).length], ['esc', 'Escalations & complaints', openEsc]];
+  const tabs = [['timeline', 'Timeline', (inter.data || []).length]];
+  if (!can('provider')) tabs.push(['calls', 'Calls', (calls.data || []).length], ['esc', 'Escalations & complaints', openEsc]);
   if (canAudit) tabs.push(['audit', 'Audit']);
   return (
     <Panel>

@@ -13,6 +13,7 @@ export async function createUser(c: Ctx, b: J) {
   if (!b?.email || !b?.password || !b?.full_name) throw new ApiError(400, 'Email, password and name are required', { email: 'must not be blank' });
   if (!(ROLES as readonly string[]).includes(b.role)) throw new ApiError(400, 'Unknown role');
   if (String(b.password).length < 10) throw new ApiError(400, 'Password must be at least 10 characters');
+  if (b.role === 'provider' && !b.provider_id) throw new ApiError(400, 'Pick the provider (SecondMedic / Book My Medicare) for this login');
   const base = supabaseBase(c.env);
   const r = await fetch(base + '/auth/v1/admin/users', {
     method: 'POST',
@@ -22,9 +23,10 @@ export async function createUser(c: Ctx, b: J) {
   const u = (await r.json().catch(() => ({}))) as J;
   if (!r.ok) throw new ApiError(r.status === 422 ? 409 : 502, u.msg || u.message || 'Could not create the login');
   const { result, changed } = await asSystem(c.sql, async (tx) => {
-    const [p] = await tx`insert into profiles (id, workspace_id, full_name, email, phone, role, agent_code, myoperator_user_id, myoperator_extension, skills)
+    const [p] = await tx`insert into profiles (id, workspace_id, full_name, email, phone, role, agent_code, myoperator_user_id, myoperator_extension, skills, provider_id)
       values (${u.id}, ${c.user.workspaceId}, ${b.full_name}, ${b.email}, ${normMobile(b.phone)}, ${b.role}, ${b.agent_code || null},
-        ${b.myoperator_user_id || null}, ${b.myoperator_extension || null}, ${pgArray((b.skills || []).map(String))}::text[]) returning *`;
+        ${b.myoperator_user_id || null}, ${b.myoperator_extension || null}, ${pgArray((b.skills || []).map(String))}::text[],
+        ${b.role === 'provider' ? (b.provider_id as string) : null}::uuid) returning *`;
     return p;
   });
   c.changed.push(...changed);
