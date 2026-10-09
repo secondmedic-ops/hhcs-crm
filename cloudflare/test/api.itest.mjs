@@ -171,7 +171,12 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check(wh.status === 200 && wh.body.length >= 8, 'webhook log visible in Settings', String(wh.body?.length));
 
   // ---- 6b. MyOperator connection entered in the app (Settings > Telephony)
-  check((await call('sup', 'GET', '/api/v1/admin/myoperator')).status === 403, 'MyOperator settings: admin only');
+  check((await call('agent', 'GET', '/api/v1/admin/myoperator')).status === 403, 'MyOperator settings: agents kept out');
+  check((await call('sup', 'GET', '/api/v1/admin/myoperator')).status === 200, 'MyOperator settings: supervisor allowed');
+  const tel = await call('sup', 'POST', '/api/v1/admin/users/telephony', { profile_id: U.agent2, myoperator_user_id: 'tmp-1', myoperator_extension: '12', phone: '9800000012' });
+  check(tel.status === 200 && tel.body?.myoperator_extension === '12' && tel.body?.phone === '+919800000012', 'supervisor sets an agent\'s telephony ids', JSON.stringify(tel.body));
+  check((await call('agent', 'POST', '/api/v1/admin/users/telephony', { profile_id: U.agent })).status === 403, 'agents cannot set telephony ids');
+  await sql`update profiles set myoperator_user_id = null, myoperator_extension = null, phone = null where id = ${U.agent2}`;
   let mo = await call('admin', 'GET', '/api/v1/admin/myoperator');
   const mfld = (r, k) => (r.body?.fields || []).find((f) => f.key === k) || {};
   check(mo.status === 200 && mfld(mo, 'webhook_key').source === 'secret' && mo.body?.webhook?.url?.endsWith('/webhooks/myoperator'), 'MyOperator settings: secrets shown as configured', JSON.stringify(mo.body?.webhook));

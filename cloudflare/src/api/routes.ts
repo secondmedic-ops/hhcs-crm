@@ -6,7 +6,7 @@ import type { Role } from './auth';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote } from '../services/calls';
 import { caseBrief, command, extractEnquiry, processCall } from '../services/ai';
-import { createUser, integrations, linkMoUsers, moSettings, moUsers, saveMoSettings, testMo, webhookEvents } from '../services/admin';
+import { createUser, integrations, linkMoUsers, moSettings, moUsers, saveMoSettings, setTelephony, testMo, webhookEvents } from '../services/admin';
 
 export type Access = 'public' | 'login' | readonly Role[];
 export interface Route {
@@ -49,11 +49,12 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/admin/users', access: ADMIN, handler: (c, b) => createUser(c, b), summary: 'Create a login and its profile' },
   { method: 'GET', path: '/api/v1/admin/webhooks', access: TECH, handler: (c) => webhookEvents(c), summary: 'Last 50 MyOperator webhook events' },
   { method: 'GET', path: '/api/v1/admin/integrations', access: TECH, handler: (c) => integrations(c), summary: 'Which integrations are configured' },
-  { method: 'GET', path: '/api/v1/admin/myoperator', access: ADMIN, handler: (c) => moSettings(c), summary: 'MyOperator connection: fields set, webhook address, last event' },
-  { method: 'POST', path: '/api/v1/admin/myoperator', access: ADMIN, handler: (c, b) => saveMoSettings(c, b ?? {}), summary: 'Save MyOperator connection values' },
-  { method: 'POST', path: '/api/v1/admin/myoperator/test', access: ADMIN, handler: (c) => testMo(c), summary: 'Test the MyOperator connection' },
-  { method: 'GET', path: '/api/v1/admin/myoperator/users', access: ADMIN, handler: (c) => moUsers(c), summary: 'MyOperator users and the CRM logins linked to them' },
-  { method: 'POST', path: '/api/v1/admin/myoperator/users', access: ADMIN, handler: (c, b) => linkMoUsers(c, b ?? {}), summary: 'Link CRM logins to MyOperator users' },
+  { method: 'GET', path: '/api/v1/admin/myoperator', access: TECH, handler: (c) => moSettings(c), summary: 'MyOperator connection: fields set, webhook address, last event' },
+  { method: 'POST', path: '/api/v1/admin/myoperator', access: TECH, handler: (c, b) => saveMoSettings(c, b ?? {}), summary: 'Save MyOperator connection values' },
+  { method: 'POST', path: '/api/v1/admin/myoperator/test', access: TECH, handler: (c) => testMo(c), summary: 'Test the MyOperator connection' },
+  { method: 'GET', path: '/api/v1/admin/myoperator/users', access: TECH, handler: (c) => moUsers(c), summary: 'MyOperator users and the CRM logins linked to them' },
+  { method: 'POST', path: '/api/v1/admin/users/telephony', access: TECH, handler: (c, b) => setTelephony(c, b ?? {}), summary: 'Set a user\'s MyOperator user id, extension and phone' },
+  { method: 'POST', path: '/api/v1/admin/myoperator/users', access: TECH, handler: (c, b) => linkMoUsers(c, b ?? {}), summary: 'Link CRM logins to MyOperator users' },
 ];
 
 const compiled = routes.map((r) => ({ r, re: new RegExp('^' + r.path.replace(/\{(\w+)\}/g, '(?<$1>[^/]+)') + '$') }));

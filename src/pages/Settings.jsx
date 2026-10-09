@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers } from '../lib/api.js';
+import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { inr, dateTime, ago, ROLE_LABEL } from '../lib/fmt.js';
@@ -579,6 +579,8 @@ function ZoneEdit({ z, onClose, onSaved }) {
 function UsersTab() {
   const { can } = useAuth();
   const admin = can('admin');
+  const sup = can('supervisor');
+  const [tel, setTel] = useState(null);
   const [role, setRole] = useState('');
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState(null);
@@ -593,7 +595,7 @@ function UsersTab() {
         <ErrorNote error={u.error} />
         {u.loading ? <TableSkeleton rows={10} cols={8} /> : rows.length ? (
           <div className="table-wrap"><table className="t">
-            <thead><tr><th>Name</th><th>Role</th><th>Agent code</th><th>MyOperator user</th><th>Ext.</th><th>Skills</th><th>On duty</th><th>Status</th>{admin && <th />}</tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Agent code</th><th>MyOperator user</th><th>Ext.</th><th>Skills</th><th>On duty</th><th>Status</th>{(admin || sup) && <th />}</tr></thead>
             <tbody>{rows.map((x) => (
               <tr key={x.id} className={x.active ? '' : 'muted'}>
                 <td><div>{x.full_name}</div><div className="tiny muted">{x.email || x.phone || '–'}</div></td>
@@ -605,15 +607,34 @@ function UsersTab() {
                 <td>{x.on_duty ? <Badge kind="ok" dot>On</Badge> : <span className="small muted">Off</span>}</td>
                 <td>{x.active ? <Badge kind="ok">Active</Badge> : <Badge>Disabled</Badge>}</td>
                 {admin && <td className="right"><Button size="xs" onClick={() => setEdit(x)}>Edit</Button></td>}
+                {!admin && sup && <td className="right"><Button size="xs" onClick={() => setTel(x)}>Telephony</Button></td>}
               </tr>
             ))}</tbody>
           </table></div>
         ) : <Empty title="No users for this role" />}
       </Panel>
-      {!admin && <div className="small muted mt-8">Read-only. The platform admin creates users and changes roles; quarterly access reviews use this list.</div>}
+      {!admin && <div className="small muted mt-8">{sup ? 'Supervisors set each login\'s MyOperator user id, extension and phone (Telephony). ' : 'Read-only. '}The platform admin creates users and changes roles; quarterly access reviews use this list.</div>}
+      {tel && <TelephonyForm u={tel} onClose={() => setTel(null)} onSaved={() => { setTel(null); u.reload(); }} />}
       {add && <UserForm providers={prov.data || []} onClose={() => setAdd(false)} onSaved={() => { setAdd(false); u.reload(); }} />}
       {edit && <UserForm providers={prov.data || []} u={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); u.reload(); }} />}
     </>
+  );
+}
+
+function TelephonyForm({ u, onClose, onSaved }) {
+  const [f, setF] = useState({ myoperator_user_id: u.myoperator_user_id || '', myoperator_extension: u.myoperator_extension || '', phone: u.phone || '' });
+  const [run, busy] = useAction();
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const save = () => run(async () => { await setTelephony({ profile_id: u.id, ...f }); onSaved(); }, 'Telephony saved');
+  return (
+    <Modal title={`Telephony · ${u.full_name}`} onClose={onClose} footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={busy} onClick={save}>Save</Button></>}>
+      <div className="form-grid">
+        <Field label="MyOperator user id" hint="MyOperator > Manage > Users > Edit" className="span2"><Input className="mono" value={f.myoperator_user_id} onChange={set('myoperator_user_id')} /></Field>
+        <Field label="MyOperator extension" hint="e.g. 11"><Input className="mono" value={f.myoperator_extension} onChange={set('myoperator_extension')} /></Field>
+        <Field label="Mobile" hint="the phone MyOperator rings"><Input className="mono" value={f.phone} onChange={set('phone')} placeholder="+91..." /></Field>
+      </div>
+      <div className="tiny faint mt-12">Click-to-call rings this MyOperator user first, then the patient. Incoming calls are matched to the agent by user id, extension or mobile.</div>
+    </Modal>
   );
 }
 
@@ -795,7 +816,7 @@ function MoUsers({ agents, disabled }) {
 
 function TelephonyTab() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = ['admin', 'supervisor'].includes(profile?.role);   // supervisors run the call centre: they connect MyOperator too
   const h = useLoad(() => integrations(), []);
   const w = useLoad(() => webhookEvents(), []);
   const [openId, setOpenId] = useState(null);
@@ -818,7 +839,7 @@ function TelephonyTab() {
       </Panel>
 
       {isAdmin ? <MyOperatorConnection /> : (
-        <Panel title="MyOperator"><div className="small">The platform admin connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
+        <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}
       <Panel title="Mailbox">
         <div className="small">In Cloudflare <strong>Email Routing</strong>, route the HHCS support address to the CareDesk Worker (action: Send to a Worker). Each e-mail becomes a ticket on the patient timeline, matched by the case number in the subject or the sender address, and starts the 5-minute acknowledgement SLA.</div>

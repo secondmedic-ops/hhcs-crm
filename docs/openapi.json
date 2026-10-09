@@ -342,7 +342,8 @@
       "get": {
         "summary": "MyOperator connection: fields set, webhook address, last event",
         "x-access": [
-          "admin"
+          "admin",
+          "supervisor"
         ],
         "security": [
           {
@@ -353,7 +354,8 @@
       "post": {
         "summary": "Save MyOperator connection values",
         "x-access": [
-          "admin"
+          "admin",
+          "supervisor"
         ],
         "security": [
           {
@@ -366,7 +368,8 @@
       "post": {
         "summary": "Test the MyOperator connection",
         "x-access": [
-          "admin"
+          "admin",
+          "supervisor"
         ],
         "security": [
           {
@@ -379,7 +382,8 @@
       "get": {
         "summary": "MyOperator users and the CRM logins linked to them",
         "x-access": [
-          "admin"
+          "admin",
+          "supervisor"
         ],
         "security": [
           {
@@ -390,7 +394,22 @@
       "post": {
         "summary": "Link CRM logins to MyOperator users",
         "x-access": [
-          "admin"
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users/telephony": {
+      "post": {
+        "summary": "Set a user's MyOperator user id, extension and phone",
+        "x-access": [
+          "admin",
+          "supervisor"
         ],
         "security": [
           {

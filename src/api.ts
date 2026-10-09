@@ -64,6 +64,7 @@ export const api = {
   createUser: (u: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/admin/users', { method: 'POST', body: u }),
   webhookEvents: () => request<Record<string, unknown>[]>('/api/v1/admin/webhooks'),
   integrations: () => request<Record<string, unknown>>('/api/v1/admin/integrations'),
+  setTelephony: (body: { profile_id: string; myoperator_user_id?: string | null; myoperator_extension?: string | null; phone?: string | null }) => request<Record<string, any>>('/api/v1/admin/users/telephony', { method: 'POST', body }),
   moSettings: () => request<Record<string, any>>('/api/v1/admin/myoperator'),
   saveMoSettings: (body: { values?: Record<string, string>; generate_webhook_key?: boolean }) => request<Record<string, any>>('/api/v1/admin/myoperator', { method: 'POST', body }),
   testMo: () => request<Record<string, { ok: boolean; message: string }>>('/api/v1/admin/myoperator/test', { method: 'POST', body: {} }),

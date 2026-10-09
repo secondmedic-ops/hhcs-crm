@@ -17,6 +17,7 @@ export const webhookEvents = () => (isDemo ? demo('/admin/webhooks', {}) : serve
 export const integrations = () => (isDemo ? demo('/health', {}) : server.integrations());
 // MyOperator connection (admin). The demo has no MyOperator account: it shows the screen with nothing configured.
 const demoOnly = () => Promise.reject(new Error('Demo mode: MyOperator connects on the live site'));
+export const setTelephony = (body) => (isDemo ? demoOnly() : server.setTelephony(body));
 export const moSettings = () => (isDemo ? Promise.resolve({ demo: true, fields: [], webhook: { key: null, url: `${location.origin}/webhooks/myoperator`, url_with_key: null }, last_event: null, agents: { ops: 0, linked: 0 } }) : server.moSettings());
 export const saveMoSettings = (body) => (isDemo ? demoOnly() : server.saveMoSettings(body));
 export const testMo = () => (isDemo ? demoOnly() : server.testMo());

@@ -188,3 +188,21 @@ export async function linkMoUsers(c: Ctx, b: J) {
   c.changed.push(...changed);
   return { linked: links.filter((l) => l.myoperator_user_id).length, unlinked: links.filter((l) => !l.myoperator_user_id).length };
 }
+
+/** Supervisors and the admin set the telephony fields of a login (MyOperator user id, extension, phone); nothing else. */
+export async function setTelephony(c: Ctx, b: J) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(b?.profile_id || ''))) throw new ApiError(400, 'Bad profile id');
+  const clean = (v: unknown, max: number) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
+  const phone = b.phone ? normMobile(b.phone) : null;
+  const { result, changed } = await asSystem(c.sql, async (tx) => {
+    const [p] = await tx`update profiles set myoperator_user_id = ${clean(b.myoperator_user_id, 100)}, myoperator_extension = ${clean(b.myoperator_extension, 20)},
+        phone = ${phone} where id = ${b.profile_id}::uuid and workspace_id = ${c.user.workspaceId}::uuid
+      returning id::text, full_name, myoperator_user_id, myoperator_extension, phone`;
+    if (!p) throw new ApiError(404, 'User not found');
+    await tx`insert into access_log (workspace_id, user_id, action, entity, entity_id, meta)
+      values (${c.user.workspaceId}::uuid, ${c.user.id}::uuid, 'settings_changed', 'telephony', ${b.profile_id}, ${tx.json({ fields: ['myoperator_user_id', 'myoperator_extension', 'phone'] })})`;
+    return p;
+  });
+  c.changed.push(...changed);
+  return result;
+}
