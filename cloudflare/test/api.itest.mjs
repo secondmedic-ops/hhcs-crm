@@ -349,12 +349,12 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const waStart = await call('agent', 'POST', '/api/v1/whatsapp/session', { action: 'start' });
   check(waStart.status === 200 && waStart.body?.status === 'starting', 'agent requests WhatsApp QR login', JSON.stringify(waStart.body));
 
-  const pollQr = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'qr_ready', qr_svg: '<svg viewBox="0 0 10 10"></svg>' })).json();
+  const pollQr = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'qr_ready', qr_svg: '<svg viewBox="0 0 10 10"></svg>' }, newKey)).json();
   check(pollQr.ok && pollQr.command === 'start', 'WhatsApp bridge receives start command and posts QR SVG', JSON.stringify(pollQr));
   const waQr = await call('agent', 'GET', '/api/v1/whatsapp/session');
   check(waQr.status === 200 && waQr.body?.status === 'qr_ready' && waQr.body.qr_svg?.includes('<svg'), 'WhatsApp session returns live QR SVG to UI', JSON.stringify(waQr.body));
 
-  const pollConn = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'connected', phone: '+919820012345', name: 'Hinduja Home Care Desk' })).json();
+  const pollConn = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'connected', phone: '+919820012345', name: 'Hinduja Home Care Desk' }, newKey)).json();
   check(pollConn.ok && pollConn.status === 'connected', 'WhatsApp bridge marks session connected after QR scan', JSON.stringify(pollConn));
   const waConn = await call('agent', 'GET', '/api/v1/whatsapp/session');
   check(waConn.status === 200 && waConn.body?.connected === true && waConn.body.phone === '+919820012345', 'WhatsApp session reports connected phone', JSON.stringify(waConn.body));
@@ -362,11 +362,11 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const waSend = await call('agent', 'POST', '/api/v1/whatsapp/send', { mobile: '9820099887', patient_name: 'Mrs. Meera Joshi', text: 'Namaste, confirming your home ECG slot.' });
   check(waSend.status === 200 && waSend.body?.delivery?.queued === true && waSend.body?.patient_id, 'outbound WhatsApp chat by mobile queues message for QR bridge', JSON.stringify(waSend.body));
 
-  const pollOut = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'connected' })).json();
+  const pollOut = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'connected' }, newKey)).json();
   const outMsg = (pollOut.outbox || []).find((m) => m.id === waSend.body?.id);
   check(!!outMsg && outMsg.mobile === '+919820099887' && outMsg.body.includes('home ECG slot'), 'WhatsApp bridge poll receives queued outbound message', JSON.stringify(pollOut.outbox));
 
-  const ackRes = await (await hook({ bridge: 'whatsapp_qr', action: 'ack', id: waSend.body?.id, status: 'sent', message_id: 'wamid.qr.1' })).json();
+  const ackRes = await (await hook({ bridge: 'whatsapp_qr', action: 'ack', id: waSend.body?.id, status: 'sent', message_id: 'wamid.qr.1' }, newKey)).json();
   const ackRow = await one(`select meta->>'delivery_status' as st from interactions where id = $1`, waSend.body?.id);
   check(ackRes.ok && ackRow?.st === 'sent', 'WhatsApp bridge ack marks interaction sent', JSON.stringify(ackRow));
 
@@ -376,7 +376,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
     messages: [
       { id: 'msg-in-1', mobile: '9820099887', name: 'Mrs. Meera Joshi', direction: 'inbound', text: 'Thank you, please come at 8:30 AM.', timestamp: Math.floor(Date.now() / 1000), historical: false },
     ],
-  })).json();
+  }, newKey)).json();
   check(syncIn.ok && syncIn.imported === 1, 'WhatsApp bridge syncs live inbound reply into CRM', JSON.stringify(syncIn));
 
   return { total, failed };
