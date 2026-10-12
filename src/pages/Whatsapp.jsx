@@ -3,10 +3,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useLoad } from '../lib/hooks.js';
-import { ago, dt } from '../lib/fmt.js';
+import { ago, dateTime as dt } from '../lib/fmt.js';
 import { aiExtract, dial, sendWhatsAppChat } from '../lib/api.js';
 import Icon from '../components/icons.jsx';
-import { Badge, Button, Countdown, Empty, Field, Modal, PageHead, PriorityBadge, SearchInput, Segmented, SkeletonRows, SlaBadge, StageBadge, useToast } from '../components/ui.jsx';
+import { Badge, Button, Countdown, Empty, Field, Input, Modal, PageHead, PriorityBadge, Segmented, TableSkeleton, SlaBadge, StageBadge, useToast } from '../components/ui.jsx';
 
 const QUICK_REPLIES = [
   { label: 'Acknowledge enquiry', text: 'Namaste, thank you for contacting Hinduja Home Care. Our care desk is reviewing your request and will share the rate-card estimate shortly.' },
@@ -197,7 +197,7 @@ export default function Whatsapp() {
         sub={`Two-way WhatsApp Business (WABA) inbox · ${waitingCount} awaiting reply · 5-minute SLA acknowledgement`}
         right={
           <div className="row gap-8">
-            <SearchInput value={search} onChange={setSearch} placeholder="Search patient, Case ID, locality, message…" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search patient, Case ID, locality, message…" aria-label="Search conversations" />
             <Segmented
               value={filter}
               onChange={setFilter}
@@ -220,7 +220,7 @@ export default function Whatsapp() {
             <span className="tiny muted">{filtered.length} shown</span>
           </div>
           <div className="wa-conv-list">
-            {loading && <div className="panel-body"><SkeletonRows rows={6} cols={2} /></div>}
+            {loading && <div className="panel-body"><TableSkeleton rows={6} cols={2} /></div>}
             {!loading && filtered.length === 0 && (
               <Empty
                 icon="chat"
@@ -334,7 +334,7 @@ export default function Whatsapp() {
               </div>
 
               <div className="wa-messages">
-                {msgLoading && <SkeletonRows rows={4} cols={1} />}
+                {msgLoading && <TableSkeleton rows={4} cols={1} />}
                 {!msgLoading && (messages || []).length === 0 && (
                   <Empty icon="chat" title="No messages in this thread yet" detail="Send an approved WhatsApp template or reply below." />
                 )}

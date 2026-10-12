@@ -183,7 +183,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check(wa?.source_channel === 'whatsapp', 'WhatsApp message opens a case', JSON.stringify(wa));
   const waListAgent = await batch('agent', [sel('v_whatsapp_chats', { filters: [{ col: 'patient_id', op: 'eq', val: wa.patient_id }], mode: 'single' })]);
   const waRowAgent = waListAgent.body?.results?.[0]?.data;
-  check(waRowAgent?.needs_reply === true && waRowAgent?.window_open === true && /\u2022/.test(waRowAgent?.patient_mobile || ''),
+  check(waListAgent.status === 200 && waRowAgent?.needs_reply === true && waRowAgent?.window_open === true && waRowAgent?.patient_mobile === '+9198XXX XX233',
     'v_whatsapp_chats shows inbound chat awaiting reply with masked mobile for agent', JSON.stringify(waRowAgent));
   const waReply = await call('agent', 'POST', '/api/v1/whatsapp/send', { case_id: wa.case_id, text: 'Namaste Meera ji, please share your full address in Khar West.' });
   check(waReply.status === 200 && waReply.body?.id && waReply.body?.text?.includes('Khar West'), 'agent sends a free-text WhatsApp reply', JSON.stringify(waReply.body));
