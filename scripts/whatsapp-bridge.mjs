@@ -39,7 +39,7 @@ const QRCode = requireFromBridge('qrcode');
 const pino = requireFromBridge('pino');
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys.makeWASocket;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = baileys;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, fetchLatestWaWebVersion, Browsers } = baileys;
 
 function loadConfig() {
   let saved = {};
@@ -175,41 +175,44 @@ async function flushSyncQueue() {
   }
 }
 
+let lastSocketStartAt = 0;
+
 async function startSocket(resetAuth = false) {
   if (starting) return;
   starting = true;
+  lastSocketStartAt = Date.now();
   try {
     if (sock) {
-      try { sock.ev.removeAllListeners(); sock.end(undefined); } catch {}
+      const old = sock;
       sock = null;
+      try { old.ev.removeAllListeners(); old.end(undefined); } catch {}
     }
     if (resetAuth && existsSync(AUTH_DIR)) {
       rmSync(AUTH_DIR, { recursive: true, force: true });
     }
     mkdirSync(AUTH_DIR, { recursive: true });
     const { state: authState, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    let version = [2, 3000, 1015901307];
+    let version = [2, 3000, 1050037037];
     try {
-      const v = await fetchLatestBaileysVersion();
-      if (v?.version) version = v.version;
+      const w = await (fetchLatestWaWebVersion ? fetchLatestWaWebVersion() : fetchLatestBaileysVersion());
+      if (w?.version) version = w.version;
     } catch {}
 
     state.status = 'starting';
     state.error = null;
 
-    sock = makeWASocket({
+    const currentSock = makeWASocket({
       version,
       auth: authState,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: Browsers?.macOS ? Browsers.macOS('Desktop') : ['CareDesk CRM', 'Chrome', '122.0.0'],
-      syncFullHistory: true,
       markOnlineOnConnect: false,
     });
+    sock = currentSock;
 
-    sock.ev.on('creds.update', saveCreds);
+    currentSock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('contacts.upsert', (contacts) => {
+    currentSock.ev.on('contacts.upsert', (contacts) => {
       for (const c of contacts || []) {
         const phone = jidToPhone(c.id);
         const label = c.notify || c.name || c.verifiedName;
@@ -217,7 +220,7 @@ async function startSocket(resetAuth = false) {
       }
     });
 
-    sock.ev.on('messaging-history.set', ({ contacts, messages }) => {
+    currentSock.ev.on('messaging-history.set', ({ contacts, messages }) => {
       for (const c of contacts || []) {
         const phone = jidToPhone(c.id);
         const label = c.notify || c.name || c.verifiedName;
@@ -228,12 +231,13 @@ async function startSocket(resetAuth = false) {
       flushSyncQueue().catch(() => {});
     });
 
-    sock.ev.on('messages.upsert', ({ messages, type }) => {
+    currentSock.ev.on('messages.upsert', ({ messages, type }) => {
       queueMessagesForSync(messages, type !== 'notify');
       flushSyncQueue().catch(() => {});
     });
 
-    sock.ev.on('connection.update', async (update) => {
+    currentSock.ev.on('connection.update', async (update) => {
+      if (sock !== currentSock) return;
       const { connection, lastDisconnect, qr } = update;
       if (qr) {
         try {
@@ -248,8 +252,8 @@ async function startSocket(resetAuth = false) {
         }
       }
       if (connection === 'open') {
-        const mePhone = jidToPhone(sock.user?.id) || sock.user?.id?.split(':')[0] || 'Linked';
-        const meName = sock.user?.name || 'Hinduja Home Care';
+        const mePhone = jidToPhone(currentSock.user?.id) || currentSock.user?.id?.split(':')[0] || 'Linked';
+        const meName = currentSock.user?.name || 'Hinduja Home Care';
         state.status = 'connected';
         state.qr_svg = null;
         state.pairing_code = null;
@@ -318,7 +322,7 @@ async function pollLoop() {
       } catch (e) {
         state.error = 'Could not request pairing code: ' + e.message;
       }
-    } else if (state.status !== 'connected' && ! state.qr_svg) {
+    } else if (state.status !== 'connected' && (!sock || Date.now() - lastSocketStartAt > 25000)) {
       await startSocket(false);
     }
   }
