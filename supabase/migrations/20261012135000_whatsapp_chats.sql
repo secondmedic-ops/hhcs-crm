@@ -4,16 +4,14 @@
 
 -- Approved enquiry acknowledgement & address collection templates
 with w as (select id from workspaces where code = 'HHC')
-insert into templates (workspace_id, code, title, kind, category, body, variables, status, approved_at)
-select w.id, t.code, t.title, t.kind::channel_kind, t.cat, t.body, t.vars, 'approved', now()
+insert into templates (workspace_id, code, title, kind, body, status, approved_at)
+select w.id, t.code, t.title, t.kind, t.body, 'approved', now()
 from w, (values
-  ('T-01','Enquiry acknowledgement','whatsapp','acknowledgement',
-   E'Namaste {{caller_name}}, thank you for contacting {{brand}}.\nYour enquiry is registered under Case ID *{{case_no}}*.\nOur care desk will share the rate-card estimate shortly.\nFor urgent assistance call {{support_number}}.',
-   array['caller_name','brand','case_no','support_number']),
-  ('T-02','Address & prescription request','whatsapp','enquiry',
-   E'Namaste {{patient_name}}, regarding Case *{{case_no}}* ({{services}}):\nPlease reply to this WhatsApp message with:\n1. Complete address with landmark and pincode\n2. Preferred visit date and time slot\n3. Photo of doctor''s prescription (if applicable)\n{{brand}} · {{support_number}}',
-   array['patient_name','case_no','services','brand','support_number'])
-) as t(code, title, kind, cat, body, vars)
+  ('T-01','Enquiry acknowledgement','whatsapp',
+   E'Namaste {{caller_name}}, thank you for contacting {{brand}}.\nYour enquiry is registered under Case ID *{{case_no}}*.\nOur care desk will share the rate-card estimate shortly.\nFor urgent assistance call {{support_number}}.'),
+  ('T-02','Address & prescription request','whatsapp',
+   E'Namaste {{patient_name}}, regarding Case *{{case_no}}* ({{services}}):\nPlease reply to this WhatsApp message with:\n1. Complete address with landmark and pincode\n2. Preferred visit date and time slot\n3. Photo of doctor''s prescription (if applicable)\n{{brand}} · {{support_number}}')
+) as t(code, title, kind, body)
 on conflict (workspace_id, code, version) do nothing;
 
 create index if not exists idx_interactions_whatsapp on interactions(workspace_id, patient_id, occurred_at desc)
