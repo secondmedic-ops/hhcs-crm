@@ -497,7 +497,7 @@ export default function Console() {
                   <div className="tiny muted">{cb.reason} · {ago(cb.created_at, now)}{cb.attempts ? ` · ${cb.attempts} attempt${cb.attempts > 1 ? 's' : ''}` : ''}{cb.status === 'in_progress' ? ' · dialling' : ''}</div>
                 </div>
                 <Countdown due={cb.due_at} compact />
-                <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => run(async () => { const r = await dial({ callback_id: cb.id }); if (r?.mode !== 'app') toast.ok('Dialling via MyOperator. Pick up on your phone.'); })}>Call back</Button>
+                <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => run(async () => { await dial({ callback_id: cb.id }); toast.ok('Dialling via MyOperator. Pick up on your phone.'); })}>Call back</Button>
               </div>
             ))}
           </Panel>

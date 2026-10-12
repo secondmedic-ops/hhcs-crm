@@ -30,8 +30,6 @@ export interface Env {
   MYOPERATOR_WABA_PHONE_ID?: string;
   MYOPERATOR_CALLER_ID?: string;
   MYOPERATOR_REGION?: string;
-  /** 'app' = always dial through the MyOperator Chrome extension / app; otherwise the Calling API, falling back to the app. */
-  MYOPERATOR_DIAL_MODE?: string;
   /** Overridable endpoints (tests point these at a stand-in). */
   MYOPERATOR_OBD_URL?: string;
   MYOPERATOR_RECORDING_URL?: string;

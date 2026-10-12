@@ -4,7 +4,7 @@
 import type { Ctx } from './context';
 import type { Role } from './auth';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
-import { dial, recording, sendMessage, sendQuote } from '../services/calls';
+import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
 import { caseBrief, command, extractEnquiry, processCall } from '../services/ai';
 import { createUser, integrations, linkMoUsers, moSettings, moUsers, saveMoSettings, setTelephony, syncNow, testMo, webhookEvents } from '../services/admin';
 
@@ -42,6 +42,7 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/calls/{id}/recording', access: RECORDINGS, handler: (c) => recording(c), summary: 'Call recording audio (logged)' },
   { method: 'POST', path: '/api/v1/cases/{id}/quote', access: OPS, handler: (c, b) => sendQuote(c, b ?? {}), summary: 'Send the quote on an approved template' },
   { method: 'POST', path: '/api/v1/cases/{id}/message', access: OPS, handler: (c, b) => sendMessage(c, b ?? {}), summary: 'Send an approved template message' },
+  { method: 'POST', path: '/api/v1/whatsapp/send', access: OPS, handler: (c, b) => sendWhatsAppChat(c, b ?? {}), summary: 'Send a WhatsApp reply or approved template' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}', access: AI_CALLS, handler: (c) => processCall(c.env, c.params.id, c.exec), summary: 'AI: transcript, summary, QA of a recorded call' },
   { method: 'POST', path: '/api/v1/ai/cases/{id}/brief', access: ALL, handler: async (c) => { const r = await caseBrief(c.env, c.sql, c.user.id, c.params.id); c.changed.push(...r.changed); return r.brief; }, summary: 'AI case brief' },
   { method: 'POST', path: '/api/v1/ai/command', access: ALL, handler: (c, b) => command(c.env, String(b?.q || '').slice(0, 400), c.user.role || ''), summary: 'AI command bar' },

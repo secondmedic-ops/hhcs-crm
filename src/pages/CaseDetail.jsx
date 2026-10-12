@@ -1,11 +1,11 @@
 // 360-degree case view (proposal slide 8): stage gates, locked rate card and discount governance,
 // booking, field dispatch, chain of custody, payments, unified timeline and audit, with an AI brief.
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
-import { dial, sendQuote, sendMessage, aiBrief, recordingUrl } from '../lib/api.js';
+import { dial, sendQuote, sendMessage, sendWhatsAppChat, aiBrief, recordingUrl } from '../lib/api.js';
 import {
   inr, ago, time, date, dateTime, dur, STAGES, STAGE_LABEL, SLA_LABEL, CHANNEL_LABEL, toLocalInput, fromLocalInput,
 } from '../lib/fmt.js';
@@ -128,7 +128,8 @@ export default function CaseDetail() {
           </div>
         </div>
         <div className="row wrap cd-actions">
-          {canDial && open && <Button kind="call" icon="phone" disabled={busy || onCall} onClick={() => run(async () => { const r = await dial({ case_id: id }); if (r?.mode !== 'app') toast.ok('Dialling through MyOperator · your phone rings first'); })}>Call patient</Button>}
+          {canDial && open && <Button kind="call" icon="phone" disabled={busy || onCall} onClick={() => run(async () => { await dial({ case_id: id }); toast.ok('Dialling through MyOperator · your phone rings first'); })}>Call patient</Button>}
+          {!can('provider') && <Link to={`/whatsapp?patient=${c.patient_id}`} className="btn"><Icon name="chat" />WhatsApp chat</Link>}
           {canAct && open && updateTemplates.length > 0 && (
             <div className="cd-menu-wrap">
               <Button icon="chat" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>Send update<Icon name="down" size={12} /></Button>
@@ -927,21 +928,68 @@ function Feedback({ c, canAct }) {
 /* =========================================================== tabs */
 
 function BottomTabs({ c, inter, calls, escs, cmps, ids, canNote }) {
-  const { can } = useAuth();
+  const { can, isOps } = useAuth();
   const canAudit = can('supervisor', 'client_manager');
   const [tab, setTab] = useState('timeline');
   const openEsc = (escs.data || []).filter((e) => e.status !== 'resolved').length + (cmps.data || []).filter((k) => ['open', 'acknowledged'].includes(k.status)).length;
+  const waRows = (inter.data || []).filter((r) => r.channel === 'whatsapp');
   const tabs = [['timeline', 'Timeline', (inter.data || []).length]];
-  if (!can('provider')) tabs.push(['calls', 'Calls', (calls.data || []).length], ['esc', 'Escalations & complaints', openEsc]);
+  if (!can('provider')) tabs.push(['whatsapp', 'WhatsApp', waRows.length], ['calls', 'Calls', (calls.data || []).length], ['esc', 'Escalations & complaints', openEsc]);
   if (canAudit) tabs.push(['audit', 'Audit']);
   return (
     <Panel>
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'timeline' && <Timeline c={c} inter={inter} canNote={canNote} />}
+      {tab === 'whatsapp' && <WhatsAppCaseTab c={c} rows={waRows} loading={inter.loading} canAct={isOps} />}
       {tab === 'calls' && <CallsTab calls={calls} />}
       {tab === 'esc' && <EscTab escs={escs} cmps={cmps} />}
       {tab === 'audit' && canAudit && <AuditTab c={c} ids={ids} />}
     </Panel>
+  );
+}
+
+function WhatsAppCaseTab({ c, rows, loading, canAct }) {
+  const [text, setText] = useState('');
+  const [run, busy] = useAction();
+  const nav = useNavigate();
+  const ordered = [...rows].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+  const send = async (e) => {
+    if (e) e.preventDefault();
+    if (!text.trim() || busy) return;
+    const r = await run(() => sendWhatsAppChat({ case_id: c.id, patient_id: c.patient_id, text: text.trim() }), 'WhatsApp reply sent');
+    if (r !== undefined) setText('');
+  };
+  return (
+    <div className="col gap-12">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span className="tiny muted">WhatsApp Business (WABA) thread for {c.patient_name} · {c.case_no}</span>
+        <Button size="xs" icon="chat" onClick={() => nav(`/whatsapp?patient=${c.patient_id}`)}>Open full WhatsApp inbox</Button>
+      </div>
+      {loading ? <Skeleton lines={4} /> : ordered.length ? (
+        <div className="wa-messages" style={{ maxHeight: 320, border: '1px solid var(--line)', borderRadius: 3 }}>
+          {ordered.map((m) => {
+            const outbound = m.direction === 'outbound';
+            return (
+              <div key={m.id} className={`wa-bubble-row ${outbound ? 'outbound' : 'inbound'}`}>
+                <div className={`wa-bubble ${outbound ? 'outbound' : 'inbound'}`}>
+                  <div className="wa-bubble-meta">
+                    <span className="strong">{outbound ? (m.actor_label || 'CareDesk') : (c.patient_name || 'Patient')}</span>
+                    <span className="mono">{dateTime(m.occurred_at)}</span>
+                  </div>
+                  <div className="wa-bubble-body">{m.body || m.summary || DASH}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : <Empty title="No WhatsApp messages on this case yet" />}
+      {canAct && (
+        <form className="row gap-8" onSubmit={send}>
+          <Input className="grow" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply to ${c.patient_name} on WhatsApp…`} />
+          <Button kind="primary" type="submit" icon="send" disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send WhatsApp'}</Button>
+        </form>
+      )}
+    </div>
   );
 }
 

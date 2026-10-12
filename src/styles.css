@@ -617,3 +617,32 @@ textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 6
 .linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--ink-2, inherit); text-decoration: underline; cursor: pointer; align-self: flex-start; }
 
 .dial-number { font-size: 26px; font-weight: 600; letter-spacing: 0.5px; padding: 14px 16px; border: 1px solid var(--line); background: var(--panel-2); text-align: center; user-select: all; }
+
+/* ---- WhatsApp Chats (wa-) */
+.wa-shell { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; align-items: stretch; min-height: calc(100vh - 160px); }
+.wa-list-pane { display: flex; flex-direction: column; max-height: calc(100vh - 150px); }
+.wa-conv-list { flex: 1; overflow-y: auto; }
+.wa-conv-item { padding: 10px 14px; border-bottom: 1px solid var(--line-2); cursor: pointer; background: var(--panel); }
+.wa-conv-item:hover { background: var(--paper); }
+.wa-conv-item.active { background: var(--accent-bg); border-left: 3px solid var(--accent); padding-left: 11px; }
+.wa-conv-item.unread { background: var(--warn-bg); }
+.wa-conv-item.unread.active { background: var(--accent-bg); }
+.wa-thread-pane { display: flex; flex-direction: column; max-height: calc(100vh - 150px); }
+.wa-thread-head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: var(--panel-2); }
+.wa-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--paper); }
+.wa-bubble-row { display: flex; width: 100%; }
+.wa-bubble-row.inbound { justify-content: flex-start; }
+.wa-bubble-row.outbound { justify-content: flex-end; }
+.wa-bubble { max-width: min(74%, 560px); padding: 8px 11px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
+.wa-bubble.outbound { background: var(--ok-bg); border-color: #B9DFC9; }
+.wa-bubble-meta { display: flex; align-items: center; gap: 8px; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.wa-bubble-body { font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+.wa-bubble-foot { display: flex; justify-content: flex-end; margin-top: 4px; }
+.wa-composer { padding: 12px 14px; border-top: 1px solid var(--line); background: var(--panel); }
+.wa-tpl-preview { margin: 0; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--panel-2); font-family: var(--sans); font-size: 12px; white-space: pre-wrap; color: var(--ink-2); max-height: 120px; overflow-y: auto; }
+@media (max-width: 900px) {
+  .wa-shell { grid-template-columns: minmax(0, 1fr); }
+  .wa-list-pane { max-height: 280px; }
+  .wa-thread-pane { max-height: none; }
+}
+

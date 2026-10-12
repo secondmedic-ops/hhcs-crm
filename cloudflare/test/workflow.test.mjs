@@ -165,7 +165,7 @@ bmmRefCount === 1 ? ok('provider sees its own lead only, not SecondMedic\'s') : 
 const [{ n: bmmCalls }] = await as('bmm', `select count(*)::int n from calls`);
 const [{ n: bmmSla }] = await as('bmm', `select count(*)::int n from sla_timers`);
 bmmCalls === 0 && bmmSla === 0 ? ok('provider sees no calls / recordings and no SLA timers') : fail(`bmm calls ${bmmCalls} sla ${bmmSla}`);
-for (const t of ['approvals', 'payments', 'callbacks', 'complaints', 'assignments', 'qa_reviews', 'inbound_emails', 'escalations', 'v_calls', 'v_callbacks', 'v_assignments', 'v_approvals', 'v_complaints']) {
+for (const t of ['approvals', 'payments', 'callbacks', 'complaints', 'assignments', 'qa_reviews', 'inbound_emails', 'escalations', 'v_calls', 'v_callbacks', 'v_assignments', 'v_approvals', 'v_complaints', 'v_whatsapp_chats']) {
   const [{ n }] = await as('bmm', `select count(*)::int n from ${t}`);
   n === 0 ? ok('provider reads nothing from ' + t) : fail(`provider sees ${n} rows of ${t}`);
 }

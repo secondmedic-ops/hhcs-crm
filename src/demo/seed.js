@@ -518,6 +518,32 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
       started_at: min(created, 3), due_at: min(created, 33), met_at: null, breached_at: null, status: min(created, 33) < now ? 'breached' : 'running' });
   });
 
+  // ---------- WhatsApp multi-turn chat bodies & active threads awaiting reply
+  for (const x of inter) {
+    if (x.channel === 'whatsapp' && !x.body) {
+      const k = cases.find((c) => c.id === x.case_id);
+      if (x.summary.includes('T-08')) {
+        x.body = `Namaste, thank you for contacting Hinduja Home Care. Your reference is ${k?.case_no || ''}. Our care desk will revert shortly.`;
+      } else if (x.summary.includes('T-04')) {
+        x.body = `Hinduja Home Care booking confirmed for ${k?.case_no || ''}\nServices: ${k?.services_requested || 'Home visit'}\nAddress: ${k?.address || ''} - ${k?.pincode || ''}`;
+      } else if (x.summary.includes('T-07')) {
+        x.body = `Your report for ${k?.case_no || ''} is ready. For clinical queries call +918049368621.`;
+      }
+    }
+  }
+  const openForWa = cases.filter((c) => !['closed', 'cancelled'].includes(c.stage)).slice(-3);
+  const followUps = [
+    'Please confirm if the technician will carry an ECG machine along with the blood collection kit. Landmark is opposite Shoppers Stop.',
+    'We have shared the doctor prescription details. Can we schedule the morning 8:00 AM slot tomorrow?',
+    'Thank you for sharing the estimate. Please go ahead and book the morning visit at our Khar West address.',
+  ];
+  openForWa.forEach((c, idx) => {
+    addI(c, min(now, -(14 - idx * 5)), 'whatsapp', 'inbound', null, 'WhatsApp message received', {
+      body: followUps[idx % followUps.length],
+      evidence: 'Message copy',
+    });
+  });
+
   // ---------- write
   patients.forEach((p) => { p.created_at = p.created_at || min(istMidnight(-6), 9 * 60); });
   ins('patients', patients);

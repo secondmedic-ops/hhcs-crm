@@ -16,11 +16,16 @@ export const MO_FIELDS = [
   { key: 'api_token', env: 'MYOPERATOR_API_TOKEN', label: 'API token (users, call logs, recordings)', secret: true },
   { key: 'caller_id', env: 'MYOPERATOR_CALLER_ID', label: 'Outgoing caller ID (optional)', secret: false },
   { key: 'region', env: 'MYOPERATOR_REGION', label: 'Region (optional)', secret: false },
-  { key: 'dial_mode', env: 'MYOPERATOR_DIAL_MODE', label: 'Outgoing calls: auto or app', secret: false },
   { key: 'waba_api_key', env: 'MYOPERATOR_WABA_API_KEY', label: 'WhatsApp API key (optional)', secret: true },
   { key: 'waba_phone_id', env: 'MYOPERATOR_WABA_PHONE_ID', label: 'WhatsApp phone number ID (optional)', secret: false },
 ] as const;
 export type MoKey = (typeof MO_FIELDS)[number]['key'];
+
+/** Calling readiness is shared by the dial endpoint and Settings; values never leave the server. */
+export function missingCallingSettings(env: Env): string[] {
+  return MO_FIELDS.filter((f) => ['company_id', 'secret_token', 'obd_api_key', 'public_ivr_id'].includes(f.key))
+    .filter((f) => !String(env[f.env] || '').trim()).map((f) => f.label);
+}
 
 const TTL = 30_000;
 let cache: { at: number; values: J } | null = null;

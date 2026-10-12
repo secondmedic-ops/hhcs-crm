@@ -29,6 +29,20 @@ No Worker running (for example opening the built site on its own)? The app falls
 
 After that, every change is just **SHIP.bat**.
 
+## CRM calling without a browser extension
+
+All live outbound calls start from CareDesk's authenticated Calling API. Press **Call patient** or **Call back**, answer the linked agent's registered phone, then speak to the customer. No MyOperator browser extension or Webcall window is used.
+
+In Settings > Telephony, save Company ID, Secret token, Calling API key and Public IVR ID, then link each CRM login to its MyOperator user. MyOperator must enable a peer-to-peer user-dial campaign with **Dial first: Agent**, an outgoing business number and sufficient calling capacity/credits. A saved configuration alone does not verify the account's calling entitlement.
+
+The server uses type 1 user dial with the linked user ID and a CRM reference. Credentials and the unmasked customer number stay on the server. Existing saved dial_mode values are ignored; the extension fallback and reset button have been removed.
+
+Missing configuration blocks the attempt before a call record is created. An explicit provider rejection marks the attempt failed and returns a callback to the pending queue. A timeout, provider server error or unrecognised response is unconfirmed: check the phone and Calls list before retrying. CareDesk never automatically repeats a dial request. Webhooks and call-log sync continue to attach results and recordings.
+
+Admin verification: Test connection checks saved settings and user API access without placing a call. Complete a controlled agent-first call to confirm live operation. If Calling API access is disabled or the Public IVR ID was cleared by the former reset action, the administrator must restore it; installing an extension will not be required.
+
+References: [MyOperator API reference](https://support.myoperator.com/portal/en/kb/articles/myoperator-api-reference-postman-documentation-links) and [peer-to-peer Calling API setup](https://support.myoperator.com/portal/en/kb/articles/how-is-the-obd-campaign-different-from-click-o-call-in-myoperator).
+
 ## 3. MyOperator settings
 
 Everything is entered in CareDesk itself: **Settings > Telephony & integrations** (platform admin). Nothing to deploy.

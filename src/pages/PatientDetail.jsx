@@ -63,7 +63,7 @@ export default function PatientDetail() {
 
   const openCases = (cases.data || []).filter((c) => !['closed', 'cancelled'].includes(c.stage)).length;
   const ltv = Number(p.lifetime_value || 0);
-  const callDial = () => run(async () => { const r = await dial({ patient_id: id }); if (r?.mode !== 'app') toast('Dialling through MyOperator · your phone rings first'); });
+  const callDial = () => run(async () => { await dial({ patient_id: id }); toast('Dialling through MyOperator · your phone rings first'); });
   const recordVerbal = () => run(() => rpc('record_consent', { p_patient: id, p_kind: 'verbal', p_call: aiCall?.id || null }), 'Verbal consent recorded').then(pat.reload);
 
   return (
@@ -73,6 +73,7 @@ export default function PatientDetail() {
         <span className="mono">{p.mrn || '–'}</span> · {p.age ?? '–'} y · {GENDER[p.gender] || '–'} · {p.zone_name || 'Unmapped zone'} · patient since {dateLong(p.created_at)}
       </>}>
         {isOps && <Button kind="call" icon="phone" onClick={callDial} disabled={busy}>Call</Button>}
+        {!can('provider') && <Button icon="chat" onClick={() => nav(`/whatsapp?patient=${id}`)}>WhatsApp chat</Button>}
         {isOps && <Button icon="plus" onClick={() => nav('/console?new=1')}>New enquiry</Button>}
         {isOps && <Button icon="edit" onClick={() => setEdit(true)}>Edit details</Button>}
       </PageHead>

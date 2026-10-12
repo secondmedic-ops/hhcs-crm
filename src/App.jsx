@@ -15,6 +15,7 @@ const Leads = lazy(() => import('./pages/Leads.jsx'));
 const CaseDetail = lazy(() => import('./pages/CaseDetail.jsx'));
 const Callbacks = lazy(() => import('./pages/Callbacks.jsx'));
 const Calls = lazy(() => import('./pages/Calls.jsx'));
+const Whatsapp = lazy(() => import('./pages/Whatsapp.jsx'));
 const Patients = lazy(() => import('./pages/Patients.jsx'));
 const PatientDetail = lazy(() => import('./pages/PatientDetail.jsx'));
 const Field = lazy(() => import('./pages/Field.jsx'));
@@ -70,6 +71,7 @@ function Routed() {
           <Route path="cases/:id" element={g('/cases', <CaseDetail />)} />
           <Route path="callbacks" element={g('/callbacks', <Callbacks />)} />
           <Route path="calls" element={g('/calls', <Calls />)} />
+          <Route path="whatsapp" element={g('/whatsapp', <Whatsapp />)} />
           <Route path="patients" element={g('/patients', <Patients />)} />
           <Route path="patients/:id" element={g('/patients', <PatientDetail />)} />
           <Route path="field" element={g('/field', <Field />)} />

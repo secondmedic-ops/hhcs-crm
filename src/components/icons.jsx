@@ -48,6 +48,7 @@ const P = {
   swap: 'M2.5 5.5h10l-2.5-2.5M13.5 10.5h-10l2.5 2.5',
   barcode: 'M2 3v10M4 3v10M6.5 3v10M8 3v10M10.5 3v10M12 3v10M14 3v10',
   hang: 'M1.5 9.5c3.8-3.4 9.2-3.4 13 0l-1.6 2-2.5-1V8.6a8.5 8.5 0 0 0-4.8 0v1.9l-2.5 1z',
+  send: 'M14 2 2 7.2l4.8 2L9 14zM6.8 9.2 14 2',
 };
 
 export default function Icon({ name, size = 16, stroke = 1.4, className, title }) {

@@ -10,7 +10,7 @@ import { Avatar, Button, Badge, useToast } from './ui.jsx';
 import { DEMO_USERS } from '../demo/seed.js';
 
 const GROUPS = [
-  ['Operate', ['/', '/leads', '/console', '/cases', '/callbacks', '/calls', '/patients', '/field', '/my-visits']],
+  ['Operate', ['/', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits']],
   ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
   ['Configure', ['/settings']],
 ];
@@ -25,12 +25,13 @@ export default function Shell() {
 
   const counts = useLoad(async () => {
     const sees = (to) => NAV.some((n) => n.to === to && n.roles.includes(profile?.role));   // only badges this role has menu items for
-    const [a, e] = await Promise.all([
+    const [a, e, w] = await Promise.all([
       sees('/approvals') ? q(db.from('approvals').select('id', { count: 'exact', head: true }).eq('status', 'pending')).catch(() => 0) : 0,
       sees('/escalations') ? q(db.from('escalations').select('id', { count: 'exact', head: true }).neq('status', 'resolved')).catch(() => 0) : 0,
+      sees('/whatsapp') ? q(db.from('v_whatsapp_chats').select('id', { count: 'exact', head: true }).eq('needs_reply', true)).catch(() => 0) : 0,
     ]);
-    return { approvals: a, escalations: e };
-  }, [profile?.id], ['approvals', 'escalations']);
+    return { approvals: a, escalations: e, whatsapp: w };
+  }, [profile?.id], ['approvals', 'escalations', 'interactions', 'cases']);
 
   const items = NAV.filter((n) => n.roles.includes(profile.role));
   return (
@@ -151,6 +152,18 @@ function DemoBar() {
     const { simulateInboundCall } = await import('../demo/sim.js');
     await simulateInboundCall(scripted ? 'demo' : null);
   };
+  const inboundWhatsApp = async () => {
+    if (!['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role)) { toast('Switch to an operations login to receive WhatsApp chats'); return; }
+    if (isLocal) {
+      const { localInboundWhatsApp } = await import('../lib/localsim.js');
+      try { await localInboundWhatsApp(); toast('Inbound WhatsApp sent to local Worker'); nav('/whatsapp'); } catch (e) { toast.error(e.message); }
+      return;
+    }
+    const { simulateInboundWhatsApp } = await import('../demo/sim.js');
+    const r = await simulateInboundWhatsApp();
+    toast(`WhatsApp message received from ${r.patient_name || 'Patient'}`);
+    nav(`/whatsapp?patient=${r.patient_id}`);
+  };
   return (
     <div className="demo-bar no-print">
       <strong>{isLocal ? 'LOCAL TEST' : 'DEMO'}</strong>
@@ -162,6 +175,7 @@ function DemoBar() {
         </select>
       </label>
       <button onClick={() => inbound(true)}>Simulate test call</button>
+      <button onClick={inboundWhatsApp}>Simulate WhatsApp</button>
       {isDemo && <button onClick={() => inbound(false)}>Random inbound call</button>}
       {isDemo && <button onClick={() => { if (confirm('Reset the demo data?')) resetDemo(); }}>Reset</button>}
     </div>

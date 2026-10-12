@@ -8,7 +8,8 @@
 import { asSystem, connect, normMobile, pgArray, type Sql, type Tx } from '../db';
 import type { Env } from '../env';
 import { notifyLive } from './live';
-import { moEnv } from './myoperator-config';
+import { missingCallingSettings, moEnv } from './myoperator-config';
+import { ApiError } from '../domain/errors';
 
 const OBD_URL = 'https://obd-api.myoperator.co/obd-api-v1';
 type J = Record<string, any>;
@@ -348,50 +349,117 @@ async function afterCallEnded(tx: Tx, call: J): Promise<{ aiCallId?: string }> {
 async function onMessageEvent(tx: Tx, env: Env, ev: J) {
   const p: J = ev.payload || {};
   const ws = await resolveWorkspace(tx, env, ev.system_identifier);
-  const number = normMobile(ev.customer_identifier || p.customer_number || p.conversation?.customer_number || p.from);
-  const text = String(p.data?.context?.body || p.data?.body || p.text || p.body || '');
-  const inbound = ev.event_type === 'message.received';
+  const number = normMobile(ev.customer_identifier || p.customer_number || p.conversation?.customer_number || p.from || p.to);
+  const msgId = String(p.id || p.message_id || p.waba_message_id || '').trim() || null;
+  const evType = String(ev.event_type || '');
+
+  // Delivery / read receipts update the outbound message metadata
+  if (/^message\.(delivered|read|failed|status)$/i.test(evType)) {
+    const status = evType === 'message.status' ? String(p.status || 'delivered').toLowerCase() : evType.split('.')[1].toLowerCase();
+    if (msgId) {
+      await tx`update interactions set meta = coalesce(meta, '{}'::jsonb) || ${tx.json({ delivery_status: status, status_at: new Date().toISOString() })}
+        where workspace_id = ${ws}::uuid and channel = 'whatsapp' and meta->>'message_id' = ${msgId}`;
+    } else if (number) {
+      await tx`update interactions set meta = coalesce(meta, '{}'::jsonb) || ${tx.json({ delivery_status: status, status_at: new Date().toISOString() })}
+        where id = (
+          select i.id from interactions i join patients pt on pt.id = i.patient_id
+          where i.workspace_id = ${ws}::uuid and i.channel = 'whatsapp' and i.direction = 'outbound' and pt.mobile = ${number}
+          order by i.occurred_at desc limit 1
+        )`;
+    }
+    return;
+  }
+
   if (!number) return;
-  if (!inbound && ev.event_type !== 'message.sent') return; // delivery receipts
-  let [patient] = await tx`select id::text from patients where workspace_id = ${ws}::uuid and mobile = ${number} limit 1`;
+  const inbound = evType === 'message.received';
+  if (!inbound && evType !== 'message.sent') return;
+
+  const mediaType = String(p.data?.type || p.type || 'text').toLowerCase();
+  const rawText = String(
+    p.data?.context?.body ||
+    p.data?.context?.caption ||
+    p.data?.context?.button_reply?.title ||
+    p.data?.context?.list_reply?.title ||
+    p.interactive?.button_reply?.title ||
+    p.interactive?.list_reply?.title ||
+    p.data?.body ||
+    p.text ||
+    p.body ||
+    p.caption ||
+    ''
+  ).trim();
+  const text = rawText || (mediaType !== 'text' ? `[${mediaType.toUpperCase()} attachment]` : '');
+  const mediaUrl = p.data?.context?.link || p.data?.context?.url || p.media_url || null;
+
+  let [patient] = await tx`select id::text, full_name from patients where workspace_id = ${ws}::uuid and mobile = ${number} limit 1`;
   let [kase] = patient ? await tx`select id::text from cases where patient_id = ${patient.id}::uuid and stage not in ('closed','cancelled') order by created_at desc limit 1` : [];
   if (inbound && !kase) {
     // new WhatsApp enquiry -> case opened, 5-minute acknowledgement timer starts (trigger)
-    const name = p.conversation?.customer_name || p.profile?.name || p.customer_name || 'WhatsApp contact';
+    const name = p.conversation?.customer_name || p.profile?.name || p.customer_name || patient?.full_name || 'WhatsApp contact';
     const [r] = await tx`select create_enquiry(${tx.json({
-      workspace_id: ws, source_channel: 'whatsapp', services_requested: text.slice(0, 500),
+      workspace_id: ws, source_channel: 'whatsapp', services_requested: (text || 'WhatsApp enquiry').slice(0, 500),
       patient: { full_name: name, mobile: number }, caller_mobile: number,
     })}) as r`;
-    kase = { id: r.r.case_id } as never; patient = { id: r.r.patient_id } as never;
+    kase = { id: r.r.case_id } as never; patient = { id: r.r.patient_id, full_name: name } as never;
+  } else if (!patient) {
+    const name = p.conversation?.customer_name || p.profile?.name || p.customer_name || 'WhatsApp contact';
+    const [r] = await tx`select upsert_patient(${tx.json({ workspace_id: ws, full_name: name, mobile: number })}) as id`;
+    patient = { id: r.id, full_name: name } as never;
   }
+
+  // Avoid duplicate outbound timeline rows when MyOperator echoes a message just sent from CareDesk CRM
+  if (!inbound && patient?.id) {
+    const [existing] = await tx`
+      select id::text from interactions
+      where workspace_id = ${ws}::uuid and patient_id = ${patient.id}::uuid and channel = 'whatsapp' and direction = 'outbound'
+        and occurred_at > now() - interval '2 minutes'
+        and (coalesce(body, '') = ${text} or (${msgId}::text is not null and meta->>'message_id' = ${msgId}))
+      order by occurred_at desc limit 1`;
+    if (existing) {
+      await tx`update interactions set meta = coalesce(meta, '{}'::jsonb) || ${tx.json({ message_id: msgId, delivery_status: 'sent' })}
+        where id = ${existing.id}::uuid`;
+      return;
+    }
+  }
+
   await tx`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_label, summary, body, evidence, meta)
     values (${ws}::uuid, ${kase?.id ?? null}, ${patient?.id ?? null}, 'whatsapp', ${inbound ? 'inbound' : 'outbound'}, ${inbound ? 'Patient' : 'WhatsApp'},
-      ${inbound ? 'WhatsApp message received' : 'WhatsApp message sent'}, ${text}, 'Message copy', ${tx.json({ message_id: p.id || null })})`;
+      ${inbound ? 'WhatsApp message received' : 'WhatsApp message sent'}, ${text}, 'Message copy',
+      ${tx.json({ message_id: msgId, media_type: mediaType, media_url: mediaUrl, delivery_status: inbound ? 'received' : 'sent' })})`;
 }
 
 // ---------- click-to-call ----------
 export async function clickToCall(env: Env, a: { myoperatorUserId: string | null; number: string; referenceId: string }) {
-  if (!env.MYOPERATOR_OBD_API_KEY || !env.MYOPERATOR_COMPANY_ID) throw new Error('MyOperator click-to-call is not configured');
-  if (!a.myoperatorUserId) throw new Error('Your MyOperator user ID is not set (Settings > Users)');
-  const res = await fetch(env.MYOPERATOR_OBD_URL || OBD_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': env.MYOPERATOR_OBD_API_KEY },
-    body: JSON.stringify({
-      company_id: env.MYOPERATOR_COMPANY_ID,
-      secret_token: env.MYOPERATOR_SECRET_TOKEN,
-      type: '1', // 1 = agent leg first, then customer (click-to-call)
-      user_id: a.myoperatorUserId,
-      number: a.number,
-      public_ivr_id: env.MYOPERATOR_PUBLIC_IVR_ID,
-      reference_id: a.referenceId,
-      region: env.MYOPERATOR_REGION || undefined,
-      caller_id: env.MYOPERATOR_CALLER_ID || undefined,
-    }),
-  });
-  const text = await res.text();
-  let json: J;
-  try { json = JSON.parse(text); } catch { json = { raw: text }; }
-  if (!res.ok || /error|fail/i.test(json.status || '')) throw new Error(`MyOperator: ${json.message || json.details || text.slice(0, 200)}`);
+  if (missingCallingSettings(env).length) throw new ApiError(503, 'MyOperator calling is not configured in Settings > Telephony');
+  if (!a.myoperatorUserId) throw new ApiError(409, 'Your MyOperator agent is not linked in Settings > Telephony');
+  // Never retry a dial POST automatically: a lost response can still mean the phone is ringing.
+  const uncertain = () => new ApiError(504, 'MyOperator has not confirmed this call. Check your phone and the Calls list before trying again.');
+  let res: Response, json: J;
+  try {
+    res = await fetch(env.MYOPERATOR_OBD_URL || OBD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': env.MYOPERATOR_OBD_API_KEY!, 'secret-key': env.MYOPERATOR_SECRET_TOKEN! },
+      signal: AbortSignal.timeout(20_000),
+      body: JSON.stringify({
+        company_id: env.MYOPERATOR_COMPANY_ID,
+        secret_token: env.MYOPERATOR_SECRET_TOKEN,
+        type: '1', // peer-to-peer user dial; configure this campaign's Dial First setting to Agent
+        user_id: a.myoperatorUserId,
+        number: a.number,
+        public_ivr_id: env.MYOPERATOR_PUBLIC_IVR_ID,
+        reference_id: a.referenceId,
+        region: env.MYOPERATOR_REGION || undefined,
+        caller_id: env.MYOPERATOR_CALLER_ID || undefined,
+      }),
+    });
+    // Raw provider errors may contain customer data or secrets; never pass them to the browser.
+    json = await res.json().catch(() => ({})) as J;
+  } catch { throw uncertain(); }
+  if (res.status >= 500 || res.status === 408) throw uncertain();
+  if (!res.ok || /error|fail|reject/i.test(String(json?.status || '')) || Number(json?.code) >= 400) {
+    throw new ApiError(502, 'MyOperator rejected the call. Ask your administrator to check Calling API access, the peer-to-peer Public IVR ID, agent availability and calling credits in Settings > Telephony.');
+  }
+  if (!json || !/^(success|accepted)$/i.test(String(json.status || ''))) throw uncertain();
   return json;
 }
 

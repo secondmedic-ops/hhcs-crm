@@ -34,3 +34,22 @@ export async function localEnd(call) {
     payload: { status: answered ? 'answered' : 'missed', ended_at: now(), recording_filename: answered ? 'local-test-recording.mp3' : null,
       legs: [{ talk_duration: talk, ring_duration: call.ring_seconds || 0, dial_status: answered ? 'answered' : 'no-answer' }] } });
 }
+
+export async function localInboundWhatsApp(opts = {}) {
+  const number = opts.number || '+9198' + String(Math.floor(20000000 + Math.random() * 79999999));
+  const name = opts.name || 'Mrs. Kavita Deshmukh';
+  const text = opts.text || 'Namaste, need home blood sample collection (CBC, HbA1c, Thyroid) and ECG for my mother in Khar West tomorrow 8 AM. Pincode 400052.';
+  await hook({
+    event_type: 'message.received',
+    direction: 'inbound',
+    customer_identifier: number,
+    system_identifier: LINES[0],
+    payload: {
+      id: 'wamid_local_' + crypto.randomUUID().slice(0, 8),
+      customer_name: name,
+      conversation: { customer_number: number, customer_name: name },
+      data: { type: 'text', context: { body: text } },
+    },
+  });
+}
+

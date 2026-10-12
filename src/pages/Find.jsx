@@ -1,5 +1,4 @@
-// /find?phone=98xxxxxxxx : opens the patient with that mobile number. The MyOperator Chrome extension's "CRM link"
-// points here ({{phone}} placeholder), so a click on a caller's number in MyOperator opens the right patient in CareDesk.
+// /find?phone=98xxxxxxxx opens the matching patient for a permitted CRM user.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { db, q } from '../lib/db.js';

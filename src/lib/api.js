@@ -5,15 +5,11 @@ import { api as server } from '../api.ts';
 
 const demo = async (path, body) => { const { demoApi } = await import('../demo/sim.js'); return demoApi(path, body); };
 
-// {case_id} | {patient_id} | {callback_id}. mode 'api': MyOperator rings the agent's phone, then the patient.
-// mode 'app': the Calling API is not available, so the dial window opens with the number for the MyOperator extension / app.
-export const dial = async (target) => {
-  const r = await (isDemo ? demo('/calls/dial', target) : server.dial(target));
-  if (r?.mode === 'app') window.dispatchEvent(new CustomEvent('caredesk:dial', { detail: r }));
-  return r;
-};
+// {case_id} | {patient_id} | {callback_id}. The server calls MyOperator; the agent answers on their phone.
+export const dial = (target) => (isDemo ? demo('/calls/dial', target) : server.dial(target));
 export const sendQuote = (caseId, templateId) => (isDemo ? demo(`/cases/${caseId}/quote`, { template_id: templateId }) : server.sendQuote(caseId, templateId));
 export const sendMessage = (caseId, templateId) => (isDemo ? demo(`/cases/${caseId}/message`, { template_id: templateId }) : server.sendMessage(caseId, templateId));
+export const sendWhatsAppChat = (body) => (isDemo ? demo('/whatsapp/send', body) : server.sendWhatsAppChat(body));
 export const aiBrief = (caseId) => (isDemo ? demo(`/ai/cases/${caseId}/brief`, {}) : server.aiBrief(caseId));
 export const aiCall = (callId) => (isDemo ? demo(`/ai/calls/${callId}`, {}) : server.aiCall(callId));
 export const aiCommand = (q) => (isDemo ? demo('/ai/command', { q }) : server.aiCommand(q));

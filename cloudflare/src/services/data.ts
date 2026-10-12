@@ -25,7 +25,7 @@ export const READ: Record<string, readonly Role[]> = {
   providers: WITH_PROVIDER, case_referrals: WITH_PROVIDER, v_referrals: WITH_PROVIDER,
   mis_snapshots: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   audit_log: MANAGERS, access_log: MANAGERS, v_audit: MANAGERS, v_access: MANAGERS,
-  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER,
+  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
 };
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */

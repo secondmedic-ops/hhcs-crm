@@ -678,7 +678,7 @@ function UserForm({ u, onClose, onSaved, providers = [] }) {
 // ------------------------------------------------------------------ telephony & integrations
 const EVENTS = [
   ['Call', ['Call initiated', 'Dial begin', 'Call answered', 'Call ended', 'Call summary', 'Disposition']],
-  ['WhatsApp', ['Message received', 'Message sent']],
+  ['WhatsApp', ['Message received', 'Message sent', 'Message delivered', 'Message read']],
 ];
 // Where each MyOperator value is found in the panel (in.app.myoperator.com, admin login).
 const MO_WHERE = {
@@ -690,36 +690,36 @@ const MO_WHERE = {
   api_token: 'Manage › API Integration, or Developer API',
   caller_id: 'The helpline number, e.g. +918049368621',
   region: 'Only if MyOperator support gives one',
-  dial_mode: 'Type app to always dial from the MyOperator extension / app. Empty: Calling API, and the app when the API refuses',
   waba_api_key: 'APIs & Webhooks › Developer API › WhatsApp API › Manage',
   waba_phone_id: 'APIs & Webhooks › Developer API › WhatsApp API › Manage',
 };
 const okBadge = (r) => (!r ? null : r.ok ? <Badge kind="ok" dot>OK</Badge> : <Badge kind="warn" dot>Check</Badge>);
 
-/** Outgoing calls without the Calling API: the MyOperator Click to Call extension places them. Its icon opens a
- *  MyOperator Webcall pop-up, so a blocked pop-up or a signed-out extension looks like "nothing happens". */
-function ExtensionSetup({ onReset, busy, appMode }) {
-  const toast = useToast();
-  const crm = `${window.location.origin}/find?phone={{phone}}`;
-  const copy = (t) => navigator.clipboard?.writeText(t).then(() => toast('Copied'), () => toast.error('Copy failed'));
-  const steps = [
-    ['Reset CareDesk', <>Press <strong>Reset outgoing calls</strong> (right). It clears the Public IVR ID and sets dial mode to <span className="mono">app</span>, so the dial window opens with no Calling API error.</>],
-    ['Sign in to the extension', <>Click the puzzle icon in the toolbar, pin <strong>MyOperator Click to Call</strong>, click it and choose <strong>Login</strong> with Delvin&apos;s MyOperator login. Signed in = a green badge with the agent name.</>],
-    ['Allow pop-ups', <>The call icon opens a MyOperator Webcall pop-up. In the address bar of CareDesk, click the blocked pop-up icon and choose <strong>Always allow</strong>. In Brave also set <strong>Shields: Down</strong> for this site and for app.myoperator.com, or the extension cannot stay signed in.</>],
-    ['Allow the microphone', <>Webcall talks through the computer&apos;s headset. When asked, allow the microphone for MyOperator.</>],
-    ['Check MyOperator permissions', <>MyOperator › Users › Delvin N: <strong>Click to Call / Webcall</strong> allowed, outgoing calls allowed, a DID assigned for outgoing calls, call availability On. Then press <strong>Re-sync account</strong> in the extension settings.</>],
-    ['Optional: CRM link', <>In the extension settings, paste the CRM link below. Incoming and outgoing calls then open the patient in CareDesk.</>],
-  ];
+/** The CRM initiates peer-to-peer calls; the linked agent answers on their registered phone. */
+function CallingSetup() {
   return (
-    <Panel title="Outgoing calls with the MyOperator extension" sub={appMode ? 'Dial mode is app: Call patient opens the dial window straight away.' : 'Dial mode is not set: CareDesk tries the Calling API first.'}
-      actions={<Button size="sm" onClick={onReset} disabled={busy}>Reset outgoing calls</Button>}>
-      <ol className="st-steps small">{steps.map(([t, b]) => <li key={t}><strong>{t}.</strong> {b}</li>)}</ol>
-      <div className="row mt-12" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <span className="tiny muted">CRM link</span>
-        <span className="mono small" style={{ wordBreak: 'break-all' }}>{crm}</span>
-        <Button size="xs" kind="ghost" onClick={() => copy(crm)}>Copy</Button>
-      </div>
-      <div className="tiny faint mt-8">Test it: on any case press Call patient, then the green icon next to the number. A MyOperator window opens; press Call. It then shows in MyOperator › Call logs and on the case within about a minute.</div>
+    <Panel title="Call directly from CareDesk" sub="Press Call patient or Call back in the CRM. Answer your registered phone, then MyOperator connects the customer.">
+      <ol className="st-steps small">
+        <li>Ask MyOperator to enable <strong>Calling API access</strong> and a <strong>peer-to-peer user-dial campaign</strong> with <strong>Dial first: Agent</strong> and the business caller ID.</li>
+        <li>Save the <strong>Company ID, Secret token, Calling API key and Public IVR ID</strong> above.</li>
+        <li>Use <strong>Load MyOperator users</strong> below and link each CRM login to the correct agent. Confirm that their registered phone is available for calls.</li>
+        <li>Save, then press <strong>Test connection</strong>. This checks settings and the user API; it does not place a call or verify calling entitlement.</li>
+        <li>Open a test patient or case and press <strong>Call patient</strong>. Answer the agent's phone, verify the customer connects, then check the call status and recording.</li>
+      </ol>
+      <div className="small muted mt-12">No browser extension, vendor pop-up or microphone permission is needed. If calling fails, CareDesk shows the error here in the app. Keep webhooks configured for live status updates.</div>
+    </Panel>
+  );
+}
+
+function WhatsAppSetup() {
+  return (
+    <Panel title="Two-way WhatsApp Business (WABA) chats" sub="Receive inbound patient enquiries, send approved templates (T-01 to T-08) and reply inside the 24-hour customer care window.">
+      <ol className="st-steps small">
+        <li>In MyOperator, open <strong>APIs &amp; Webhooks › Developer API › WhatsApp API › Manage</strong> and copy the <strong>WhatsApp API key</strong> and <strong>WhatsApp phone number ID</strong> into the table above.</li>
+        <li>Enable <strong>Webhooks v2</strong> for <strong>Message received</strong>, <strong>Message sent</strong>, <strong>Message delivered</strong> and <strong>Message read</strong> pointing to the webhook address below.</li>
+        <li>When a patient messages the Hinduja Home Care WhatsApp number, CareDesk matches their mobile, opens a case if none is active, starts the 5-minute acknowledgement SLA timer and shows the thread in <strong>WhatsApp chats</strong>.</li>
+        <li>For approved Meta templates, set each template's <strong>Provider template name</strong> under the <strong>Templates &amp; scripts</strong> tab so quotes (T-03) and confirmations (T-04) deliver outside the 24-hour session window.</li>
+      </ol>
     </Panel>
   );
 }
@@ -739,11 +739,6 @@ function MyOperatorConnection() {
     setVals({}); setTest(null); s.reload();
   }, 'MyOperator details saved');
   const runTest = () => run(async () => setTest(await testMo()));
-  // Calling API needs a campaign (Public IVR ID) that MyOperator has not enabled: drop it and dial through the extension
-  const resetDial = () => run(async () => {
-    await saveMoSettings({ values: { public_ivr_id: '', dial_mode: 'app' } });
-    setVals({}); setTest(null); s.reload();
-  }, 'Outgoing calls reset: CareDesk now opens the dial window straight away');
   const genKey = () => run(async () => { await saveMoSettings({ generate_webhook_key: true }); setConfirmKey(false); setShowKey(true); s.reload(); }, 'New webhook key made. Update it in MyOperator.');
   const d = s.data;
   const wh = d?.webhook || {};
@@ -758,7 +753,7 @@ function MyOperatorConnection() {
         {d?.demo && <div className="small muted mb-8">Demo mode: MyOperator connects on the live site.</div>}
         {test && (
           <table className="t compact mb-12"><tbody>
-            {[['api', 'API token'], ['click_to_call', 'Click-to-call'], ['webhook', 'Webhook']].map(([k, l]) => (
+            {[['api', 'API token'], ['click_to_call', 'Calling settings'], ['whatsapp', 'WhatsApp (WABA)'], ['webhook', 'Webhook']].map(([k, l]) => (
               <tr key={k}><td className="small strong nowrap">{l}</td><td>{okBadge(test[k])}</td><td className="small">{test[k]?.message}</td></tr>
             ))}
           </tbody></table>
@@ -780,7 +775,8 @@ function MyOperatorConnection() {
         )}
         <div className="tiny faint mt-8">If Calling API › Manage is locked in MyOperator, ask MyOperator support to enable the Calling API and Webhooks v2 for the account.</div>
       </Panel>
-      <ExtensionSetup onReset={resetDial} busy={busy || d?.demo} appMode={(d?.fields || []).some((f) => f.key === 'dial_mode' && f.set)} />
+      <CallingSetup />
+      <WhatsAppSetup />
 
       <Panel title="Calls into the CRM (webhooks)" sub="Add these in MyOperator so incoming calls pop up for the agent, and ended calls, missed calls and recordings reach the case."
         actions={<Button size="sm" onClick={() => setConfirmKey(true)} disabled={busy || d?.demo}>{wh.key ? 'New key' : 'Generate key'}</Button>}>
@@ -891,7 +887,7 @@ function TelephonyTab() {
           <div className="st-status">
             {items.map(([k, l, s]) => (
               <div key={k} className="st-cell"><div className="small strong">{l}</div><div className="tiny muted mb-8">{s}</div>
-                {h.data?.demo && k === 'supabase' ? <Badge kind="info" dot>Demo database</Badge> : st(h.data?.[k])}</div>
+                {h.data?.demo && k === 'supabase' ? <Badge kind="info" dot>Demo database</Badge> : k === 'telephony' && h.data?.[k] === true ? <Badge kind="info" dot>Configured</Badge> : st(h.data?.[k])}</div>
             ))}
           </div>
         )}

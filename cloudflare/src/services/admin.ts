@@ -4,7 +4,7 @@ import { ROLES, supabaseBase } from '../api/auth';
 import { ApiError } from '../domain/errors';
 import { asSystem, normMobile, pgArray } from '../db';
 import type { Env } from '../env';
-import { MO_FIELDS, clearMoCache, describeMo, moEnv, randomKey } from './myoperator-config';
+import { MO_FIELDS, clearMoCache, describeMo, missingCallingSettings, moEnv, randomKey } from './myoperator-config';
 import { syncCallLogs, syncState } from './mo-sync';
 
 type J = Record<string, any>;
@@ -41,7 +41,7 @@ export async function webhookEvents(c: Ctx) {
 export async function integrations(c: Ctx) {
   const e = await moEnv(c.env, c.sql);
   return {
-    supabase: !!(e.HYPERDRIVE || e.DATABASE_URL), auth: !!e.SUPABASE_URL, telephony: !!(e.MYOPERATOR_OBD_API_KEY && e.MYOPERATOR_COMPANY_ID),
+    supabase: !!(e.HYPERDRIVE || e.DATABASE_URL), auth: !!e.SUPABASE_URL, telephony: missingCallingSettings(e).length === 0,
     webhook: !!e.MYOPERATOR_WEBHOOK_KEY, recordings: !!e.MYOPERATOR_API_TOKEN, whatsapp: !!e.MYOPERATOR_WABA_API_KEY,
     ai: !!e.GEMINI_API_KEY, mis_email: !!(e.RESEND_API_KEY && e.MIS_RECIPIENTS), user_admin: !!e.SUPABASE_SERVICE_ROLE_KEY,
     webhook_url: (e.APP_URL || new URL(c.req.url).origin) + '/webhooks/myoperator', build: e.BUILD_SHA || 'dev',
@@ -139,17 +139,24 @@ export async function testMo(c: Ctx) {
   } catch (e) {
     out.api = { ok: false, message: (e as Error).message };
   }
-  const missing = [['company_id', env.MYOPERATOR_COMPANY_ID], ['secret_token', env.MYOPERATOR_SECRET_TOKEN], ['obd_api_key', env.MYOPERATOR_OBD_API_KEY], ['public_ivr_id', env.MYOPERATOR_PUBLIC_IVR_ID]]
-    .filter(([, v]) => !v).map(([k]) => MO_FIELDS.find((f) => f.key === k)!.label);
+  const missing = missingCallingSettings(env);
   out.click_to_call = missing.length
     ? { ok: false, message: 'Missing: ' + missing.join(', ') }
-    : { ok: true, message: 'Ready. Each agent also needs their MyOperator user (Link users below).' };
+    : { ok: true, message: 'Settings present. Link each agent below and place a test call to verify Calling API access and agent-first routing.' };
   const [last] = await c.sql`select event_type, received_at from webhook_events where source = 'myoperator' order by received_at desc limit 1`;
   out.webhook = !env.MYOPERATOR_WEBHOOK_KEY
     ? { ok: false, message: 'No webhook key yet: press Generate key' }
     : last
       ? { ok: true, message: `Last event received ${new Date(last.received_at).toISOString()} (${last.event_type})` }
       : { ok: false, message: 'Key set, but no event received yet. Add the webhook in MyOperator and make a test call.' };
+  const missingWaba = [
+    !env.MYOPERATOR_COMPANY_ID && 'Company ID',
+    !env.MYOPERATOR_WABA_API_KEY && 'WhatsApp API key',
+    !env.MYOPERATOR_WABA_PHONE_ID && 'WhatsApp phone number ID',
+  ].filter(Boolean);
+  out.whatsapp = missingWaba.length
+    ? { ok: false, message: 'Missing: ' + missingWaba.join(', ') }
+    : { ok: true, message: `WhatsApp Business API ready (Phone ID ${env.MYOPERATOR_WABA_PHONE_ID})` };
   return out;
 }
 

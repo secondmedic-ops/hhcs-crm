@@ -37,7 +37,7 @@ export default function Callbacks() {
   const avgMin = data?.done.length ? data.done.reduce((a, x) => a + (new Date(x.completed_at) - new Date(x.created_at)), 0) / data.done.length / 60000 : null;
   const rows = data ? data[tab] : null;
 
-  const callBack = (cb) => run(async () => { const r = await dial({ callback_id: cb.id }); if (r?.mode !== 'app') toast.ok('Dialling via MyOperator. Pick up on your phone.'); });
+  const callBack = (cb) => run(async () => { await dial({ callback_id: cb.id }); toast.ok('Dialling via MyOperator. Pick up on your phone.'); });
   const markDone = (cb) => run(() => rpc('callback_update', { p_id: cb.id, p_status: 'done', p_note: null }), 'Callback marked done');
   const markUnreachable = (reason) => run(async () => {
     const cb = unreach;

@@ -41,6 +41,7 @@ const jwks = http.createServer(async (req, res) => {
     let raw = ''; for await (const ch of req) raw += ch;
     obdCalls.push({ body: JSON.parse(raw || '{}'), headers: req.headers });
     if (obdCalls[obdCalls.length - 1].body.public_ivr_id === 'bad') return send(400, { status: 'error', code: 400, message: 'Public ID or Company id is invalid' });
+    if (obdCalls[obdCalls.length - 1].body.public_ivr_id === 'unknown') return send(503, { status: 'error' });
     return send(200, { status: 'success', code: 200, message: 'Request accepted', unique_id: 'obd-' + obdCalls.length });
   }
   if (req.url.startsWith('/mo/search') && req.method === 'POST') { // MyOperator call-log search stand-in
@@ -108,7 +109,7 @@ const envFile = join(tmp, 'rehearsal.env');
 writeFileSync(envFile, [
   `SUPABASE_URL=${SUPABASE}`, `SUPABASE_SERVICE_ROLE_KEY=${ADMIN_KEY}`, 'EXPOSE_CONTRACT=1', 'BUILD_SHA=rehearsal', 'GEMINI_API_KEY=',
   'MYOPERATOR_WEBHOOK_KEY=rehearsal-hook', 'MYOPERATOR_COMPANY_ID=co-1', 'MYOPERATOR_SECRET_TOKEN=st', 'MYOPERATOR_OBD_API_KEY=obd-key',
-  'MYOPERATOR_PUBLIC_IVR_ID=ivr-1', `MYOPERATOR_OBD_URL=${SUPABASE}/obd`, `MYOPERATOR_API_URL=${SUPABASE}/mo`,
+  `MYOPERATOR_OBD_URL=${SUPABASE}/obd`, `MYOPERATOR_API_URL=${SUPABASE}/mo`,
 ].join('\n') + '\n', { mode: 0o600 });
 let log = '';
 const noProxy = ['127.0.0.1', 'localhost', process.env.NO_PROXY].filter(Boolean).join(',');

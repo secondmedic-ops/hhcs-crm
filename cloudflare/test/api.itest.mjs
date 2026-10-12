@@ -152,10 +152,24 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const line = await batch('sup', [sel('v_calls', { cols: 'line_label', filters: [{ col: 'session_id', op: 'eq', val: 'sess-miss-1' }], mode: 'single' })]);
   check(line.body?.results?.[0]?.data?.line_label === 'Hinduja helpline', 'call tagged with its line (Hinduja helpline)', JSON.stringify(line.body));
   check((await call('agent', 'POST', '/api/v1/calls/dial', { number: '9999999999' })).status === 400, 'agent cannot dial a typed number');
+  const beforeMissing = await one(`select count(*)::int n from calls`);
+  const missingDial = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: cb.id });
+  check(missingDial.status === 503 && /Public IVR ID/.test(missingDial.body?.message || '')
+    && (await one(`select count(*)::int n from calls`)).n === beforeMissing.n
+    && (await one(`select status from callbacks where id = $1`, cb.id)).status === 'pending' && obdCalls.length === 0,
+    'missing calling configuration leaves callback pending and creates no call', JSON.stringify(missingDial.body));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
+  const unlinkedDial = await call('sup', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(unlinkedDial.status === 409 && obdCalls.length === 0 && (await one(`select count(*)::int n from calls`)).n === beforeMissing.n,
+    'unlinked agent cannot start a call', JSON.stringify(unlinkedDial.body));
+  check((await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid, callback_id: cb.id })).status === 400,
+    'ambiguous call target rejected');
   const dial = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: cb.id });
-  check(dial.status === 200 && dial.body?.ok, 'click-to-call accepted', JSON.stringify(dial.body));
+  check(dial.status === 200 && dial.body?.ok && dial.body.mode === 'api' && !dial.body.number && !dial.body.provider,
+    'CRM click-to-call accepted without exposing the number or provider response', JSON.stringify(dial.body));
   const obd = obdCalls[obdCalls.length - 1];
-  check(obd?.body?.user_id === 'mo-77' && obd?.body?.number === '+919930011223' && obd?.headers['x-api-key'] === 'obd-key', 'OBD request: agent id, number, key', JSON.stringify(obd?.body));
+  check(obd?.body?.user_id === 'mo-77' && obd?.body?.type === '1' && obd?.body?.number === '+919930011223'
+    && obd?.headers['x-api-key'] === 'obd-key' && obd?.headers['secret-key'] === 'st', 'OBD request: peer-to-peer agent id, number, keys', JSON.stringify(obd?.body));
   const b3 = { session_id: 'sess-out-1', direction: 'outbound', customer_identifier: '+919930011223' };
   await hook({ ...b3, event_id: 'o1', event_type: 'call.initiated', payload: { client_ref_id: obd?.body?.reference_id } });
   await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ answered_at: t0 + 5, ring_duration: 5 }] } });
@@ -164,9 +178,20 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check(out?.session_id === 'sess-out-1' && out?.status === 'completed', 'webhook matched to the CRM call by reference', JSON.stringify(out));
   check((await one(`select status from callbacks where id = $1`, cb.id))?.status === 'done', 'answered call-back closes the queue item');
   await hook({ event_id: 'w1', event_type: 'message.received', customer_identifier: '+919811122233', system_identifier: '+918049368621',
-    payload: { conversation: { customer_name: 'Meera Joshi' }, data: { context: { body: 'Need ECG at home tomorrow in Khar' } } } });
-  const wa = await one(`select c.source_channel, c.case_no from cases c join patients p on p.id = c.patient_id where p.mobile = '+919811122233'`);
+    payload: { id: 'wamid_in_1', conversation: { customer_name: 'Meera Joshi' }, data: { context: { body: 'Need ECG at home tomorrow in Khar' } } } });
+  const wa = await one(`select c.id::text as case_id, c.patient_id::text as patient_id, c.source_channel, c.case_no from cases c join patients p on p.id = c.patient_id where p.mobile = '+919811122233'`);
   check(wa?.source_channel === 'whatsapp', 'WhatsApp message opens a case', JSON.stringify(wa));
+  const waListAgent = await batch('agent', [sel('v_whatsapp_chats', { filters: [{ col: 'patient_id', op: 'eq', val: wa.patient_id }], mode: 'single' })]);
+  const waRowAgent = waListAgent.body?.results?.[0]?.data;
+  check(waRowAgent?.needs_reply === true && waRowAgent?.window_open === true && /\u2022/.test(waRowAgent?.patient_mobile || ''),
+    'v_whatsapp_chats shows inbound chat awaiting reply with masked mobile for agent', JSON.stringify(waRowAgent));
+  const waReply = await call('agent', 'POST', '/api/v1/whatsapp/send', { case_id: wa.case_id, text: 'Namaste Meera ji, please share your full address in Khar West.' });
+  check(waReply.status === 200 && waReply.body?.id && waReply.body?.text?.includes('Khar West'), 'agent sends a free-text WhatsApp reply', JSON.stringify(waReply.body));
+  const ackTimer = await one(`select status from sla_timers where case_id = $1 and policy_key = 'ack'`, wa.case_id);
+  check(ackTimer?.status === 'met', 'outbound WhatsApp reply meets the 5-minute acknowledgement SLA', JSON.stringify(ackTimer));
+  const waAfterReply = await batch('sup', [sel('v_whatsapp_chats', { filters: [{ col: 'patient_id', op: 'eq', val: wa.patient_id }], mode: 'single' })]);
+  check(waAfterReply.body?.results?.[0]?.data?.needs_reply === false && waAfterReply.body?.results?.[0]?.data?.patient_mobile === '+919811122233',
+    'v_whatsapp_chats flips needs_reply to false after reply and shows full mobile to supervisor', JSON.stringify(waAfterReply.body?.results?.[0]?.data));
   const wh = await call('sup', 'GET', '/api/v1/admin/webhooks');
   check(wh.status === 200 && wh.body.length >= 8, 'webhook log visible in Settings', String(wh.body?.length));
 
@@ -221,18 +246,32 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const ue = await one(`select processed, error from webhook_events where event_type = 'unknown' order by received_at desc limit 1`);
   check(unk.status === 200 && ue && !ue.processed && /not recognised/.test(ue.error || ''), 'unknown format stored for checking, not lost', JSON.stringify(ue));
 
-  // ---- 6b2. outgoing calls without the Calling API: dial window for the MyOperator extension / app
+  // ---- 6b2. CRM-only calling: rejection, callback recovery, legacy settings and uncertain responses
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'bad' } });
   const fb = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
-  check(fb.status === 200 && fb.body?.mode === 'app' && /^\+91\d{10}$/.test(fb.body.number || '') && /refused/.test(fb.body.reason || ''),
-    'Calling API refuses -> dial window with the number (app mode)', JSON.stringify(fb.body));
-  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: '', dial_mode: 'app' } });
-  const apd = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
-  const rv = await one(`select count(*)::int n from access_log where action = 'reveal_number' and user_id = $1`, U.agent);
-  check(apd.status === 200 && apd.body?.mode === 'app' && rv.n >= 2, 'dial mode "app": number shown, every reveal in the access log', JSON.stringify({ b: apd.body, rv }));
-  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { dial_mode: '' } });
+  const rejected = await one(`select status, ended_at, raw from calls where click_to_call_ref = $1`, obdCalls.at(-1)?.body.reference_id);
+  check(fb.status === 502 && !fb.body?.number && !fb.body?.mode && rejected?.status === 'failed' && rejected.ended_at
+    && rejected.raw?.dial_outcome === 'rejected', 'provider rejection fails the call without an extension fallback', JSON.stringify(fb.body));
+  const pendingCb = await one(`select id from callbacks where number = '+919876500002'`);
+  const failedCallback = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: pendingCb.id });
+  check(failedCallback.status === 502 && (await one(`select status from callbacks where id = $1`, pendingCb.id)).status === 'pending',
+    'rejected callback returns to pending queue');
+  // Simulate a saved setting from an older installation; it must no longer select the extension.
+  await sql`update integration_settings set settings = settings || '{"dial_mode":"app"}'::jsonb where provider = 'myoperator'`;
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
   const back = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
-  check(back.status === 200 && back.body?.mode === 'api', 'Calling API used again when set up', JSON.stringify(back.body));
+  const rv = await one(`select count(*)::int n from access_log where action = 'reveal_number' and user_id = $1`, U.agent);
+  check(back.status === 200 && back.body?.mode === 'api' && rv.n === 0 && !back.body.number,
+    'old app setting ignored: API calls only, no number reveals', JSON.stringify(back.body));
+  const configured = await call('admin', 'GET', '/api/v1/admin/myoperator');
+  check(!configured.body.fields.some(f => f.key === 'dial_mode'), 'extension dial mode removed from settings');
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'unknown' } });
+  const attempts = obdCalls.length;
+  const unknownCall = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  const unknownRow = await one(`select status, raw from calls where click_to_call_ref = $1`, obdCalls.at(-1)?.body.reference_id);
+  check(unknownCall.status === 504 && obdCalls.length === attempts + 1 && unknownRow?.status === 'ringing'
+    && unknownRow.raw?.dial_outcome === 'unconfirmed', 'uncertain provider result does not redial or falsely mark the call failed', JSON.stringify(unknownCall.body));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
 
   // ---- 6c. call-log sync (no webhooks needed)
   check((await call('agent', 'POST', '/api/v1/admin/myoperator/sync', {})).status === 403, 'call-log sync: agents kept out');

@@ -54,6 +54,42 @@ export async function endCall(callId) {
   return c;
 }
 
+const WA_SAMPLES = [
+  { name: 'Mrs. Kavita Deshmukh', text: 'Namaste, need home blood sample collection (CBC, HbA1c, Thyroid) and ECG for my mother (74 yrs) in Khar West tomorrow 8 AM. Pincode 400052.' },
+  { name: 'Mr. Harish Kulkarni', text: 'Hello Hinduja Home Care, can you send a physiotherapist at home in Dadar West (400028) for post-knee surgery rehab?' },
+  { name: 'Mrs. Sunita Joshi', text: 'Please share the rate card for portable X-Ray chest at home in Bandra West. My father cannot travel.' },
+];
+
+export async function simulateInboundWhatsApp(customText) {
+  const agent = await me();
+  const sample = WA_SAMPLES[Math.floor(Math.random() * WA_SAMPLES.length)];
+  const existing = !customText && Math.random() < 0.45
+    ? await one(`select c.id as case_id, c.patient_id, p.full_name from cases c join patients p on p.id = c.patient_id
+        where c.workspace_id = $1 and c.stage not in ('closed','cancelled') order by c.created_at desc limit 1`, [agent.workspace_id])
+    : null;
+  if (existing) {
+    const body = customText || 'We have shared the address: 402 Sea Breeze, Linking Road, Khar West 400052. Please confirm the morning 8:30 AM slot.';
+    const row = await one(`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_label, summary, body, evidence, meta)
+      values ($1,$2,$3,'whatsapp','inbound','Patient','WhatsApp message received',$4,'Message copy','{"delivery_status":"received"}'::jsonb) returning *`,
+      [agent.workspace_id, existing.case_id, existing.patient_id, body]);
+    return { ...row, patient_id: existing.patient_id, case_id: existing.case_id, patient_name: existing.full_name };
+  }
+  const number = '+9198' + String(Math.floor(20000000 + Math.random() * 79999999));
+  const text = customText || sample.text;
+  const r = (await one(`select create_enquiry($1::jsonb) as r`, [JSON.stringify({
+    workspace_id: agent.workspace_id,
+    source_channel: 'whatsapp',
+    services_requested: text.slice(0, 500),
+    patient: { full_name: sample.name, mobile: number },
+    caller_mobile: number,
+    owner_id: agent.role === 'agent' ? agent.id : null,
+  })])).r;
+  const row = await one(`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_label, summary, body, evidence, meta)
+    values ($1,$2,$3,'whatsapp','inbound','Patient','WhatsApp message received',$4,'Message copy','{"delivery_status":"received"}'::jsonb) returning *`,
+    [agent.workspace_id, r.case_id, r.patient_id, text]);
+  return { ...row, patient_id: r.patient_id, case_id: r.case_id, case_no: r.case_no, patient_name: sample.name };
+}
+
 async function processCall(callId) {
   const c = await one('select * from calls where id = $1', [callId]);
   const scripted = c.raw?.demo_script || !c.patient_id;
@@ -96,7 +132,7 @@ function briefFor(c, gates) {
 }
 
 const STAGE_WORDS = ['enquiry', 'pricing', 'booking', 'deployment', 'completion', 'payment', 'closure', 'closed', 'cancelled'];
-const ROUTES = [[/callback|missed/, '/callbacks'], [/approv|discount/, '/approvals'], [/escalat/, '/escalations'], [/complain/, '/complaints'],
+const ROUTES = [[/whatsapp|chat/, '/whatsapp'], [/callback|missed/, '/callbacks'], [/approv|discount/, '/approvals'], [/escalat/, '/escalations'], [/complain/, '/complaints'],
   [/mis|report|weekly|monthly/, '/mis'], [/audit|log/, '/audit'], [/dispatch|field|technician/, '/field'], [/call|recording/, '/calls'],
   [/patient/, '/patients'], [/setting|rate card|template/, '/settings'], [/dashboard|kpi/, '/']];
 
@@ -110,12 +146,12 @@ function parseCommand(q) {
   if (/breach|delayed|late|overdue/.test(s)) filters.sla_state = 'breached';
   else if (/at risk|risk/.test(s)) filters.sla_state = 'at_risk';
   for (const z of ['andheri', 'bandra', 'khar', 'dadar', 'mahim', 'powai', 'thane']) if (s.includes(z)) filters.zone = z;
-  if (/whatsapp/.test(s)) filters.channel = 'whatsapp';
+  if (/whatsapp/.test(s) && /case|enquir/.test(s)) filters.channel = 'whatsapp';
   const d = (o) => new Date(Date.now() + 5.5 * 3600e3 + o * 86400e3).toISOString().slice(0, 10);
   if (/today/.test(s)) { filters.from = d(0); filters.to = d(0); }
   if (/yesterday/.test(s)) { filters.from = d(-1); filters.to = d(-1); }
   if (/this week|last 7/.test(s)) { filters.from = d(-6); filters.to = d(0); }
-  if (Object.keys(filters).length && !/^(go|open|show) (to )?(the )?(mis|audit|settings)/.test(s)) {
+  if (Object.keys(filters).length && !/^(go|open|show) (to )?(the )?(mis|audit|settings|whatsapp)/.test(s)) {
     return { action: 'filter_cases', route: '/cases', filters, explain: 'Cases · ' + Object.entries(filters).map(([k, v]) => `${k}: ${[].concat(v).join('/')}`).join(' · ') };
   }
   for (const [re, route] of ROUTES) if (re.test(s)) return { action: 'navigate', route, explain: 'Open ' + route };
@@ -188,6 +224,30 @@ export async function demoApi(path, body = {}, method) {
     await svc(`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_id, actor_label, summary, body, evidence, template_id)
       values ($1,$2,$3,$4,'outbound',$5,$6,$7,$8,'Message copy',$9)`, [c.workspace_id, m[1], c.patient_id, t.kind, a.id, a.agent_code || a.full_name, `${t.title} sent (template ${t.code})`, text, t.id]);
     return { text, delivery: { simulated: true } };
+  }
+  if (path === '/whatsapp/send') {
+    const a = await me();
+    let caseId = body.case_id || null;
+    let patientId = body.patient_id || null;
+    if (caseId && !patientId) {
+      const k = await one('select patient_id from cases where id = $1', [caseId]);
+      patientId = k?.patient_id || null;
+    } else if (patientId && !caseId) {
+      const k = await one(`select id from cases where patient_id = $1 and stage not in ('closed','cancelled') order by created_at desc limit 1`, [patientId]);
+      caseId = k?.id || null;
+    }
+    let text = String(body.text || '').trim();
+    let t = null;
+    if (body.template_id) {
+      t = await one('select * from templates where id = $1', [body.template_id]);
+      if (caseId) text = await rpc('render_template', { p_template: body.template_id, p_case: caseId });
+      else text = t?.body || text;
+    }
+    const summary = t ? `${t.title} sent (template ${t.code})` : 'WhatsApp reply sent';
+    const row = await one(`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_id, actor_label, summary, body, evidence, template_id, meta)
+      values ($1,$2,$3,'whatsapp','outbound',$4,$5,$6,$7,'Message copy',$8,'{"delivery_status":"sent"}'::jsonb) returning id, occurred_at`,
+      [a.workspace_id, caseId, patientId, a.id, a.agent_code || a.full_name, summary, text, t?.id || null]);
+    return { id: row.id, occurred_at: row.occurred_at, text, case_id: caseId, patient_id: patientId, delivery: { simulated: true } };
   }
   if ((m = path.match(/^\/ai\/cases\/(.+)\/brief$/))) {
     const { data: c } = await db.from('v_cases').select('*').eq('id', m[1]).single();

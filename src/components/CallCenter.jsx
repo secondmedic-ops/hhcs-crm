@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { useNow } from '../lib/hooks.js';
 import { dur, date, STAGE_LABEL } from '../lib/fmt.js';
 import Icon from './icons.jsx';
-import { Button, Badge, StageBadge, Modal, useToast } from './ui.jsx';
+import { Button, Badge, StageBadge, useToast } from './ui.jsx';
 
 const Ctx = createContext({ active: null, ringing: [] });
 export const useCalls = () => useContext(Ctx);
@@ -36,7 +36,6 @@ export function CallProvider({ children }) {
     <Ctx.Provider value={{ active, ringing, reload: load, dismiss: (id) => setDismissed((d) => ({ ...d, [id]: true })) }}>
       {children}
       {ringing[0] && <ScreenPop call={ringing[0]} />}
-      <DialSheet />
     </Ctx.Provider>
   );
 }
@@ -85,7 +84,7 @@ function ScreenPop({ call }) {
           <Button kind="call" icon="phone" onClick={answer}>{isDemo || isLocal ? 'Answer' : 'Open on screen'}</Button>
           <Button onClick={() => { dismiss(call.id); toast('Call left in queue'); }}>Dismiss</Button>
         </div>
-        {!isDemo && !isLocal && <div className="tiny faint mt-8">Answer on your MyOperator phone or app; this panel follows the call.</div>}
+        {!isDemo && !isLocal && <div className="tiny faint mt-8">Answer on your registered phone; this panel follows the call.</div>}
       </div>
     </div>
   );
@@ -117,35 +116,3 @@ export function LiveCallBar({ call }) {
 }
 
 export { STAGE_LABEL, Icon };
-
-const EXTENSION_URL = 'https://chromewebstore.google.com/detail/myoperator-click-to-call/hnlocbghekoeogmbhhphhpjldbipmnhd';
-
-/** Dial window: used when MyOperator's Calling API is not available. The number is shown for this call only; the MyOperator
- *  Chrome extension adds its call button next to it (or the agent dials it in the MyOperator app). The call is placed and
- *  recorded by MyOperator, and the call-log sync attaches it to the case within about a minute. */
-function DialSheet() {
-  const toast = useToast();
-  const [d, setD] = useState(null);
-  useEffect(() => {
-    const on = (e) => setD(e.detail);
-    window.addEventListener('caredesk:dial', on);
-    return () => window.removeEventListener('caredesk:dial', on);
-  }, []);
-  if (!d) return null;
-  const copy = () => navigator.clipboard?.writeText(d.number).then(() => toast('Number copied'), () => toast.error('Copy failed'));
-  return (
-    <Modal title={`Call ${d.patient_name || 'patient'}`} onClose={() => setD(null)}
-      footer={<><Button onClick={copy}>Copy number</Button><Button kind="primary" onClick={() => setD(null)}>Done</Button></>}>
-      <div className="dial-number mono">{d.number}</div>
-      <ol className="st-steps small mt-12">
-        <li>Click the green <strong>MyOperator call icon</strong> next to the number. A MyOperator Webcall window opens; press <strong>Call</strong> there. Or dial the number in the <strong>MyOperator app</strong>.</li>
-        <li>MyOperator places and records the call from the business number.</li>
-        <li>Within about a minute the call, with its recording, appears on this case and patient.</li>
-      </ol>
-      <div className="small mt-12" style={{ padding: '8px 10px', background: 'var(--panel-2)', border: '1px solid var(--line)' }}>
-        <strong>Nothing happens on click?</strong> The browser blocked MyOperator&apos;s pop-up: click the blocked pop-up icon at the right of the address bar and choose Always allow (in Brave, also put Shields down for this site). Check the extension is signed in (toolbar icon shows your name).
-      </div>
-      <div className="tiny faint mt-12">{d.reason ? `${d.reason}. ` : ''}Showing the number is written to the access log. No extension yet? <a href={EXTENSION_URL} target="_blank" rel="noreferrer">Add MyOperator Click to Call</a> to Chrome or Brave and sign in to MyOperator.</div>
-    </Modal>
-  );
-}

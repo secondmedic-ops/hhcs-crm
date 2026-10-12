@@ -6,7 +6,7 @@ import type { Ctx } from '../api/context';
 import { ApiError } from '../domain/errors';
 import { asSystem, asUser, normMobile, readAsUser } from '../db';
 import { clickToCall, recordingUrl, sendWhatsApp } from './myoperator';
-import { moEnv } from './myoperator-config';
+import { missingCallingSettings, moEnv } from './myoperator-config';
 import { dbMessage } from './data';
 
 type J = Record<string, any>;
@@ -14,6 +14,10 @@ const wrap = (e: unknown): never => { throw dbMessage(e) ?? e; };
 
 export async function dial(c: Ctx, body: J) {
   const ws = c.user.workspaceId;
+  if (['case_id', 'patient_id', 'callback_id', 'number'].filter((k) => body[k]).length !== 1) {
+    throw new ApiError(400, 'Choose one patient, case or callback to call');
+  }
+  if (body.number && c.user.role === 'agent') throw new ApiError(400, 'Choose a patient, case or callback to call');
   // what the agent may dial is decided with their own visibility (RLS): a case or patient they can see, or a callback
   const target = await readAsUser(c.sql, c.user.id, async (tx) => {
     if (body.case_id) {
@@ -31,6 +35,12 @@ export async function dial(c: Ctx, body: J) {
     return true;
   }).catch(wrap);
   if (!target) throw new ApiError(404, 'Not found or not yours to call');
+
+  // Validate before changing a callback or creating a call. Legacy dial_mode settings are ignored.
+  const env = await moEnv(c.env, c.sql);
+  const missing = missingCallingSettings(env);
+  if (missing.length) throw new ApiError(503, 'Calling is not configured. Ask your administrator to complete Settings > Telephony: ' + missing.join(', '));
+  if (!c.user.myoperatorUserId) throw new ApiError(409, 'Your CRM login is not linked to a MyOperator agent. Ask your administrator to link it in Settings > Telephony.');
 
   const ref = 'crm-' + crypto.randomUUID();
   const { result, changed } = await asSystem(c.sql, async (tx) => {
@@ -54,42 +64,31 @@ export async function dial(c: Ctx, body: J) {
     if (!number) return null;
     const [call] = await tx`insert into calls (workspace_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, session_id, click_to_call_ref)
       values (${ws}, 'outbound', ${number}, ${c.user.id}, ${c.user.fullName}, 'ringing', ${patientId}, ${caseId}, ${ref}, ${ref}) returning id`;
-    const [pt] = patientId ? await tx`select full_name from patients where id = ${patientId}` : [];
-    return { callId: call.id as string, number, patientId, caseId, patientName: (pt?.full_name as string) || null };
+    return { callId: call.id as string, number };
   });
   if (!result) throw new ApiError(400, 'No number to dial');
   c.changed.push(...changed);
 
-  // 1) MyOperator Calling API (rings the agent, then the patient) when it is fully set up
-  const env = await moEnv(c.env, c.sql);
-  const forceApp = String(env.MYOPERATOR_DIAL_MODE || '').trim().toLowerCase() === 'app';
-  const apiReady = !!(env.MYOPERATOR_OBD_API_KEY && env.MYOPERATOR_COMPANY_ID && env.MYOPERATOR_PUBLIC_IVR_ID && c.user.myoperatorUserId);
-  let apiError: string | null = null;
-  if (!forceApp && apiReady) {
-    try {
-      const provider = await clickToCall(env, { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
-      return { ok: true, mode: 'api', call_id: result.callId, provider };
-    } catch (e) {
-      apiError = (e as Error).message;
-    }
+  try {
+    await clickToCall(env, { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
+    // Return only CRM identifiers: provider responses can echo the customer's number or credentials.
+    return { ok: true, mode: 'api', call_id: result.callId };
+  } catch (e) {
+    const unconfirmed = e instanceof ApiError && e.status === 504;
+    const failure = await asSystem(c.sql, async (tx) => {
+      // A webhook may already have advanced this call; never overwrite it with an HTTP failure.
+      const updated = await tx`update calls set status = ${unconfirmed ? 'ringing' : 'failed'},
+        ended_at = ${unconfirmed ? null : new Date().toISOString()},
+        raw = coalesce(raw, '{}'::jsonb) || ${tx.json({ dial_outcome: unconfirmed ? 'unconfirmed' : 'rejected' })}
+        where id = ${result.callId} and status = 'ringing' and session_id = ${ref} returning id`;
+      if (!unconfirmed && updated.length && body.callback_id) {
+        await tx`update callbacks set status = 'pending' where id = ${body.callback_id} and workspace_id = ${ws}
+          and status = 'in_progress' and assigned_to = ${c.user.id}`;
+      }
+    });
+    c.changed.push(...failure.changed);
+    throw e;
   }
-  // 2) Otherwise: the agent dials through MyOperator (Chrome extension button on the number, or the MyOperator app).
-  // The number is shown to this user only for this call (written to the access log); the call-log sync then attaches
-  // MyOperator's call record, recording included, to this call / case (same number, within 3 hours).
-  const reason = forceApp ? 'Outgoing calls are set to the MyOperator extension / app'
-    : apiError ? `MyOperator Calling API refused: ${apiError.replace(/^MyOperator:\s*/, '')}`
-      : 'MyOperator Calling API is not fully set up (Public IVR ID or your MyOperator user)';
-  const r2 = await asSystem(c.sql, async (tx) => {
-    await tx`insert into access_log (workspace_id, user_id, action, entity, entity_id, meta)
-      values (${ws}::uuid, ${c.user.id}::uuid, 'reveal_number', ${result.caseId ? 'case' : 'patient'}, ${result.caseId || result.patientId}, ${tx.json({ purpose: 'dial via MyOperator app', call_id: result.callId })})`;
-    if (result.caseId) {
-      await tx`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_id, actor_label, summary, call_id, meta)
-        values (${ws}::uuid, ${result.caseId}::uuid, ${result.patientId}, 'phone', 'outbound', ${c.user.id}::uuid, ${c.user.fullName}, 'Outbound call started via MyOperator (extension / app)', ${result.callId}::uuid, ${tx.json({ mode: 'app' })})`;
-    }
-    return null;
-  });
-  c.changed.push(...r2.changed);
-  return { ok: true, mode: 'app', call_id: result.callId, number: result.number, patient_name: result.patientName, reason };
 }
 
 export async function recording(c: Ctx): Promise<Response> {
@@ -146,3 +145,81 @@ export async function sendMessage(c: Ctx, body: J) {
   c.changed.push(...changed);
   return { text: m.text, delivery: await deliver(c, caseId, { text: m.text, channel: m.t.kind, provider_template_name: m.t.provider_template_name }) };
 }
+
+export async function sendWhatsAppChat(c: Ctx, body: J) {
+  const reqCaseId = body.case_id ? String(body.case_id) : null;
+  const reqPatientId = body.patient_id ? String(body.patient_id) : null;
+  const templateId = body.template_id ? String(body.template_id) : null;
+  const rawText = typeof body.text === 'string' ? body.text.trim() : '';
+
+  if (!reqCaseId && !reqPatientId) throw new ApiError(400, 'Choose a patient or case to message');
+  if (!templateId && !rawText) throw new ApiError(400, 'Write a reply or choose an approved WhatsApp template');
+  if (rawText.length > 4000) throw new ApiError(400, 'WhatsApp message cannot exceed 4,000 characters');
+
+  const m = await readAsUser(c.sql, c.user.id, async (tx) => {
+    let caseId = reqCaseId;
+    let patientId = reqPatientId;
+    let wsId = c.user.workspaceId;
+
+    if (caseId) {
+      const [k] = await tx`select id::text, workspace_id::text, patient_id::text from cases where id = ${caseId}`;
+      if (!k) throw new ApiError(404, 'Case not found');
+      wsId = k.workspace_id;
+      patientId = k.patient_id;
+    } else if (patientId) {
+      const [p] = await tx`select id::text, workspace_id::text, full_name from patients where id = ${patientId}`;
+      if (!p) throw new ApiError(404, 'Patient not found');
+      wsId = p.workspace_id;
+      const [openCase] = await tx`select id::text from cases where patient_id = ${patientId} and stage not in ('closed','cancelled') order by created_at desc limit 1`;
+      if (openCase) caseId = openCase.id;
+    }
+
+    let t: J | null = null;
+    let text = rawText;
+    if (templateId) {
+      const [tpl] = await tx`select id::text, code, title, kind, body, provider_template_name from templates where id = ${templateId} and status = 'approved'`;
+      if (!tpl || tpl.kind !== 'whatsapp') throw new ApiError(400, 'Only approved WhatsApp templates can be sent here');
+      t = tpl;
+      if (caseId) {
+        const [r] = await tx`select render_template(${tpl.id}, ${caseId}) as text`;
+        text = String(r.text || '').trim();
+      } else {
+        const [p] = await tx`select full_name from patients where id = ${patientId}`;
+        const [w] = await tx`select brand_name, support_number from workspaces where id = ${wsId}`;
+        text = String(tpl.body || '')
+          .replace(/\{\{patient_name\}\}/g, p?.full_name || '')
+          .replace(/\{\{caller_name\}\}/g, p?.full_name || '')
+          .replace(/\{\{brand\}\}/g, w?.brand_name || '')
+          .replace(/\{\{support_number\}\}/g, w?.support_number || '');
+      }
+    }
+
+    const summary = t ? `${t.title} sent (template ${t.code})` : 'WhatsApp reply sent';
+    return { wsId, caseId, patientId: patientId!, t, text, summary };
+  }).catch(wrap);
+
+  let delivery: J;
+  try {
+    const [target] = await c.sql`
+      select p.mobile, (select caller_mobile from cases where id = ${m.caseId} limit 1) as caller_mobile
+      from patients p where p.id = ${m.patientId} and p.workspace_id = ${m.wsId}`;
+    const to = target?.mobile || target?.caller_mobile;
+    if (!to) delivery = { skipped: 'No mobile number on the patient' };
+    else delivery = await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: m.text, templateName: m.t?.provider_template_name });
+  } catch (e) {
+    delivery = { error: (e as Error).message };
+  }
+
+  const msgId = delivery?.id || delivery?.message_id || delivery?.data?.id || null;
+  const status = delivery?.error ? 'failed' : delivery?.skipped ? 'logged' : 'sent';
+  const { result: inserted, changed } = await asSystem(c.sql, async (tx) => {
+    const [row] = await tx`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_id, actor_label, summary, body, evidence, template_id, meta)
+      values (${m.wsId}, ${m.caseId}, ${m.patientId}, 'whatsapp', 'outbound', ${c.user.id}, ${c.user.agentCode || c.user.fullName},
+        ${m.summary}, ${m.text}, 'Message copy', ${m.t?.id ?? null}, ${tx.json({ message_id: msgId, delivery_status: status })})
+      returning id::text, occurred_at`;
+    return row;
+  });
+  c.changed.push(...changed);
+  return { id: inserted.id, occurred_at: inserted.occurred_at, text: m.text, case_id: m.caseId, patient_id: m.patientId, delivery };
+}
+
