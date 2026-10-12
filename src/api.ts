@@ -55,7 +55,9 @@ export const api = {
   recording: (callId: string) => request<Response>(`/api/v1/calls/${callId}/recording`, { raw: true }),
   sendQuote: (caseId: string, templateId: string) => request<Record<string, unknown>>(`/api/v1/cases/${caseId}/quote`, { method: 'POST', body: { template_id: templateId } }),
   sendMessage: (caseId: string, templateId: string) => request<Record<string, unknown>>(`/api/v1/cases/${caseId}/message`, { method: 'POST', body: { template_id: templateId } }),
-  sendWhatsAppChat: (body: { case_id?: string | null; patient_id?: string | null; template_id?: string | null; text?: string | null }) => request<Record<string, unknown>>('/api/v1/whatsapp/send', { method: 'POST', body }),
+  whatsappSession: () => request<Record<string, any>>('/api/v1/whatsapp/session'),
+  whatsappSessionAction: (body: { action?: 'start' | 'logout' | 'sync'; phone_number?: string | null }) => request<Record<string, any>>('/api/v1/whatsapp/session', { method: 'POST', body }),
+  sendWhatsAppChat: (body: { case_id?: string | null; patient_id?: string | null; mobile?: string | null; patient_name?: string | null; template_id?: string | null; text?: string | null }) => request<Record<string, unknown>>('/api/v1/whatsapp/send', { method: 'POST', body }),
 
   aiCall: (callId: string) => request<Record<string, unknown>>(`/api/v1/ai/calls/${callId}`, { method: 'POST', body: {} }),
   aiBrief: (caseId: string) => request<Record<string, unknown>>(`/api/v1/ai/cases/${caseId}/brief`, { method: 'POST', body: {} }),

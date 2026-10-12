@@ -111,7 +111,12 @@ async function deliver(c: Ctx, caseId: string, out: { text: string; channel: str
     const [k] = await c.sql`select c.caller_mobile, p.mobile from cases c join patients p on p.id = c.patient_id where c.id = ${caseId}`;
     const to = k?.caller_mobile || k?.mobile;
     if (!to) return { skipped: 'No mobile number on the case' };
-    return await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: out.text, templateName: out.provider_template_name });
+    const res = await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: out.text, templateName: out.provider_template_name }, c.sql);
+    if ((res as J)?.queued) {
+      await c.sql`update interactions set meta = coalesce(meta, '{}'::jsonb) || '{"delivery_status":"queued","via":"qr"}'::jsonb
+        where id = (select id from interactions where case_id = ${caseId}::uuid and channel = 'whatsapp' and direction = 'outbound' order by occurred_at desc limit 1)`;
+    }
+    return res;
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -148,13 +153,28 @@ export async function sendMessage(c: Ctx, body: J) {
 
 export async function sendWhatsAppChat(c: Ctx, body: J) {
   const reqCaseId = body.case_id ? String(body.case_id) : null;
-  const reqPatientId = body.patient_id ? String(body.patient_id) : null;
+  let reqPatientId = body.patient_id ? String(body.patient_id) : null;
+  const rawMobile = body.mobile ? normMobile(body.mobile) : null;
+  const rawName = typeof body.patient_name === 'string' ? body.patient_name.trim() : '';
   const templateId = body.template_id ? String(body.template_id) : null;
   const rawText = typeof body.text === 'string' ? body.text.trim() : '';
 
-  if (!reqCaseId && !reqPatientId) throw new ApiError(400, 'Choose a patient or case to message');
+  if (!reqCaseId && !reqPatientId && !rawMobile) throw new ApiError(400, 'Choose a patient, case or mobile number to message');
   if (!templateId && !rawText) throw new ApiError(400, 'Write a reply or choose an approved WhatsApp template');
   if (rawText.length > 4000) throw new ApiError(400, 'WhatsApp message cannot exceed 4,000 characters');
+
+  if (!reqCaseId && !reqPatientId && rawMobile) {
+    const { result: pid, changed: pChanged } = await asSystem(c.sql, async (tx) => {
+      const [r] = await tx`select upsert_patient(${tx.json({
+        workspace_id: c.user.workspaceId,
+        full_name: rawName || 'WhatsApp contact',
+        mobile: rawMobile,
+      })}) as id`;
+      return String(r.id);
+    }).catch(wrap);
+    c.changed.push(...pChanged);
+    reqPatientId = pid;
+  }
 
   const m = await readAsUser(c.sql, c.user.id, async (tx) => {
     let caseId = reqCaseId;
@@ -205,17 +225,17 @@ export async function sendWhatsAppChat(c: Ctx, body: J) {
       from patients p where p.id = ${m.patientId} and p.workspace_id = ${m.wsId}`;
     const to = target?.mobile || target?.caller_mobile;
     if (!to) delivery = { skipped: 'No mobile number on the patient' };
-    else delivery = await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: m.text, templateName: m.t?.provider_template_name });
+    else delivery = await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: m.text, templateName: m.t?.provider_template_name }, c.sql);
   } catch (e) {
     delivery = { error: (e as Error).message };
   }
 
   const msgId = delivery?.id || delivery?.message_id || delivery?.data?.id || null;
-  const status = delivery?.error ? 'failed' : delivery?.skipped ? 'logged' : 'sent';
+  const status = delivery?.error ? 'failed' : delivery?.queued ? 'queued' : delivery?.skipped ? 'logged' : 'sent';
   const { result: inserted, changed } = await asSystem(c.sql, async (tx) => {
     const [row] = await tx`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_id, actor_label, summary, body, evidence, template_id, meta)
       values (${m.wsId}, ${m.caseId}, ${m.patientId}, 'whatsapp', 'outbound', ${c.user.id}, ${c.user.agentCode || c.user.fullName},
-        ${m.summary}, ${m.text}, 'Message copy', ${m.t?.id ?? null}, ${tx.json({ message_id: msgId, delivery_status: status })})
+        ${m.summary}, ${m.text}, 'Message copy', ${m.t?.id ?? null}, ${tx.json({ message_id: msgId, delivery_status: status, via: delivery?.via || 'waba' })})
       returning id::text, occurred_at`;
     return row;
   });

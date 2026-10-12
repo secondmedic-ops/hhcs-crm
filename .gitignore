@@ -20,5 +20,6 @@ target/
 # Supabase CLI temp files and local setup notes
 supabase/.temp/
 MY-SETUP-DETAILS.json
+.whatsapp-bridge/
 
 # Never commit: backend/.env (old Spring setup) holds the Supabase DB password (covered by .env* above)

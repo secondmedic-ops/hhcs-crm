@@ -225,6 +225,9 @@ export async function demoApi(path, body = {}, method) {
       values ($1,$2,$3,$4,'outbound',$5,$6,$7,$8,'Message copy',$9)`, [c.workspace_id, m[1], c.patient_id, t.kind, a.id, a.agent_code || a.full_name, `${t.title} sent (template ${t.code})`, text, t.id]);
     return { text, delivery: { simulated: true } };
   }
+  if (path === '/whatsapp/session' || path === '/whatsapp/session/action') {
+    return { status: 'connected', connected: true, mode: 'qr', waba_configured: false, bridge_online: true, qr_svg: null, qr_updated_at: null, pairing_code: null, phone: '+918049368621', name: 'Hinduja Home Care (Demo)', connected_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), error: null, demo: true };
+  }
   if (path === '/whatsapp/send') {
     const a = await me();
     let caseId = body.case_id || null;
@@ -233,6 +236,11 @@ export async function demoApi(path, body = {}, method) {
       const k = await one('select patient_id from cases where id = $1', [caseId]);
       patientId = k?.patient_id || null;
     } else if (patientId && !caseId) {
+      const k = await one(`select id from cases where patient_id = $1 and stage not in ('closed','cancelled') order by created_at desc limit 1`, [patientId]);
+      caseId = k?.id || null;
+    } else if (!caseId && !patientId && body.mobile) {
+      const pid = await rpc('upsert_patient', { p_workspace: a.workspace_id, p_mobile: body.mobile, p_name: body.patient_name || body.mobile });
+      patientId = pid;
       const k = await one(`select id from cases where patient_id = $1 and stage not in ('closed','cancelled') order by created_at desc limit 1`, [patientId]);
       caseId = k?.id || null;
     }

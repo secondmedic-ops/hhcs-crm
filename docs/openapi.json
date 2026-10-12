@@ -223,6 +223,43 @@
         ]
       }
     },
+    "/api/v1/whatsapp/session": {
+      "get": {
+        "summary": "WhatsApp QR and WABA connection status",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "field_staff",
+          "medical_desk",
+          "client_manager",
+          "client_clinical",
+          "admin",
+          "provider"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Start, sync or disconnect WhatsApp QR session",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk",
+          "client_manager",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/whatsapp/send": {
       "post": {
         "summary": "Send a WhatsApp reply or approved template",
@@ -230,7 +267,9 @@
           "agent",
           "coordinator",
           "supervisor",
-          "medical_desk"
+          "medical_desk",
+          "client_manager",
+          "admin"
         ],
         "security": [
           {

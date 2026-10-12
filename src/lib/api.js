@@ -9,6 +9,8 @@ const demo = async (path, body) => { const { demoApi } = await import('../demo/s
 export const dial = (target) => (isDemo ? demo('/calls/dial', target) : server.dial(target));
 export const sendQuote = (caseId, templateId) => (isDemo ? demo(`/cases/${caseId}/quote`, { template_id: templateId }) : server.sendQuote(caseId, templateId));
 export const sendMessage = (caseId, templateId) => (isDemo ? demo(`/cases/${caseId}/message`, { template_id: templateId }) : server.sendMessage(caseId, templateId));
+export const whatsappSession = () => (isDemo ? demo('/whatsapp/session', {}) : server.whatsappSession());
+export const whatsappSessionAction = (body) => (isDemo ? demo('/whatsapp/session/action', body) : server.whatsappSessionAction(body));
 export const sendWhatsAppChat = (body) => (isDemo ? demo('/whatsapp/send', body) : server.sendWhatsAppChat(body));
 export const aiBrief = (caseId) => (isDemo ? demo(`/ai/cases/${caseId}/brief`, {}) : server.aiBrief(caseId));
 export const aiCall = (callId) => (isDemo ? demo(`/ai/calls/${callId}`, {}) : server.aiCall(callId));

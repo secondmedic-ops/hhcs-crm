@@ -5,6 +5,7 @@ import { ApiError } from '../domain/errors';
 import { asSystem, normMobile, pgArray } from '../db';
 import type { Env } from '../env';
 import { MO_FIELDS, clearMoCache, describeMo, missingCallingSettings, moEnv, randomKey } from './myoperator-config';
+import { loadWhatsAppQr } from './myoperator';
 import { syncCallLogs, syncState } from './mo-sync';
 
 type J = Record<string, any>;
@@ -39,10 +40,11 @@ export async function webhookEvents(c: Ctx) {
 }
 
 export async function integrations(c: Ctx) {
-  const e = await moEnv(c.env, c.sql);
+  const [e, qr] = await Promise.all([moEnv(c.env, c.sql), loadWhatsAppQr(c.sql)]);
   return {
     supabase: !!(e.HYPERDRIVE || e.DATABASE_URL), auth: !!e.SUPABASE_URL, telephony: missingCallingSettings(e).length === 0,
-    webhook: !!e.MYOPERATOR_WEBHOOK_KEY, recordings: !!e.MYOPERATOR_API_TOKEN, whatsapp: !!e.MYOPERATOR_WABA_API_KEY,
+    webhook: !!e.MYOPERATOR_WEBHOOK_KEY, recordings: !!e.MYOPERATOR_API_TOKEN,
+    whatsapp: !!(e.MYOPERATOR_WABA_API_KEY && e.MYOPERATOR_WABA_PHONE_ID) || qr.status === 'connected',
     ai: !!e.GEMINI_API_KEY, mis_email: !!(e.RESEND_API_KEY && e.MIS_RECIPIENTS), user_admin: !!e.SUPABASE_SERVICE_ROLE_KEY,
     webhook_url: (e.APP_URL || new URL(c.req.url).origin) + '/webhooks/myoperator', build: e.BUILD_SHA || 'dev',
   };
@@ -149,14 +151,17 @@ export async function testMo(c: Ctx) {
     : last
       ? { ok: true, message: `Last event received ${new Date(last.received_at).toISOString()} (${last.event_type})` }
       : { ok: false, message: 'Key set, but no event received yet. Add the webhook in MyOperator and make a test call.' };
+  const qr = await loadWhatsAppQr(c.sql);
   const missingWaba = [
     !env.MYOPERATOR_COMPANY_ID && 'Company ID',
     !env.MYOPERATOR_WABA_API_KEY && 'WhatsApp API key',
     !env.MYOPERATOR_WABA_PHONE_ID && 'WhatsApp phone number ID',
   ].filter(Boolean);
-  out.whatsapp = missingWaba.length
-    ? { ok: false, message: 'Missing: ' + missingWaba.join(', ') }
-    : { ok: true, message: `WhatsApp Business API ready (Phone ID ${env.MYOPERATOR_WABA_PHONE_ID})` };
+  out.whatsapp = qr.status === 'connected'
+    ? { ok: true, message: `WhatsApp connected via QR scan (${qr.phone || 'active'})` }
+    : missingWaba.length
+      ? { ok: false, message: 'Connect via QR scan on the WhatsApp page, or set WABA (' + missingWaba.join(', ') + ')' }
+      : { ok: true, message: `WhatsApp Business API ready (Phone ID ${env.MYOPERATOR_WABA_PHONE_ID})` };
   return out;
 }
 

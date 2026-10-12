@@ -4,7 +4,7 @@ import { db, q, rpc } from '../lib/db.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useLoad } from '../lib/hooks.js';
 import { ago, dateTime as dt } from '../lib/fmt.js';
-import { aiExtract, dial, sendWhatsAppChat } from '../lib/api.js';
+import { aiExtract, dial, sendWhatsAppChat, whatsappSession, whatsappSessionAction } from '../lib/api.js';
 import Icon from '../components/icons.jsx';
 import { Badge, Button, Countdown, Empty, Field, Input, Modal, PageHead, PriorityBadge, Segmented, TableSkeleton, SlaBadge, StageBadge, useToast } from '../components/ui.jsx';
 
@@ -17,7 +17,7 @@ const QUICK_REPLIES = [
 
 export default function Whatsapp() {
   const { profile, can } = useAuth();
-  const isOps = can('agent', 'coordinator', 'supervisor', 'medical_desk');
+  const isOps = can('agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'admin');
   const toast = useToast();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -32,20 +32,24 @@ export default function Whatsapp() {
   const [dialing, setDialing] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractedModal, setExtractedModal] = useState(null);
+  const [qrModal, setQrModal] = useState(false);
+  const [newChatModal, setNewChatModal] = useState(false);
   const threadEndRef = useRef(null);
 
   const { data, loading, reload } = useLoad(async () => {
-    const [chats, templates, services] = await Promise.all([
+    const [chats, templates, services, session] = await Promise.all([
       q(db.from('v_whatsapp_chats').select('*').order('last_message_at', { ascending: false }).limit(200)),
       q(db.from('templates').select('*').eq('kind', 'whatsapp').eq('status', 'approved').order('code')),
       q(db.from('services').select('id,code,name,category,price').eq('active', true).order('category')),
+      whatsappSession().catch(() => null),
     ]);
-    return { chats: chats || [], templates: templates || [], services: services || [] };
-  }, [profile?.id], ['interactions', 'cases', 'patients', 'sla_timers']);
+    return { chats: chats || [], templates: templates || [], services: services || [], session };
+  }, [profile?.id], ['interactions', 'cases', 'patients', 'sla_timers', 'integration_settings']);
 
   const chats = data?.chats || [];
   const templates = data?.templates || [];
   const services = data?.services || [];
+  const waSession = data?.session || null;
 
   const filtered = useMemo(() => {
     return chats.filter((c) => {
@@ -128,6 +132,7 @@ export default function Whatsapp() {
       });
       if (mode === 'reply') setText('');
       if (res?.delivery?.error) toast(`Logged in CRM; WhatsApp gateway reported: ${res.delivery.error}`, 'error');
+      else if (res?.delivery?.queued) toast('WhatsApp message queued for instant delivery');
       else if (res?.delivery?.skipped) toast(`Reply logged (${res.delivery.skipped})`);
       else toast('WhatsApp message sent');
       reload();
@@ -189,14 +194,20 @@ export default function Whatsapp() {
   };
 
   const waitingCount = chats.filter((c) => c.needs_reply).length;
+  const isConnected = !!waSession?.connected;
+  const connLabel = waSession?.status === 'connected'
+    ? `WhatsApp linked (${waSession.phone || waSession.name || 'Active'})`
+    : waSession?.waba_configured
+      ? 'WABA connected'
+      : 'Scan QR to login';
 
   return (
     <>
       <PageHead
         title="WhatsApp chats"
-        sub={`Two-way WhatsApp Business (WABA) inbox · ${waitingCount} awaiting reply · 5-minute SLA acknowledgement`}
+        sub={`Two-way WhatsApp inbox · ${isConnected ? connLabel : 'Not linked yet'} · ${waitingCount} awaiting reply · 5-minute SLA acknowledgement`}
         right={
-          <div className="row gap-8">
+          <div className="row gap-8 wrap">
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search patient, Case ID, locality, message…" aria-label="Search conversations" />
             <Segmented
               value={filter}
@@ -208,9 +219,33 @@ export default function Whatsapp() {
                 ['mine', 'My queue'],
               ]}
             />
+            {isOps && (
+              <Button onClick={() => setNewChatModal(true)}>
+                <Icon name="plus" /> New chat
+              </Button>
+            )}
+            {isOps && (
+              <Button kind={isConnected ? undefined : 'primary'} onClick={() => setQrModal(true)}>
+                <span className="dot" style={{ color: isConnected ? 'var(--ok)' : 'var(--warn)' }} /> {connLabel}
+              </Button>
+            )}
           </div>
         }
       />
+
+      {!isConnected && isOps && (
+        <div className="banner mb-12" style={{ justifyContent: 'space-between' }}>
+          <div className="row gap-8 wrap">
+            <Icon name="chat" />
+            <span>
+              <strong>Connect your WhatsApp by QR scan:</strong> Link your WhatsApp phone number (WhatsApp &gt; Linked devices &gt; Link a device) so all incoming and outgoing patient chats sync live here.
+            </span>
+          </div>
+          <Button size="sm" kind="primary" onClick={() => setQrModal(true)}>
+            <Icon name="barcode" /> Scan QR to login
+          </Button>
+        </div>
+      )}
 
       <div className="wa-shell">
         {/* Left pane: conversation list */}
@@ -355,7 +390,9 @@ export default function Whatsapp() {
                         <div className="wa-bubble-body">{m.body || m.summary || '–'}</div>
                         {outbound && (
                           <div className="wa-bubble-foot">
-                            <span className="tiny faint">{status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : status === 'failed' ? 'Delivery failed' : 'Sent via WABA'}</span>
+                            <span className="tiny faint">
+                              {status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : status === 'queued' ? 'Sending…' : status === 'failed' ? 'Delivery failed' : 'Sent via WhatsApp'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -392,7 +429,7 @@ export default function Whatsapp() {
                         </div>
                       )}
                     </div>
-                    {!activeChat.window_open && mode === 'reply' && (
+                    {!activeChat.window_open && mode === 'reply' && !waSession?.connected && (
                       <span className="tiny warn-text">Last inbound message was over 24h ago · use an approved template if session is expired</span>
                     )}
                   </div>
@@ -441,6 +478,31 @@ export default function Whatsapp() {
           )}
         </div>
       </div>
+
+      {qrModal && (
+        <WhatsAppQrModal
+          initialSession={waSession}
+          onClose={() => {
+            setQrModal(false);
+            reload();
+          }}
+          onConnected={() => {
+            reload();
+          }}
+        />
+      )}
+
+      {newChatModal && (
+        <NewWhatsAppChatModal
+          templates={templates}
+          onClose={() => setNewChatModal(false)}
+          onSent={(patientId) => {
+            setNewChatModal(false);
+            reload();
+            if (patientId) selectChat(patientId);
+          }}
+        />
+      )}
 
       {extractedModal && (
         <ExtractedEnquiryModal
@@ -580,3 +642,344 @@ function ExtractedEnquiryModal({ initial, services, onClose, onSaved }) {
     </Modal>
   );
 }
+
+function WhatsAppQrModal({ initialSession, onClose, onConnected }) {
+  const [session, setSession] = useState(initialSession || {});
+  const [busy, setBusy] = useState(false);
+  const [phoneNum, setPhoneNum] = useState('');
+  const toast = useToast();
+  const prevConnectedRef = useRef(!!initialSession?.connected);
+
+  useEffect(() => {
+    let alive = true;
+    const init = async () => {
+      try {
+        const s = await whatsappSession();
+        if (!alive) return;
+        setSession(s || {});
+        if (s?.status !== 'connected' && s?.status !== 'qr_ready') {
+          const started = await whatsappSessionAction({ action: 'start' });
+          if (alive && started) setSession(started);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    init();
+    const timer = setInterval(async () => {
+      try {
+        const s = await whatsappSession();
+        if (!alive || !s) return;
+        setSession(s);
+        if (s.status === 'connected' && !prevConnectedRef.current) {
+          prevConnectedRef.current = true;
+          toast(`WhatsApp linked (${s.phone || s.name || 'active'})`);
+          if (onConnected) onConnected();
+        }
+      } catch {
+        // ignore
+      }
+    }, 2000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const act = async (action, phone_number = null) => {
+    setBusy(true);
+    try {
+      const s = await whatsappSessionAction({ action, phone_number });
+      setSession(s || {});
+      if (action === 'logout') {
+        prevConnectedRef.current = false;
+        toast('WhatsApp session disconnected');
+      } else if (action === 'sync') {
+        toast('Syncing WhatsApp chats and messages');
+      } else if (phone_number) {
+        toast('Requesting 8-digit pairing code');
+      } else {
+        toast('Refreshing QR code');
+      }
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const isQrConnected = session?.status === 'connected';
+  const qrDataUrl = session?.qr_svg ? `data:image/svg+xml;utf8,${encodeURIComponent(session.qr_svg)}` : null;
+
+  return (
+    <Modal
+      title="Link WhatsApp by QR scan"
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          {isQrConnected ? (
+            <>
+              <Button onClick={() => act('sync')} disabled={busy}>
+                <Icon name="refresh" /> Sync chats now
+              </Button>
+              <Button kind="danger" onClick={() => act('logout')} disabled={busy}>
+                <Icon name="x" /> Disconnect WhatsApp
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => act('start')} disabled={busy}>
+              <Icon name="refresh" /> {busy ? 'Refreshing…' : 'Refresh QR code'}
+            </Button>
+          )}
+          <Button kind="primary" onClick={onClose}>Done</Button>
+        </>
+      }
+    >
+      {isQrConnected ? (
+        <div className="col gap-12">
+          <div className="banner" style={{ borderColor: 'var(--ok)', background: 'var(--ok-bg)' }}>
+            <span className="dot" style={{ color: 'var(--ok)' }} />
+            <div>
+              <strong>WhatsApp is connected and active</strong>
+              <div className="small muted mt-4">
+                All incoming and outgoing chats on this WhatsApp number sync live with CareDesk CRM.
+              </div>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <Field label="Connected WhatsApp number">
+              <div className="mono strong">{session.phone || 'Linked device'}</div>
+            </Field>
+            <Field label="Account name">
+              <div className="strong">{session.name || 'Hinduja Home Care'}</div>
+            </Field>
+            <Field label="Bridge status">
+              <div className="row gap-6">
+                <Badge kind={session.bridge_online ? 'ok' : 'warn'}>
+                  {session.bridge_online ? 'Online & syncing' : 'Reconnecting'}
+                </Badge>
+                {session.last_seen_at && <span className="tiny muted">Last heartbeat {ago(session.last_seen_at)}</span>}
+              </div>
+            </Field>
+            <Field label="Connected since">
+              <div className="mono small">{session.connected_at ? dt(session.connected_at) : 'Active'}</div>
+            </Field>
+          </div>
+        </div>
+      ) : (
+        <div className="row gap-16 wrap" style={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div className="col gap-12" style={{ flex: '1 1 300px', minWidth: 260 }}>
+            <div className="strong">Scan from your phone to activate live WhatsApp chats:</div>
+            <ol className="small" style={{ paddingLeft: 18, margin: 0, display: 'grid', gap: 6 }}>
+              <li>Open <strong>WhatsApp</strong> on your phone.</li>
+              <li>Tap <strong>Menu</strong> (Android) or <strong>Settings</strong> (iPhone) and select <strong>Linked devices</strong>.</li>
+              <li>Tap <strong>Link a device</strong>.</li>
+              <li>Point your phone camera at the QR code on the right.</li>
+            </ol>
+
+            <div className="panel" style={{ padding: 12 }}>
+              <div className="tiny muted upper" style={{ fontWeight: 600, marginBottom: 6 }}>
+                Or link with phone number (8-digit pairing code)
+              </div>
+              <div className="row gap-8">
+                <input
+                  className="grow mono"
+                  value={phoneNum}
+                  onChange={(e) => setPhoneNum(e.target.value)}
+                  placeholder="+91 98200 XXXXX"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => act('start', phoneNum)}
+                  disabled={busy || phoneNum.replace(/\D/g, '').length < 10}
+                >
+                  Get code
+                </Button>
+              </div>
+              {session?.pairing_code && (
+                <div className="mt-8">
+                  <div className="tiny muted">Enter this code on your phone in WhatsApp &gt; Linked devices:</div>
+                  <div className="mono strong" style={{ fontSize: 20, letterSpacing: 3, marginTop: 4 }}>
+                    {session.pairing_code}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {session?.error && (
+              <div className="banner danger">
+                <Icon name="alert" /> <span>{session.error}</span>
+              </div>
+            )}
+
+            <div className="tiny muted">
+              Bridge status:{' '}
+              <strong style={{ color: session?.bridge_online ? 'var(--ok)' : 'var(--warn)' }}>
+                {session?.bridge_online ? 'Online' : 'Waiting for WHATSAPP-CONNECT.bat'}
+              </strong>
+              {session?.qr_updated_at ? ` · QR updated ${ago(session.qr_updated_at)}` : ''}
+            </div>
+          </div>
+
+          <div
+            className="panel"
+            style={{
+              width: 248,
+              minHeight: 248,
+              padding: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#fff',
+            }}
+          >
+            {qrDataUrl ? (
+              <>
+                <img
+                  src={qrDataUrl}
+                  alt="WhatsApp Login QR Code"
+                  style={{ width: 220, height: 220, display: 'block' }}
+                />
+                <span className="tiny muted mt-4">Scan with WhatsApp camera</span>
+              </>
+            ) : (
+              <div className="col gap-8" style={{ textAlign: 'center', padding: 12 }}>
+                <span className="strong small">
+                  {session?.bridge_online ? 'Generating live QR code…' : 'Starting WhatsApp bridge…'}
+                </span>
+                <span className="tiny muted">
+                  {session?.bridge_online
+                    ? 'The QR code will appear in a few seconds.'
+                    : 'Run WHATSAPP-CONNECT.bat on this PC if the QR does not appear automatically.'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function NewWhatsAppChatModal({ templates, onClose, onSent }) {
+  const [mobile, setMobile] = useState('');
+  const [name, setName] = useState('');
+  const [mode, setMode] = useState('reply');
+  const [text, setText] = useState(QUICK_REPLIES[0].text);
+  const [tplId, setTplId] = useState(templates[0]?.id || '');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const submit = async (e) => {
+    if (e) e.preventDefault();
+    if (!mobile.trim()) {
+      toast.error('Enter the 10-digit WhatsApp mobile number');
+      return;
+    }
+    if (mode === 'reply' && !text.trim()) {
+      toast.error('Enter a message to send');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await sendWhatsAppChat({
+        mobile: mobile.trim(),
+        patient_name: name.trim() || null,
+        template_id: mode === 'template' ? tplId : null,
+        text: mode === 'reply' ? text.trim() : null,
+      });
+      toast('WhatsApp conversation started');
+      onSent(res?.patient_id || null);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Start new WhatsApp chat"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" onClick={submit} disabled={busy}>
+            <Icon name="send" /> {busy ? 'Sending…' : 'Send WhatsApp message'}
+          </Button>
+        </>
+      }
+    >
+      <form className="col gap-12" onSubmit={submit}>
+        <div className="form-grid">
+          <Field label="WhatsApp mobile number" hint="10-digit mobile or +91 format">
+            <input
+              className="mono"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              placeholder="+91 98200 XXXXX"
+              autoFocus
+            />
+          </Field>
+          <Field label="Patient / contact name" hint="Optional">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Mr. Rajesh Mehta"
+            />
+          </Field>
+        </div>
+
+        <div className="row gap-8 wrap" style={{ justifyContent: 'space-between' }}>
+          <Segmented
+            value={mode}
+            onChange={setMode}
+            options={[
+              ['reply', 'Direct message'],
+              ['template', `Approved template (${templates.length})`],
+            ]}
+          />
+          {mode === 'reply' && (
+            <div className="row gap-4 wrap">
+              {QUICK_REPLIES.map((qr) => (
+                <button
+                  key={qr.label}
+                  type="button"
+                  className="chip"
+                  onClick={() => setText(qr.text)}
+                >
+                  {qr.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {mode === 'reply' ? (
+          <Field label="Message">
+            <textarea
+              rows={4}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Write your WhatsApp message…"
+            />
+          </Field>
+        ) : (
+          <Field label="Approved WhatsApp template">
+            <select value={tplId} onChange={(e) => setTplId(e.target.value)}>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code} · {t.title} ({t.category})
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
