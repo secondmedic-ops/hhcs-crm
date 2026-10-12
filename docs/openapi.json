@@ -223,6 +223,22 @@
         ]
       }
     },
+    "/api/v1/whatsapp/send": {
+      "post": {
+        "summary": "Send a WhatsApp reply or approved template",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/ai/calls/{id}": {
       "post": {
         "summary": "AI: transcript, summary, QA of a recorded call",
@@ -831,6 +847,17 @@
       "provider"
     ],
     "v_complaints": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "v_whatsapp_chats": [
       "agent",
       "coordinator",
       "supervisor",

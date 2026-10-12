@@ -876,6 +876,44 @@
 | assigned_name | text | YES |
 | service_names | text | YES |
 
+## v_whatsapp_chats
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| patient_id | uuid | YES |
+| workspace_id | uuid | YES |
+| patient_name | text | YES |
+| patient_mrn | text | YES |
+| patient_mobile | text | YES |
+| patient_locality | text | YES |
+| patient_pincode | text | YES |
+| patient_address | text | YES |
+| case_id | uuid | YES |
+| case_no | text | YES |
+| case_stage | USER-DEFINED | YES |
+| priority | text | YES |
+| branch | text | YES |
+| services_requested | text | YES |
+| sla_state | text | YES |
+| owner_id | uuid | YES |
+| owner_name | text | YES |
+| next_sla_due | timestamp with time zone | YES |
+| next_sla_key | text | YES |
+| last_message_id | uuid | YES |
+| last_message_at | timestamp with time zone | YES |
+| last_direction | text | YES |
+| last_summary | text | YES |
+| last_body | text | YES |
+| last_actor | text | YES |
+| last_status | text | YES |
+| last_inbound_at | timestamp with time zone | YES |
+| last_outbound_at | timestamp with time zone | YES |
+| window_open | boolean | YES |
+| needs_reply | boolean | YES |
+| inbound_count | integer | YES |
+| outbound_count | integer | YES |
+| message_count | integer | YES |
+
 ## webhook_events
 | column | type | nullable |
 |---|---|---|
