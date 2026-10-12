@@ -40,7 +40,11 @@ export async function dial(c: Ctx, body: J) {
   const env = await moEnv(c.env, c.sql);
   const missing = missingCallingSettings(env);
   if (missing.length) throw new ApiError(503, 'Calling is not configured. Ask your administrator to complete Settings > Telephony: ' + missing.join(', '));
-  if (!c.user.myoperatorUserId) throw new ApiError(409, 'Your CRM login is not linked to a MyOperator agent. Ask your administrator to link it in Settings > Telephony.');
+  // Read the link fresh: the login cache lives 60 s per Worker instance, so a just-linked agent would be refused
+  // and a just-unlinked one could still dial with the old MyOperator id.
+  const [link] = await c.sql`select myoperator_user_id from profiles where id = ${c.user.id}::uuid and active`;
+  const myoperatorUserId: string | null = link?.myoperator_user_id ?? null;
+  if (!myoperatorUserId) throw new ApiError(409, 'Your CRM login is not linked to a MyOperator agent. Ask your administrator to link it in Settings > Telephony.');
 
   const ref = 'crm-' + crypto.randomUUID();
   const { result, changed } = await asSystem(c.sql, async (tx) => {
@@ -70,7 +74,7 @@ export async function dial(c: Ctx, body: J) {
   c.changed.push(...changed);
 
   try {
-    await clickToCall(env, { myoperatorUserId: c.user.myoperatorUserId, number: result.number, referenceId: ref });
+    await clickToCall(env, { myoperatorUserId, number: result.number, referenceId: ref });
     // Return only CRM identifiers: provider responses can echo the customer's number or credentials.
     return { ok: true, mode: 'api', call_id: result.callId };
   } catch (e) {

@@ -177,6 +177,13 @@ await expectError('bmm', `select advance_case($1, null)`, [bm.case_id], 'Not all
 const smRefId = (await db.query(`select r.id from case_referrals r join providers p on p.id = r.provider_id where r.case_id = $1 and p.code = 'SM'`, [mix.case_id])).rows[0].id;
 await expectError('bmm', `select update_referral($1, 'accepted')`, [smRefId], 'Not allowed');
 await expectError('bmm', `update profiles set provider_id = $1 where id = $2`, [prov.SM, users.bmm], 'Only the platform admin');
+// the calling identity of a login is not self-service: an agent cannot take another agent's MyOperator id
+await expectError('agent', `update profiles set myoperator_user_id = 'mo-stolen' where id = $1`, [users.agent], 'calling details');
+await expectError('agent', `update profiles set active = true, agent_code = 'A-99' where id = $1`, [users.agent], 'calling details');
+await as('admin', `update profiles set myoperator_user_id = 'mo-a07' where id = $1`, [users.agent]);
+(await db.query(`select myoperator_user_id m from profiles where id = $1`, [users.agent])).rows[0].m === 'mo-a07'
+  ? ok('admin links an agent to MyOperator') : fail('admin could not link the agent');
+await db.query(`update profiles set myoperator_user_id = null where id = $1`, [users.agent]);
 const bmRefId = (await db.query(`select id from case_referrals where case_id = $1`, [bm.case_id])).rows[0].id;
 await expectError('bmm', `select update_referral($1, 'declined', '')`, [bmRefId], 'reason');
 await as('bmm', `select update_referral($1, 'accepted', 'Nurse Sunita assigned')`, [bmRefId]);

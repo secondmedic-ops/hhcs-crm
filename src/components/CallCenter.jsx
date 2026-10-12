@@ -16,14 +16,17 @@ export function CallProvider({ children }) {
   const { profile } = useAuth();
   const [calls, setCalls] = useState([]);
   const [dismissed, setDismissed] = useState({});
-  const ops = profile && ['agent', 'coordinator', 'supervisor'].includes(profile.role);
+  // everyone who can place a call (same roles as POST /calls/dial) tracks their own live call;
+  // the incoming-call pop-up stays with the contact-centre roles that answer the helpline
+  const ops = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
+  const takesInbound = profile && ['agent', 'coordinator', 'supervisor'].includes(profile.role);
 
   const load = useCallback(async () => {
     if (!ops) return;
     const since = new Date(Date.now() - 2 * 3600e3).toISOString();
     const rows = await q(db.from('v_calls').select('*').in('status', ['ringing', 'answered']).gte('started_at', since).order('started_at', { ascending: false }).limit(10));
-    setCalls(rows.filter((c) => c.agent_id === profile.id || (!c.agent_id && c.direction === 'inbound')));
-  }, [ops, profile?.id]);
+    setCalls(rows.filter((c) => c.agent_id === profile.id || (takesInbound && !c.agent_id && c.direction === 'inbound')));
+  }, [ops, takesInbound, profile?.id]);
 
   useEffect(() => { load(); if (!ops) return undefined; return subscribe(['calls'], load); }, [load, ops]);
 
