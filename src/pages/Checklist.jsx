@@ -273,7 +273,7 @@ export default function Checklist() {
             <div className="table-wrap"><table className="cl-t cl-sum">
               <thead><tr><th>Option</th><th>What it includes</th><th className="num">{planDays}-day total</th><th className="c">Family's choice</th></tr></thead>
               <tbody>
-                <tr><td><strong>A · Full recommendation</strong></td><td>Everything the doctor and the coordinator recommended</td><td className="num">{plan ? inr(plan.recommended_total) : ''}</td><td className="c"><Box /></td></tr>
+                <tr><td><strong>A · Full recommendation</strong></td><td>Everything the doctor and the coordinator recommended</td><td className="num">{Number(plan?.recommended_total) > 0 ? inr(plan.recommended_total) : ''}</td><td className="c"><Box /></td></tr>
                 <tr><td><strong>B · Must-have only</strong></td><td>Only items marked M; optional items can be added later at the same rate</td><td className="num" /><td className="c"><Box /></td></tr>
                 <tr><td><strong>C · Agreed plan</strong></td><td>As listed in Part D{plan && Number(plan.discount_amount) > 0 ? ` · discount ${Number(plan.discount_pct)}% (${inr(plan.discount_amount)})` : ''}</td>
                   <td className="num">{plan ? inr(plan.total) : ''}{plan?.per_day ? <div className="cl-hint">{inr(plan.per_day)} a day</div> : null}</td><td className="c"><Box /></td></tr>

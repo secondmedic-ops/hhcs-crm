@@ -47,7 +47,6 @@ begin
   -- 4. Delete WhatsApp cases and their dependent records
   if v_case_ids is not null and array_length(v_case_ids, 1) > 0 then
     update calls set case_id = null where case_id = any(v_case_ids);
-    update callbacks set case_id = null where case_id = any(v_case_ids);
     update complaints set case_id = null where case_id = any(v_case_ids);
     update escalations set case_id = null where case_id = any(v_case_ids);
     update inbound_emails set case_id = null where case_id = any(v_case_ids);
