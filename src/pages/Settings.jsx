@@ -1032,7 +1032,7 @@ function AiSummaries({ onSaved }) {
   const runTest = () => run(async () => setTest(await testAi()));
   const st = d?.stats || {};
   return (
-    <Panel title="AI call summaries" sub="After each answered, recorded call, Gemini listens to the recording and writes a summary, intent, sentiment, red flags and a QA score onto the call and the patient's AI note."
+    <Panel title="AI call summaries" sub="Gemini 3.5 Transcribe Live captures speech during calls. When the call ends, the summary model writes a summary, intent, sentiment, red flags and a QA score. Calls without a finished live transcript use the MyOperator recording."
       actions={<Button size="sm" kind="ghost" icon="refresh" onClick={runTest} disabled={busy || !d?.key?.set}>Test key</Button>}>
       <ErrorNote error={s.error} />
       {s.loading ? <Skeleton lines={4} /> : d && (
@@ -1041,7 +1041,8 @@ function AiSummaries({ onSaved }) {
           <div className="row wrap gap-8">
             {d.key.set ? <Badge kind="ok" dot>Key set ({d.key.value}, {d.key.source === 'app' ? 'saved here' : 'Worker secret'})</Badge> : <Badge kind="warn" dot>No Gemini key: summaries are off</Badge>}
             {d.key.set && (d.auto ? <Badge kind="ok" dot>Automatic after each call</Badge> : <Badge kind="info" dot>On request only</Badge>)}
-            <Badge kind="outline">Model {d.model}</Badge>
+            <Badge kind="outline">Live speech: {d.live_model}</Badge>
+            <Badge kind="outline">Summary: {d.model}</Badge>
           </div>
           {test && <div className="row gap-8">{okBadge(test)}<span className="small">{test.message}</span></div>}
           {d.paused && <div className="small danger-text">Automatic summaries paused until {dateTime(d.paused.paused_until)}: {d.paused.reason}</div>}
@@ -1049,23 +1050,34 @@ function AiSummaries({ onSaved }) {
             <Field label={d.key.set ? 'Replace the Gemini API key' : 'Gemini API key'} hint="Google AI Studio > Get API key, in a Google Cloud project with billing on">
               <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="AIza…" disabled={d.demo} />
             </Field>
-            <Field label="Model" hint="leave empty for the default">
+            <Field label="Summary model" hint="leave empty for gemini-2.5-flash; the live transcription model is separate">
               <Input value={model ?? (d.model_source === 'app' ? d.model : '')} onChange={(e) => setModel(e.target.value)} placeholder="gemini-2.5-flash" disabled={d.demo} />
             </Field>
           </div>
           <div className="row wrap gap-8">
             <Button kind="primary" disabled={busy || d.demo || (!key.trim() && model == null)} onClick={() => save({ ...(key.trim() ? { api_key: key.trim() } : {}), ...(model != null ? { model: model.trim() } : {}) }, 'AI settings saved')}>Save</Button>
-            {d.key.set && <Check label="Summarise every recorded call automatically" checked={d.auto} disabled={busy || d.demo} onChange={(e) => save({ auto: e.target.checked }, e.target.checked ? 'Automatic summaries on' : 'Summaries only on request')} />}
+            {d.key.set && <Check label="Summarise finished calls automatically" checked={d.auto} disabled={busy || d.demo} onChange={(e) => save({ auto: e.target.checked }, e.target.checked ? 'Automatic summaries on' : 'Summaries only on request')} />}
             {d.key.source === 'app' && <Button kind="ghost" disabled={busy} onClick={() => save({ api_key: '' }, 'Key removed')}>Remove saved key</Button>}
           </div>
           <div className="small">
-            Last 14 days of recorded calls: <strong>{st.done ?? 0}</strong> summarised · <strong>{st.waiting ?? 0}</strong> waiting · <strong className={st.failed ? 'danger-text' : ''}>{st.failed ?? 0}</strong> failed · {st.skipped ?? 0} too short.
+            Last 14 days of calls with audio or a live transcript: <strong>{st.done ?? 0}</strong> summarised · <strong>{st.waiting ?? 0}</strong> waiting · <strong className={st.failed ? 'danger-text' : ''}>{st.failed ?? 0}</strong> failed · {st.skipped ?? 0} too short.
             {' '}Waiting calls are done one a minute, newest first; a failed call is retried up to 3 times.
           </div>
           {d.last_error && <div className="small danger-text">Last failure ({ago(d.last_error.ai_started_at)}): {d.last_error.ai_error}</div>}
           {d.key.set && (st.failed > 0 || d.paused) && <div><Button size="sm" icon="refresh" disabled={busy || d.demo} onClick={() => save({ retry_failed: true }, 'Failed calls queued again')}>Retry failed calls</Button>
             <span className="tiny muted"> after fixing the key or billing: puts the last 14 days' failed calls back in the queue and lifts the pause.</span></div>}
-          <div className="tiny muted">Patient data: the recording is sent to Google for the summary and deleted from Google as soon as the summary is back. Use a key from a paid (billing-enabled) Google Cloud project: Google does not use paid-tier API data to improve its models, while free-tier keys allow that and must not be used for patient calls.</div>
+          <details className="small"><summary>Create the Gemini key and start live transcription</summary>
+            <ol>
+              <li>Open <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noreferrer">Google AI Studio API keys</a> and sign in.</li>
+              <li>Select or import the Google Cloud project for HHCS-CRM, then choose Create API key.</li>
+              <li>For patient calls, use a billing-enabled project. Review Google's API charges before enabling billing.</li>
+              <li>Copy the key into the Gemini API key field above, Save, then Test key.</li>
+              <li>During an active call, open Live transcript, put the phone on speaker, confirm both people agree, then Start transcription and allow microphone access.</li>
+              <li>Stop and save when finished. The panel also stops when the CRM receives the call-ended event. Automatic summaries use the saved words afterward.</li>
+            </ol>
+            <p>The CRM creates short-lived session tokens automatically. Keep the permanent key here; never paste it into chat or browser code. Live transcription hears only the selected microphone, so phone audio must be audible to it.</p>
+          </details>
+          <div className="tiny muted">Patient data: live audio and summary text go to Google. Recording fallback uploads are deleted after analysis. Use a key from a paid (billing-enabled) Google Cloud project: Google does not use paid-tier API data to improve its models, while free-tier keys allow that and must not be used for patient calls.</div>
         </div>
       )}
     </Panel>

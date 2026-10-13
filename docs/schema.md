@@ -145,6 +145,9 @@
 | ai_error | text | YES |
 | ai_attempts | integer | NO |
 | ai_started_at | timestamp with time zone | YES |
+| live_transcript | text | YES |
+| live_transcript_started_at | timestamp with time zone | YES |
+| live_transcript_completed_at | timestamp with time zone | YES |
 
 ## case_counters
 | column | type | nullable |
@@ -836,6 +839,9 @@
 | ai_error | text | YES |
 | ai_attempts | integer | YES |
 | ai_started_at | timestamp with time zone | YES |
+| live_transcript | text | YES |
+| live_transcript_completed_at | timestamp with time zone | YES |
+| has_live_transcript | boolean | YES |
 
 ## v_cases
 | column | type | nullable |

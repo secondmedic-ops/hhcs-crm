@@ -321,6 +321,38 @@
         ]
       }
     },
+    "/api/v1/ai/calls/{id}/live-token": {
+      "post": {
+        "summary": "Single-use Gemini 3.5 live transcription token for an active visible call",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/calls/{id}/live-transcript": {
+      "post": {
+        "summary": "Save append-only live transcript checkpoints and finalise for AI summary",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/ai/status": {
       "get": {
         "summary": "Whether AI call summaries are on",

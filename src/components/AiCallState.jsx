@@ -8,7 +8,7 @@ const STUCK_MS = 10 * 60e3;
 
 /** One line for a recorded call that has no summary yet. `onRun(callId)` starts it; `busy` disables the button. */
 export function AiCallState({ call, enabled, canRun, onRun, busy, showWhen }) {
-  if (!call?.has_recording || call.ai_summary) return null;
+  if ((!call?.has_recording && !call?.has_live_transcript) || call.ai_summary) return null;
   const processing = call.ai_status === 'processing' && Date.now() - new Date(call.ai_started_at).getTime() < STUCK_MS;
   const when = showWhen ? ` the call of ${dateTime(call.started_at)}` : '';
   let text;
@@ -18,7 +18,7 @@ export function AiCallState({ call, enabled, canRun, onRun, busy, showWhen }) {
   else if (call.ai_status === 'failed') { text = `Summary failed${when}: ${call.ai_error || 'unknown error'}`; kind = 'danger-text'; }
   else if (call.ai_status === 'skipped') text = `Not summarised${when}: ${call.ai_error || 'too short'}.`;
   else text = `Summary pending${when}: it runs within a few minutes of the call.`;
-  const button = enabled !== false && canRun && !processing;
+  const button = enabled !== false && canRun && !processing && call.status === 'completed';
   return (
     <div className="row wrap gap-8 mt-4" style={{ alignItems: 'center' }}>
       <span className={`small ${kind}`}>{text}</span>

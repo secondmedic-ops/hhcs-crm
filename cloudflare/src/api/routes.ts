@@ -6,7 +6,7 @@ import type { Role } from './auth';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
 import { whatsappSession, whatsappSessionAction } from '../services/myoperator';
-import { aiStatus, caseBrief, command, extractEnquiry, summariseCall } from '../services/ai';
+import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
 import { bmmLeads, bmmStatus } from '../services/bmm';
 import { aiSettings, createUser, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testMo, webhookEvents } from '../services/admin';
@@ -54,6 +54,8 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/whatsapp/session', access: WA_OPS, handler: (c, b) => whatsappSessionAction(c, b ?? {}), summary: 'Start, sync or disconnect WhatsApp QR session' },
   { method: 'POST', path: '/api/v1/whatsapp/send', access: WA_OPS, handler: (c, b) => sendWhatsAppChat(c, b ?? {}), summary: 'Send a WhatsApp reply or approved template' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}', access: AI_CALLS, handler: (c) => summariseCall(c, c.params.id), summary: 'AI: transcript, summary, QA of a recorded call (a call the user can see)' },
+  { method: 'POST', path: '/api/v1/ai/calls/{id}/live-token', access: OPS, handler: (c, b) => liveCallToken(c, b), summary: 'Single-use Gemini 3.5 live transcription token for an active visible call' },
+  { method: 'POST', path: '/api/v1/ai/calls/{id}/live-transcript', access: OPS, handler: (c, b) => saveLiveTranscript(c, b), summary: 'Save append-only live transcript checkpoints and finalise for AI summary' },
   { method: 'GET', path: '/api/v1/ai/status', access: CALL_VIEW, handler: (c) => aiStatus(c), summary: 'Whether AI call summaries are on' },
   { method: 'POST', path: '/api/v1/ai/cases/{id}/brief', access: ALL, handler: async (c) => { const r = await caseBrief(c.env, c.sql, c.user.id, c.params.id); c.changed.push(...r.changed); return r.brief; }, summary: 'AI case brief' },
   { method: 'POST', path: '/api/v1/ai/command', access: ALL, handler: async (c, b) => command(await aiEnv(c.env, c.sql), String(b?.q || '').slice(0, 400), c.user.role || ''), summary: 'AI command bar' },

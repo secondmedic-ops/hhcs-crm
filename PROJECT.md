@@ -39,6 +39,8 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
 
 ## Everyday use
 
+AI Summary supports microphone transcription during active calls using `gemini-3.5-transcribe-live` and server-created, single-use ephemeral tokens. Finished live transcripts are summarised by the configured text model; recordings remain the fallback. MyOperator does not currently stream live audio into the CRM: use speakerphone near the microphone. Setup, charges and limits: `docs/AI-LIVE-TRANSCRIPTION.md`.
+
 BMM system access: the HHCS-side authenticated lead/progress API is prepared but **disabled by default**. See `docs/BMM-INTEGRATION.md`. BMM must confirm the contract before activation under Settings > Telephony & integrations > Book My Medicare integration. Deployment of this change is on hold pending BMM documentation; no BMM endpoint or credentials have been assumed.
 
 | You want to | Do this |

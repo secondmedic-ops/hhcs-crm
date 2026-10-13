@@ -463,6 +463,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(aiSet.status === 200 && aiSet.body?.key?.set && aiSet.body.key.value === '…-bad' && !JSON.stringify(aiSet.body).includes('gm-bad'),
     'Gemini key saved in the app; only its last 4 characters come back', JSON.stringify(aiSet.body));
   check((await call('sup', 'POST', '/api/v1/admin/ai', { model: 'bad model!' })).status === 400, 'odd model name refused');
+  check((await call('sup', 'POST', '/api/v1/admin/ai', { model: 'gemini-3.5-transcribe-live' })).status === 400, 'live speech model cannot replace the JSON summary model');
   const badKey = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
   const badRow = await one(`select ai_status, ai_error, ai_attempts from calls where id = $1`, recCall);
   check(badKey.status === 502 && badRow?.ai_status === 'failed' && /API key not valid/.test(badRow.ai_error || '') && badRow.ai_attempts === 0,
@@ -500,6 +501,50 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await one(`select count(*)::int n from qa_reviews where call_id = $1 and ai_generated`, recCall))?.n >= 1, 'AI QA score stored with the summary');
   const aiStats = await call('sup', 'GET', '/api/v1/admin/ai');
   check(aiStats.body?.stats?.done >= 1 && aiStats.body.model === 'gemini-test', 'settings: last 14 days counts and the saved model', JSON.stringify(aiStats.body));
+  // Live microphone capture: only the assigned agent / operational staff, append-only checkpoints, then text-only summary.
+  const [{ id: liveId }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, agent_id, status, started_at, answered_at)
+    values (${ws}, 'myoperator', 'inbound', '+919820012020', ${U.agent}, 'answered', now(), now()) returning id::text`;
+  const tokenPath = `/api/v1/ai/calls/${liveId}/live-token`;
+  const transcriptPath = `/api/v1/ai/calls/${liveId}/live-transcript`;
+  check((await call(null, 'POST', tokenPath, {})).status === 401, 'live token: login required');
+  for (const who of ['bmm', 'admin', 'field', 'client', 'clinical']) {
+    check((await call(who, 'POST', tokenPath, {})).status === 403, `live token: ${who} denied`);
+    check((await call(who, 'POST', transcriptPath, { transcript: 'hidden', final: true })).status === 403, `live transcript: ${who} denied`);
+  }
+  check((await call('agent2', 'POST', tokenPath, {})).status === 404, 'live token: another agent cannot see the call');
+  check((await call('agent2', 'POST', transcriptPath, { transcript: 'hidden', final: false })).status === 404, 'live save: another agent cannot see the call');
+  const liveToken = await call('agent', 'POST', tokenPath, {});
+  const minted = geminiCalls.findLast((g) => g.path === '/v1beta/auth_tokens')?.tokenConfig;
+  check(liveToken.status === 200 && liveToken.body.token === 'auth_tokens/rehearsal-live' && !JSON.stringify(liveToken.body).includes('gm-test')
+    && minted?.uses === 1 && minted.bidiGenerateContentSetup.model === 'models/gemini-3.5-transcribe-live'
+    && minted.bidiGenerateContentSetup.generationConfig.responseModalities[0] === 'TEXT'
+    && new Date(minted.newSessionExpireTime) - Date.now() < 61000, 'live token: single use, constrained REST setup, 1 minute to start, no permanent key');
+  check((await call('agent', 'POST', tokenPath, { handle: 42 })).status === 400, 'live token: malformed resumption handle refused');
+  const resumed = await call('agent', 'POST', tokenPath, { handle: 'resume-1' });
+  check(resumed.body.setup.sessionResumption.handle === 'resume-1', 'live token: session resumption preserved');
+  const speech = 'Hinduja Home Care. I need a blood test at home tomorrow.';
+  check((await call('agent', 'POST', transcriptPath, { transcript: speech, final: false })).status === 200, 'live checkpoint saved');
+  check((await call('agent', 'POST', transcriptPath, { transcript: 'Older words', final: false })).status === 409, 'live checkpoint: a stale or different snapshot cannot erase speech');
+  check((await call('agent', 'POST', transcriptPath, { transcript: speech, final: 'yes' })).status === 400, 'live checkpoint validates final flag');
+  check((await call('agent', 'POST', transcriptPath, { transcript: 'x'.repeat(100001), final: false })).status === 400, 'live checkpoint enforces size limit');
+  check((await call('agent', 'POST', `/api/v1/ai/calls/${liveId}`, {})).status === 409, 'AI summary waits until the call ends');
+  await sql`update calls set status = 'completed', ended_at = now() where id = ${liveId}`;
+  check((await call('agent', 'POST', `/api/v1/ai/calls/${liveId}`, {})).status === 409, 'call end waits for the live transcript to finalise');
+  check((await call('agent', 'POST', tokenPath, {})).status === 409, 'live token: completed calls refused');
+  const beforeLiveSummary = geminiCalls.length;
+  check((await call('agent', 'POST', transcriptPath, { transcript: speech, final: true })).status === 200, 'finished live transcript saved after call end');
+  let liveRow;
+  for (let i = 0; i < 30; i++) {
+    liveRow = await one(`select ai_status, transcript, ai_summary, ai_extracted->>'transcript_source' source from calls where id = $1`, liveId);
+    if (liveRow?.ai_status === 'done') break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const liveRequests = geminiCalls.slice(beforeLiveSummary);
+  check(liveRow?.ai_status === 'done' && liveRow.transcript === speech && liveRow.source === 'gemini-3.5-transcribe-live' && liveRow.ai_summary,
+    'live transcript: automatic summary runs without a recording and preserves authoritative words', JSON.stringify(liveRow));
+  check(liveRequests.some((g) => g.hasLiveTranscript) && !liveRequests.some((g) => /upload|files/.test(g.path)), 'live summary uses text only, with no recording upload');
+  const liveView = await batch('agent', [sel('v_calls', { cols: 'has_live_transcript,customer_number', filters: [{ col: 'id', op: 'eq', val: liveId }], mode: 'single' })]);
+  check(liveView.body.results?.[0]?.data?.has_live_transcript && liveView.body.results[0].data.customer_number !== '+919820012020', 'live v_calls keeps phone masking and exposes transcript availability');
   // the every-minute sweep: a recorded call the webhook never summarised (e.g. brought in by the call-log sync), and a short one
   const [{ id: lateCall }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, status, started_at, ended_at, talk_seconds, recording_filename)
     values (${ws}, 'myoperator', 'inbound', '+919820012012', 'completed', now() - interval '3 minutes', now() - interval '2 minutes', 95, 'rec-late.mp3') returning id::text`;

@@ -8,6 +8,7 @@ import { useNow } from '../lib/hooks.js';
 import { dur, date, STAGE_LABEL } from '../lib/fmt.js';
 import Icon from './icons.jsx';
 import { Button, Badge, StageBadge, useToast } from './ui.jsx';
+import LiveTranscription from './LiveTranscription.jsx';
 
 const Ctx = createContext({ active: null, ringing: [] });
 export const useCalls = () => useContext(Ctx);
@@ -39,6 +40,7 @@ export function CallProvider({ children }) {
     <Ctx.Provider value={{ active, ringing, reload: load, dismiss: (id) => setDismissed((d) => ({ ...d, [id]: true })) }}>
       {children}
       {ringing[0] && <ScreenPop call={ringing[0]} />}
+      {ops && <LiveTranscription call={active} />}
     </Ctx.Provider>
   );
 }

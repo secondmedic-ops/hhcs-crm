@@ -89,12 +89,17 @@ const jwks = http.createServer(async (req, res) => {
       details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count',
         quotaId: 'GenerateContentInputTokensPerModelPerMinute-FreeTier', quotaValue: '250000' }] }, { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '33s' }] } });
     if (key !== 'gm-test') return send(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.' } });
+    if (path === '/v1beta/auth_tokens') {
+      g.tokenConfig = JSON.parse(raw.toString());
+      return send(200, { name: 'auth_tokens/rehearsal-live', expireTime: g.tokenConfig.expireTime });
+    }
     if (path.startsWith('/upload/v1beta/files')) { res.writeHead(200, { 'Content-Type': 'application/json', 'x-goog-upload-url': `${SUPABASE}/gemini/upload-session/1` }); return res.end('{}'); }
     if (req.method === 'DELETE') return send(200, {});
     if (path.includes(':generateContent')) {
       const parts = JSON.parse(raw.toString() || '{}').contents?.[0]?.parts || [];
       g.fileUri = parts.find((p) => p.fileData)?.fileData?.fileUri || null;
       g.inline = parts.some((p) => p.inlineData);
+      g.hasLiveTranscript = parts.some((p) => /Live microphone transcript/.test(p.text || ''));
       const out = parts.some((p) => /Reply with the JSON/.test(p.text || '')) ? { ok: true } : {
         transcript: 'Agent: Hinduja Home Care, Priya speaking.\nCaller: I need a blood test at home for my mother tomorrow.',
         language: 'English', summary: 'Caller asked for a home blood test for his mother tomorrow morning. Consent given; the agent will share the quote on WhatsApp.',

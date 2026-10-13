@@ -8,7 +8,7 @@ import { MO_FIELDS, clearMoCache, describeMo, missingCallingSettings, moEnv, ran
 import { loadWhatsAppQr } from './myoperator';
 import { syncCallLogs, syncState } from './mo-sync';
 import { aiEnv, aiPause, clearAiCache, clearAiPause, describeAi } from './ai-config';
-import { gemini } from './ai';
+import { gemini, transcribeToken, LIVE_TRANSCRIBE_MODEL } from './ai';
 
 type J = Record<string, any>;
 
@@ -237,10 +237,10 @@ export async function aiSettings(c: Ctx) {
       count(*) filter (where ai_processed_at is null and ai_status = 'failed')::int as failed,
       count(*) filter (where ai_processed_at is null and ai_status = 'skipped')::int as skipped,
       count(*) filter (where ai_processed_at is null and (ai_status is null or ai_status = 'processing'))::int as waiting
-    from calls where workspace_id = ${c.user.workspaceId}::uuid and recording_filename is not null and started_at > now() - interval '14 days'`;
+    from calls where workspace_id = ${c.user.workspaceId}::uuid and (recording_filename is not null or nullif(live_transcript, '') is not null) and started_at > now() - interval '14 days'`;
   const [last] = await c.sql`select ai_error, ai_started_at from calls
     where workspace_id = ${c.user.workspaceId}::uuid and ai_status = 'failed' order by ai_started_at desc nulls last limit 1`;
-  return { ...(await describeAi(c.env, c.sql)), stats: stats ?? { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: last ?? null, paused: await aiPause(c.sql) };
+  return { ...(await describeAi(c.env, c.sql)), live_model: LIVE_TRANSCRIBE_MODEL, stats: stats ?? { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: last ?? null, paused: await aiPause(c.sql) };
 }
 
 /** Save what was typed: api_key ('' removes the app key, the Worker secret applies again), model ('' = default), auto.
@@ -254,6 +254,7 @@ export async function saveAiSettings(c: Ctx, b: J) {
     const t = String(b[k] ?? '').trim();
     if (t.length > 200) throw new ApiError(400, `${k} is too long`);
     if (k === 'model' && t && !/^[a-z0-9][a-z0-9.-]*$/i.test(t)) throw new ApiError(400, 'Model name: letters, digits, dots and dashes only (for example gemini-2.5-flash)');
+    if (k === 'model' && /transcribe|live/i.test(t)) throw new ApiError(400, 'Choose a text model for summaries. Gemini 3.5 Transcribe Live is used separately for live speech.');
     input[k] = t;
   }
   if (b?.auto !== undefined) {
@@ -263,7 +264,7 @@ export async function saveAiSettings(c: Ctx, b: J) {
   const retry = b?.retry_failed === true;
   const { changed } = await asSystem(c.sql, async (tx) => {
     if (retry) await tx`update calls set ai_status = null, ai_attempts = 0, ai_error = null
-      where workspace_id = ${c.user.workspaceId}::uuid and recording_filename is not null and ai_processed_at is null
+      where workspace_id = ${c.user.workspaceId}::uuid and (recording_filename is not null or nullif(live_transcript, '') is not null) and ai_processed_at is null
         and ai_status in ('failed', 'skipped') and started_at > now() - interval '14 days'`;
     const [row] = await tx`select settings from integration_settings where provider = 'ai' for update`;
     const next: J = { ...((row?.settings as J) || {}) };
@@ -287,7 +288,9 @@ export async function testAi(c: Ctx) {
   if (!env.GEMINI_API_KEY) return { ok: false, message: 'No Gemini API key yet' };
   try {
     const r = await gemini(env, [{ text: 'Reply with the JSON {"ok": true}.' }], { temperature: 0 });
-    return r?.ok === true ? { ok: true, message: `Gemini answered (model ${(await describeAi(c.env, c.sql)).model})` } : { ok: false, message: 'Gemini answered, but not as expected' };
+    if (r?.ok !== true) return { ok: false, message: 'Gemini answered, but not as expected' };
+    await transcribeToken(env);
+    return { ok: true, message: `Summary model ${(await describeAi(c.env, c.sql)).model} answered; ${LIVE_TRANSCRIBE_MODEL} token created. Test live audio on a call to verify streaming access.` };
   } catch (e) {
     return { ok: false, message: String((e as Error).message || e).slice(0, 300) };
   }

@@ -60,6 +60,8 @@ export const api = {
   sendWhatsAppChat: (body: { case_id?: string | null; patient_id?: string | null; mobile?: string | null; patient_name?: string | null; template_id?: string | null; text?: string | null }) => request<Record<string, unknown>>('/api/v1/whatsapp/send', { method: 'POST', body }),
 
   aiCall: (callId: string) => request<Record<string, unknown>>(`/api/v1/ai/calls/${callId}`, { method: 'POST', body: {} }),
+  liveToken: (callId: string, handle = '') => request<{ token: string; setup: Record<string, unknown>; transcript: string }>(`/api/v1/ai/calls/${callId}/live-token`, { method: 'POST', body: { handle } }),
+  saveLiveTranscript: (callId: string, transcript: string, final: boolean) => request<{ saved: boolean; ended: boolean }>(`/api/v1/ai/calls/${callId}/live-transcript`, { method: 'POST', body: { transcript, final } }),
   aiBrief: (caseId: string) => request<Record<string, unknown>>(`/api/v1/ai/cases/${caseId}/brief`, { method: 'POST', body: {} }),
   aiCommand: (q: string) => request<Record<string, unknown>>('/api/v1/ai/command', { method: 'POST', body: { q } }),
   aiExtract: (text: string) => request<Record<string, unknown>>('/api/v1/ai/extract-enquiry', { method: 'POST', body: { text } }),

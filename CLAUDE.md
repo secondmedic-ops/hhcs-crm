@@ -10,6 +10,8 @@ Read `PROJECT.md` first (values, roles, how this project differs from the sb-spr
 - Tests: `cloudflare/test/workflow.test.mjs` (SQL workflow per role), `arrays.test.ts` (translator, arrays), `api.itest.mjs` (rehearsal API checks, run by `rehearse.mjs`).
 
 ## Rules
+
+- Live transcription: `src/components/LiveTranscription.jsx` stays mounted under CallProvider; `src/lib/live-transcription.js` streams microphone PCM from `pcm-worklet.js`. `liveCallToken` / `saveLiveTranscript` in `services/ai.ts` verify call access, pin one-use REST AuthTokens, and save append-only checkpoints separately from the AI transcript. Summaries wait for call completion and live finalisation; never put the permanent Gemini key in the browser. See `docs/AI-LIVE-TRANSCRIPTION.md`.
 - Every request as a user runs in `asUser` / `readAsUser` (role `caredesk_app`, `app_uid()` set). System work (webhooks, cron, email) uses `asSystem`. Never query patient data outside these.
 - New table: migration (table, RLS on, policies using `me_ws()` / `has_role()` / `app_uid()`, and add it to the change-tracking trigger loop by re-running that DO block in the new migration) -> `READ` / `WRITE` in `services/data.ts` -> `SCHEMA` if the Worker's own SQL uses it -> screen. New business action: SQL function in a migration (check roles inside) -> `RPC` map -> `READ_RPC` if read-only.
 - New endpoint: one line in `routes.ts` with `access` before `handler`; add checks to `api.itest.mjs`; add the call to `src/api.ts`.

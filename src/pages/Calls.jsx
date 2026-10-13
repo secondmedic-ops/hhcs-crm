@@ -188,11 +188,12 @@ function CallDrawer({ id, onClose }) {
             </div>
             {analysing ? <Skeleton lines={4} /> : !c.ai_processed_at ? (
               <div className="ai-box">
-                <div className={`small${c.ai_status === 'failed' ? ' danger-text' : ''}`}>{!c.has_recording ? 'No recording, so there is nothing to summarise.'
+                <div className={`small${c.ai_status === 'failed' ? ' danger-text' : ''}`}>{!c.has_recording && !c.has_live_transcript ? 'No recording or finished live transcript, so there is nothing to summarise.'
                   : c.ai_status === 'processing' ? 'Summarising now: Gemini is listening to the recording.'
                     : c.ai_status === 'failed' ? `Summary failed: ${c.ai_error || 'unknown error'}`
                       : c.ai_status === 'skipped' ? `Not summarised: ${c.ai_error || 'too short'}.` : 'Not summarised yet. It runs by itself within a few minutes of the call.'}</div>
-                {c.has_recording && c.ai_status !== 'processing' && can(...SUMMARY_ROLES) && <Button className="mt-8" size="sm" icon="ai" disabled={busy} onClick={analyse}>{c.ai_status === 'failed' ? 'Retry AI summary' : 'Run AI summary'}</Button>}
+                {(c.has_recording || c.has_live_transcript) && c.status === 'completed' && c.ai_status !== 'processing' && can(...SUMMARY_ROLES) && <Button className="mt-8" size="sm" icon="ai" disabled={busy} onClick={analyse}>{c.ai_status === 'failed' ? 'Retry AI summary' : 'Run AI summary'}</Button>}
+                {c.live_transcript && <div className="transcript mt-8">{c.live_transcript}</div>}
               </div>
             ) : (
               <div className="ai-box col gap-12">
