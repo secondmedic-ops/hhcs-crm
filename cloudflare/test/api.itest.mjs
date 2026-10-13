@@ -337,6 +337,21 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const done = await rpc('bmm', 'update_referral', { p_id: lead?.id, p_status: 'completed', p_note: 'Shift done' });
   const st = await batch('agent', [sel('v_cases', { cols: 'stage,provider_names', filters: [{ col: 'id', op: 'eq', val: pcid }], mode: 'single' })]);
   check(done.status === 200 && st.body?.results?.[0]?.data?.stage === 'closed', 'provider completes -> case closed for the agent too', JSON.stringify(st.body));
+  // ---- 7c. post-discharge transition: intake, validation roles, partner sync, metrics
+  const tcid = (await rpc('agent', 'create_enquiry', { p: { consent: true, services_requested: 'ICU bed and a nurse',
+    patient: { full_name: 'Transition Patient', mobile: '9811177003', address: 'Mahim W', pincode: '400016' } } })).body?.data?.case_id;
+  const ti = await rpc('agent', 'set_intake', { p_case: tcid, p: { care_type: 'post_discharge', intake_disposition: 'requirement_captured',
+    spoke_with: 'patient', expected_discharge_on: '2026-10-20', hospital_name: 'P. D. Hinduja Hospital, Mahim' } });
+  check(ti.status === 200 && ti.body?.data?.validation_status === 'pending', 'agent records post-discharge intake', JSON.stringify(ti.body));
+  check((await rpc('agent', 'schedule_validation', { p_case: tcid, p_nurse: U.agent, p_when: new Date().toISOString() })).status === 403, 'agent cannot schedule the hospital validation');
+  check((await rpc('bmm', 'record_validation', { p_case: tcid, p: {} })).status === 403, 'provider cannot record a clinical validation');
+  check((await batch('bmm', [sel('v_assessments', { cols: 'id' })])).status === 403, 'provider cannot read validation records');
+  check((await rpc('agent', 'import_referral_updates', { p_rows: [] })).status === 403, 'agent cannot run the partner sync');
+  const psync = await rpc('bmm', 'import_referral_updates', { p_rows: [{ case_no: 'HHC-000000-99999', status: 'accepted' }] });
+  check(psync.status === 200 && psync.body?.data?.errors?.length === 1, 'partner sync reports unknown cases row by row', JSON.stringify(psync.body));
+  check((await rpc('agent', 'transition_metrics', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date().toISOString() })).status === 403, 'agent cannot read transition metrics');
+  const tmx = await batch('client', [{ kind: 'rpc', fn: 'transition_metrics', args: { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() } }]);
+  check(tmx.status === 200 && tmx.body?.results?.[0]?.data?.intake >= 1, 'Hinduja management reads transition metrics', JSON.stringify(tmx.body).slice(0, 200));
   check((await rpc('agent', 'import_cases', { p_rows: [] })).status === 403, 'agents cannot import old CRM data');
   const im = await rpc('sup', 'import_cases', { p_rows: [{ ref: 'API-1', patient_name: 'Imported Via Api', mobile: '9811177002', services: 'physiotherapy', status: 'open', branch: 'Khar' }] });
   check(im.status === 200 && im.body?.data?.imported === 1, 'supervisor imports a row from the old CRM', JSON.stringify(im.body));

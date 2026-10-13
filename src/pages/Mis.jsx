@@ -49,6 +49,7 @@ export default function Mis() {
   const today = istDateStr(0);
 
   const rep = useLoad(() => rpc('mis_report', { p_from: from, p_to: to }), [from, to]);
+  const trans = useLoad(() => rpc('transition_metrics', { p_from: `${from}T00:00:00+05:30`, p_to: `${add(to, 1)}T00:00:00+05:30` }), [from, to]);
   const snap = useLoad(() => (mode === 'custom' ? Promise.resolve(null)
     : q(db.from('mis_snapshots').select('id,narrative,generated_at,period_end').eq('period', mode).eq('period_start', from).maybeSingle())), [mode, from]);
   const r = rep.data;
@@ -144,6 +145,8 @@ export default function Mis() {
               </> : <TableSkeleton rows={6} cols={1} />}
             </Panel>
           </div>
+
+          <TransitionMis t={trans.data} loading={trans.loading} />
 
           <Panel title="SLA compliance by policy" sub="Met vs breached timers started in the period · marker at the 90% target">
             {r ? (slaRows.length ? <div className="grid g2" style={{ gap: '14px 24px' }}>
@@ -263,6 +266,46 @@ export default function Mis() {
 }
 
 const Row = ({ k, v }) => <tr><td className="muted">{k}</td><td className="num">{v}</td></tr>;
+
+const DISP = { requirement_captured: 'Requirement captured', information_only: 'Information only', price_enquiry: 'Price enquiry', follow_up_requested: 'Follow-up requested',
+  not_interested: 'Not interested', already_arranged: 'Already arranged elsewhere', wrong_number: 'Wrong number', duplicate: 'Duplicate enquiry' };
+const hrs = (h) => (h == null ? '–' : h >= 48 ? `${(h / 24).toFixed(1)} days` : `${Number(h).toFixed(1)} h`);
+
+/** Post-discharge transitions opened in the period: conversion, TAT per step, items kept, partner fulfilment SLA. */
+function TransitionMis({ t, loading }) {
+  return (
+    <Panel title="Post-discharge transitions" sub="Cases marked post-discharge, opened in the period · median times">
+      {loading || !t ? <TableSkeleton rows={6} cols={4} /> : !t.intake ? <Empty title="No post-discharge cases in this period" /> : <>
+        <Funnel steps={[{ label: 'Intake', value: t.intake }, { label: 'Validated', value: t.validated }, { label: 'Signed off', value: t.signed_off }, { label: 'Deployed', value: t.deployed }]} />
+        <div className="grid g4 mt-16" style={{ gap: 8 }}>
+          <div><div className="upper">Conversion</div><div className="mono mis-big">{pct(t.conversion_pct, 1)}</div><div className="tiny muted">intake to sign-off</div></div>
+          <div><div className="upper">After validation</div><div className="mono mis-big">{pct(t.validation_to_signoff_pct, 1)}</div><div className="tiny muted">validated to sign-off</div></div>
+          <div><div className="upper">Items kept</div><div className="mono mis-big">{pct(t.items.retention_pct, 0)}</div><div className="tiny muted">{num(t.items.agreed)} of {num(t.items.recommended)} recommended</div></div>
+          <div><div className="upper">Not ready</div><div className="mono mis-big">{num(t.not_ready)}</div><div className="tiny muted">at hospital validation</div></div>
+        </div>
+        <div className="grid g2 mt-16" style={{ gap: 16 }}>
+          <table className="t compact"><tbody>
+            <Row k="Intake to hospital validation" v={hrs(t.tat_hours.intake_to_validation)} />
+            <Row k="Validation to family sign-off" v={hrs(t.tat_hours.validation_to_signoff)} />
+            <Row k="Sign-off to deployment" v={hrs(t.tat_hours.signoff_to_deployment)} />
+            <Row k="Intake to deployment" v={hrs(t.tat_hours.intake_to_deployment)} />
+          </tbody></table>
+          <table className="t compact">
+            <thead><tr><th>Partner</th><th className="num">Leads</th><th className="num">Declined</th><th className="num">Deployed</th><th className="num">In SLA</th><th className="num">Before discharge</th></tr></thead>
+            <tbody>{t.providers.map((p) => (
+              <tr key={p.code}><td>{p.name}</td><td className="num">{num(p.leads)}</td><td className="num">{num(p.declined)}</td><td className="num">{num(p.deployed)}</td>
+                <td className="num">{pct(p.deploy_sla_pct, 0)}</td><td className="num">{pct(p.before_discharge_pct, 0)}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+        {Object.keys(t.dispositions).length > 0 && <div className="mt-16"><div className="upper mb-8">Interaction reasons (all enquiries)</div>
+          <HBars data={Object.entries(t.dispositions).map(([k, v]) => ({ k: DISP[k] || k, v }))} label="k" value="v" /></div>}
+        {t.drop_reasons.length > 0 && <div className="mt-16"><div className="upper mb-8">Items dropped in negotiation</div>
+          <div className="col small" style={{ gap: 4 }}>{t.drop_reasons.slice(0, 12).map((d, i) => <div key={i}><strong>{d.service}</strong> · {d.reason}</div>)}</div></div>}
+      </>}
+    </Panel>
+  );
+}
 
 function sheet(rows, widths) {
   const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Note: 'No data in this period' }]);

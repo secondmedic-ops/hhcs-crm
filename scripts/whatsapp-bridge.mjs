@@ -15,6 +15,33 @@ const CFG_FILE = join(BRIDGE_DIR, 'config.json');
 
 mkdirSync(BRIDGE_DIR, { recursive: true });
 
+const PID_FILE = join(BRIDGE_DIR, 'bridge.pid');
+if (existsSync(PID_FILE)) {
+  try {
+    const oldPid = parseInt(readFileSync(PID_FILE, 'utf8'), 10);
+    if (oldPid && !isNaN(oldPid) && oldPid !== process.pid) {
+      try {
+        process.kill(oldPid, 0);
+        console.log(`[WhatsApp Bridge] Central bridge is already running in background (PID ${oldPid}). Exiting duplicate.`);
+        process.exit(0);
+      } catch {
+        // Stale PID file
+      }
+    }
+  } catch {}
+}
+try { writeFileSync(PID_FILE, String(process.pid)); } catch {}
+const cleanupPid = () => {
+  try {
+    if (existsSync(PID_FILE) && parseInt(readFileSync(PID_FILE, 'utf8'), 10) === process.pid) {
+      rmSync(PID_FILE, { force: true });
+    }
+  } catch {}
+};
+process.on('exit', cleanupPid);
+process.on('SIGINT', () => { cleanupPid(); process.exit(0); });
+process.on('SIGTERM', () => { cleanupPid(); process.exit(0); });
+
 function ensurePackages() {
   const pkgJson = join(BRIDGE_DIR, 'package.json');
   if (!existsSync(pkgJson)) {

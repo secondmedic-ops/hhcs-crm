@@ -275,5 +275,70 @@ cbManual.s === 600 && cbManual.next_attempt_at === null && claim4.length === 0 ?
 await expectError('agent', `select autodial_claim()`, [], 'System only');
 const [{ r: adView }] = await as('agent', `select autodial_settings() r`);
 adView.enabled === false && adView.buffer_minutes === 45 && adView.agents_available === 1 ? ok('agents read the auto-dial settings and who is Available') : fail(JSON.stringify(adView));
+console.log('\nPost-discharge transition: intake, hospital validation, negotiation, sign-off, split fulfilment, partner sync, metrics');
+// test prices only: the real ones are set by Hinduja management through the rate-change approval
+for (const [code, price] of Object.entries({ 'NURSE-12H': 1500, 'ATTEND-12H': 900, 'BED-ICU': 400, HFNC: 1200, 'MINI-ICU': 5000, MONITOR: 300, SUCTION: 150, 'OXY-CONC': 250, AIRBED: 100 }))
+  await db.query(`update services set price = $2 where code = $1`, [code, price]);
+const pd = await mk({ patient: { full_name: 'Discharge Patient', mobile: '9811100009', address: 'Bandra W', pincode: '400050' }, branch: 'Mahim',
+  services_requested: 'Two 12-hr nurses, two attendants, HF machine, ICU bed, samples and X-ray at home' });
+(await refs(pd.case_id)).some((r) => r.status === 'new') ? ok('enquiry text routed at once (standard behaviour)') : fail('no text routing');
+await expectError('agent', `select set_intake($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ care_type: 'post_discharge', intake_disposition: 'requirement_captured' })], 'who you spoke with');
+await as('agent', `select set_intake($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ care_type: 'post_discharge', intake_disposition: 'requirement_captured',
+  spoke_with: 'decision_maker', decision_maker_name: 'Son', expected_discharge_on: '2026-10-20', hospital_name: 'P. D. Hinduja Hospital, Mahim', hospital_ward: 'ICU 4' })]);
+(await refs(pd.case_id)).every((r) => r.status === 'cancelled') ? ok('post-discharge: partner leads held until sign-off') : fail(JSON.stringify(await refs(pd.case_id)));
+await expectError('agent', `select set_intake($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ intake_disposition: 'made_up' })], 'check');
+const [{ g: g0 }] = await as('agent', `select case_gates($1) g`, [pd.case_id]);
+!g0.ready && g0.checks.some((c) => c.label.startsWith('On-site validation') && !c.ok) ? ok('enquiry gate waits for the hospital validation') : fail(JSON.stringify(g0));
+await expectError('agent', `select schedule_validation($1, $2, now() + interval '2 hours')`, [pd.case_id, users.field], 'Not allowed');
+await as('coord', `select schedule_validation($1, $2, now() + interval '2 hours')`, [pd.case_id, users.field]);
+ok('coordinator schedules the nurse visit at Hinduja');
+const items12 = [['NURSE-12H', 60], ['ATTEND-12H', 60], ['BED-ICU', 30], ['HFNC', 30], ['MINI-ICU', 1], ['MONITOR', 30], ['SUCTION', 30], ['OXY-CONC', 30], ['AIRBED', 30], ['LAB-CBC', 4], ['LAB-KFT', 4], ['XR-CHEST', 2]]
+  .map(([c, qty]) => ({ service_id: svc[c], qty }));
+await expectError('field', `select record_validation($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ readiness: 'ready', met_family: true, items: items12 })], 'treating doctor');
+const [{ r: val }] = await as('field', `select record_validation($1, $2::jsonb) r`, [pd.case_id, JSON.stringify({ readiness: 'ready', met_doctor: true, doctor_name: 'Dr Rao',
+  met_ward_staff: true, met_family: true, home_setup_notes: 'Ground floor, 2 rooms', items: items12 })]);
+val.validation_status === 'done' && val.items === 12 ? ok('nurse records discharge ready + 12 recommended items') : fail(JSON.stringify(val));
+(await refs(pd.case_id)).every((r) => r.status === 'cancelled') ? ok('items added, still no partner lead before sign-off') : fail(JSON.stringify(await refs(pd.case_id)));
+const [{ n: provAssess }] = await as('bmm', `select count(*)::int n from discharge_assessments`);
+provAssess === 0 ? ok('partner cannot read clinical validation records') : fail('provider sees assessments');
+await as('coord', `select advance_case($1, null)`, [pd.case_id]); ok('enquiry → pricing after validation');
+const itemId = async (code) => (await db.query(`select id from case_items where case_id = $1 and service_code = $2`, [pd.case_id, code])).rows[0].id;
+await expectError('coord', `select set_item_scope($1, false, null)`, [await itemId('OXY-CONC')], 'reason');
+await as('coord', `select set_item_scope($1, false, 'Space: HF machine covers oxygen')`, [await itemId('OXY-CONC')]);
+await as('coord', `select set_item_scope($1, false, 'Family will arrange')`, [await itemId('AIRBED')]);
+const [sc] = await as('coord', `select subtotal, items_recommended, items_agreed from v_cases where id = $1`, [pd.case_id]);
+Number(sc.subtotal) === 219900 && Number(sc.items_recommended) === 12 && Number(sc.items_agreed) === 10 ? ok('12 → 10 items, 30-day subtotal ₹219900') : fail(JSON.stringify(sc));
+await expectError('coord', `select record_signoff($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ mode: 'in_person' })], 'decision-maker');
+await as('coord', `select send_quote($1, $2)`, [pd.case_id, tpl]);
+const [{ r: so }] = await as('coord', `select record_signoff($1, $2::jsonb) r`, [pd.case_id, JSON.stringify({ signed_by: 'A. Mehta (son)', mode: 'in_person', plan_days: 30 })]);
+const split = await refs(pd.case_id);
+const smR = split.find((r) => r.code === 'SM'); const bmR = split.find((r) => r.code === 'BMM');
+so.signoff_at && smR?.status === 'new' && bmR?.status === 'new' && smR.categories.sort().join() === 'lab,xray'
+  && ['beds', 'eldercare', 'equipment', 'icu', 'nursing'].every((c) => bmR.categories.includes(c)) && !bmR.categories.includes('lab')
+  ? ok('sign-off → diagnostics to SecondMedic, manpower + equipment to Book My Medicare') : fail(JSON.stringify(split));
+const [{ g: g1 }] = await as('coord', `select case_gates($1) g`, [pd.case_id]);
+g1.ready ? ok('pricing gate met: quote sent + family sign-off') : fail(JSON.stringify(g1));
+await as('coord', `select set_item_scope($1, false, 'Not needed')`, [await itemId('MONITOR')]);
+const [{ s: reset }] = await as('coord', `select signoff_at s from cases where id = $1`, [pd.case_id]);
+reset === null ? ok('scope change after sign-off clears the sign-off') : fail('signoff kept ' + reset);
+await as('coord', `select set_item_scope($1, true)`, [await itemId('MONITOR')]);
+await as('coord', `select record_signoff($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ signed_by: 'A. Mehta (son)', mode: 'whatsapp' })]);
+const [{ r: sync }] = await as('bmm', `select import_referral_updates($1::jsonb) r`, [JSON.stringify([
+  { case_no: pd.case_no, status: 'Accepted' }, { case_no: 'HHC-000000-99999', status: 'accepted' }, { case_no: pd.case_no, status: 'Accepted' }])]);
+sync.updated === 1 && sync.skipped === 1 && sync.errors.length === 1 ? ok('partner Excel sync: 1 updated, 1 unchanged, 1 unknown case reported') : fail(JSON.stringify(sync));
+await as('bmm', `select import_referral_updates($1::jsonb)`, [JSON.stringify([{ case_no: pd.case_no, status: 'Dispatched', note: 'Bed + HF machine out' }])]);
+await as('bmm', `select import_referral_updates($1::jsonb)`, [JSON.stringify([{ case_no: pd.case_no, status: 'Deployed', note: 'Nurse on duty' }])]);
+const [dep] = (await db.query(`select r.status, r.dispatched_at, r.started_at from case_referrals r join providers p on p.id = r.provider_id where r.case_id = $1 and p.code = 'BMM'`, [pd.case_id])).rows;
+dep.status === 'in_progress' && dep.dispatched_at && dep.started_at ? ok('partner logs dispatched → deployed') : fail(JSON.stringify(dep));
+await expectError('agent', `select import_referral_updates('[]'::jsonb)`, [], 'Not allowed');
+const [{ m: tm }] = await as('sup', `select transition_metrics(now() - interval '1 day', now() + interval '1 day') m`);
+const bmmM = tm.providers.find((p) => p.code === 'BMM');
+tm.intake === 1 && tm.signed_off === 1 && Number(tm.conversion_pct) === 100 && tm.items.recommended === 12 && tm.items.agreed === 10
+  && bmmM?.deployed === 1 && Number(bmmM.deploy_sla_pct) === 100 && tm.dispositions.requirement_captured === 1 && tm.drop_reasons.length === 2
+  ? ok('metrics: conversion 100%, 12 → 10 items, BMM deployed inside SLA') : fail(JSON.stringify(tm));
+await expectError('agent', `select transition_metrics(now() - interval '1 day', now())`, [], 'Not allowed');
+const [{ n: piiAudit }] = (await db.query(`select count(*)::int n from audit_log where table_name = 'cases' and changes::text like '%Mehta%'`)).rows;
+piiAudit === 0 ? ok('decision-maker name kept out of the audit log') : fail('name in audit_log');
+
 expect(problems).toEqual([]);
 }, 120000);

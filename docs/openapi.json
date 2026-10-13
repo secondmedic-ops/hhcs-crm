@@ -786,6 +786,26 @@
       "admin",
       "provider"
     ],
+    "discharge_assessments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_assessments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
     "mis_snapshots": [
       "supervisor",
       "coordinator",
@@ -1212,6 +1232,46 @@
     "import_cases": [
       "supervisor",
       "client_manager"
+    ],
+    "set_intake": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "set_item_scope": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "record_signoff": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "schedule_validation": [
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "record_validation": [
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "field_staff"
+    ],
+    "import_referral_updates": [
+      "provider",
+      "supervisor",
+      "client_manager"
+    ],
+    "transition_metrics": [
+      "supervisor",
+      "coordinator",
+      "client_manager",
+      "client_clinical"
     ],
     "case_gates": [
       "agent",

@@ -23,6 +23,7 @@ export const READ: Record<string, readonly Role[]> = {
   approvals: WITH_PROVIDER, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER,
   qa_reviews: WITH_PROVIDER, notifications: WITH_PROVIDER, inbound_emails: WITH_PROVIDER,
   providers: WITH_PROVIDER, case_referrals: WITH_PROVIDER, v_referrals: WITH_PROVIDER,
+  discharge_assessments: ALL, v_assessments: ALL,
   mis_snapshots: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   audit_log: MANAGERS, access_log: MANAGERS, v_audit: MANAGERS, v_access: MANAGERS,
   v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
@@ -63,12 +64,17 @@ export const RPC: Record<string, readonly Role[]> = {
   update_referral: ['provider', 'supervisor', 'client_manager', 'coordinator'],
   refer_case: [...OPS, 'client_manager'],
   import_cases: ['supervisor', 'client_manager'],
+  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS,
+  schedule_validation: ['coordinator', 'supervisor', 'medical_desk'],
+  record_validation: ['coordinator', 'supervisor', 'medical_desk', 'field_staff'],
+  import_referral_updates: ['provider', 'supervisor', 'client_manager'],
+  transition_metrics: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   case_gates: WITH_PROVIDER, render_template: ALL, log_access: WITH_PROVIDER,
   dashboard_kpis: ALL,
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
 };
 /** Read-only actions that may ride in a batch. */
-export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings']);
+export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => !!role && !!roles && roles.includes(role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);

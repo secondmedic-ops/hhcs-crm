@@ -782,7 +782,7 @@ function WhatsAppQrModal({ initialSession, onClose, onConnected }) {
             <div>
               <strong>WhatsApp is connected and active</strong>
               <div className="small muted mt-4">
-                All incoming and outgoing chats on this WhatsApp number sync live with CareDesk CRM.
+                All incoming and outgoing chats on this WhatsApp number sync live with CareDesk CRM across all computers.
               </div>
             </div>
           </div>
@@ -794,7 +794,7 @@ function WhatsAppQrModal({ initialSession, onClose, onConnected }) {
             <Field label="Account name">
               <div className="strong">{session.name || 'Hinduja Home Care'}</div>
             </Field>
-            <Field label="Bridge status">
+            <Field label="Central bridge status">
               <div className="row gap-6">
                 <Badge kind={session.bridge_online ? 'ok' : 'warn'}>
                   {session.bridge_online ? 'Online & syncing' : 'Reconnecting'}
@@ -810,9 +810,12 @@ function WhatsAppQrModal({ initialSession, onClose, onConnected }) {
       ) : (
         <div className="row gap-16 wrap" style={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div className="col gap-12" style={{ flex: '1 1 300px', minWidth: 260 }}>
-            <div className="strong">Scan from your phone to activate live WhatsApp chats:</div>
+            <div className="strong">Central WhatsApp Helpline · Link once for the whole team</div>
+            <div className="small muted">
+              Scan this QR from the official Hinduja Home Care phone (or helpline mobile). Once linked, <strong>all agents on all computers</strong> access incoming and outgoing chats automatically. You never need to run anything on individual PCs.
+            </div>
             <ol className="small" style={{ paddingLeft: 18, margin: 0, display: 'grid', gap: 6 }}>
-              <li>Open <strong>WhatsApp</strong> on your phone.</li>
+              <li>Open <strong>WhatsApp</strong> on the helpline phone.</li>
               <li>Tap <strong>Menu</strong> (Android) or <strong>Settings</strong> (iPhone) and select <strong>Linked devices</strong>.</li>
               <li>Tap <strong>Link a device</strong>.</li>
               <li>Point your phone camera at the QR code on the right.</li>
@@ -854,9 +857,9 @@ function WhatsAppQrModal({ initialSession, onClose, onConnected }) {
             )}
 
             <div className="tiny muted">
-              Bridge status:{' '}
+              Central service status:{' '}
               <strong style={{ color: session?.bridge_online ? 'var(--ok)' : 'var(--warn)' }}>
-                {session?.bridge_online ? 'Online' : 'Waiting for WHATSAPP-CONNECT.bat'}
+                {session?.bridge_online ? 'Online' : 'Bridge offline'}
               </strong>
               {session?.qr_updated_at ? ` · QR updated ${ago(session.qr_updated_at)}` : ''}
             </div>
@@ -887,12 +890,12 @@ function WhatsAppQrModal({ initialSession, onClose, onConnected }) {
             ) : (
               <div className="col gap-8" style={{ textAlign: 'center', padding: 12 }}>
                 <span className="strong small">
-                  {session?.bridge_online ? 'Generating live QR code…' : 'Starting WhatsApp bridge…'}
+                  {session?.bridge_online ? 'Generating live QR code…' : 'Waiting for the WhatsApp bridge…'}
                 </span>
                 <span className="tiny muted">
                   {session?.bridge_online
                     ? 'The QR code will appear in a few seconds.'
-                    : 'Run WHATSAPP-CONNECT.bat on this PC if the QR does not appear automatically.'}
+                    : 'If the QR does not appear, run WHATSAPP-CONNECT.bat once on the PC that hosts the bridge.'}
                 </span>
               </div>
             )}

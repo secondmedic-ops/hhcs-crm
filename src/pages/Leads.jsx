@@ -2,28 +2,31 @@
 // Book My Medicare staff land here and see only their own leads (row-level security); supervisors, coordinators,
 // agents and Hinduja management use it to track every transfer. Recordings are never shown here.
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
-import { num, ago, dateTime } from '../lib/fmt.js';
-import { PageHead, Panel, Kpi, Tabs, Button, Badge, Modal, Field, Input, Textarea, Select, TableSkeleton, Empty, ErrorNote, useAction } from '../components/ui.jsx';
+import { num, ago, date, dateTime } from '../lib/fmt.js';
+import { PageHead, Panel, Kpi, Tabs, Button, Badge, Modal, Field, Input, Textarea, Select, TableSkeleton, Empty, ErrorNote, useAction, useToast } from '../components/ui.jsx';
 
 export const REF_STATUS = {
-  new: ['New', 'warn'], accepted: ['Accepted', 'info'], scheduled: ['Scheduled', 'accent'], in_progress: ['In service', 'plum'],
+  new: ['New', 'warn'], accepted: ['Accepted', 'info'], scheduled: ['Scheduled', 'accent'], dispatched: ['Dispatched', 'accent'], in_progress: ['Deployed', 'plum'],
   completed: ['Completed', 'ok'], declined: ['Declined', 'danger'], cancelled: ['Cancelled', ''],
 };
 export const RefBadge = ({ status }) => { const [l, k] = REF_STATUS[status] || [status, '']; return <Badge kind={k}>{l}</Badge>; };
-const OPEN = ['new', 'accepted', 'scheduled', 'in_progress'];
+const OPEN = ['new', 'accepted', 'scheduled', 'dispatched', 'in_progress'];
 const COLS = 'id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,branch,priority,patient_id,patient_name,patient_age,patient_gender,'
   + 'patient_mobile,caller_name,caller_relation,address,landmark,locality,pincode,services_requested,additional_info,clinical_notes,service_names,'
-  + 'preferred_slot,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,created_at,case_created_at';
+  + 'preferred_slot,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,created_at,case_created_at,'
+  + 'care_type,hospital_name,hospital_ward,expected_discharge_on,plan_days,dispatched_at,started_at';
 
 // The next steps a lead can take, for whoever may move it.
 const NEXT = {
   new: [['accepted', 'Accept', 'primary'], ['declined', 'Decline']],
   accepted: [['scheduled', 'Schedule visit', 'primary'], ['declined', 'Decline']],
-  scheduled: [['in_progress', 'Start service', 'primary'], ['scheduled', 'Reschedule']],
+  scheduled: [['dispatched', 'Mark dispatched', 'primary'], ['in_progress', 'Mark deployed'], ['scheduled', 'Reschedule']],
+  dispatched: [['in_progress', 'Mark deployed', 'primary']],
   in_progress: [['completed', 'Mark completed', 'primary']],
 };
 
@@ -56,7 +59,7 @@ export function LeadActions({ lead, onDone, size = 'xs' }) {
   );
 }
 
-const STEP_TITLE = { accepted: 'Accept lead', scheduled: 'Schedule the visit', in_progress: 'Start service', completed: 'Mark service completed',
+const STEP_TITLE = { accepted: 'Accept lead', scheduled: 'Schedule the visit', dispatched: 'Staff or equipment dispatched', in_progress: 'Deployed, service started', completed: 'Mark service completed',
   declined: 'Decline lead', cancelled: 'Cancel lead', new: 'Reopen lead' };
 
 function LeadStep({ lead, to, onClose, onDone }) {
@@ -127,9 +130,10 @@ export default function Leads() {
         sub={isProvider ? 'Cases sent to you by the Hinduja call centre: case ID, patient details and requirements. Accept, schedule, add progress notes and complete.'
           : 'Every case is sent to SecondMedic (ECG, X-ray, blood tests) or Book My Medicare (nursing, physiotherapy, beds, elder care) by its services.'} />
       <ErrorNote error={error} />
+      {(isProvider || ['supervisor', 'client_manager'].includes(profile?.role)) && <SheetSync rows={(data?.rows || []).filter((r) => OPEN.includes(r.status))} onDone={reload} isProvider={isProvider} />}
       <div className="kpis mb-16">
         <Kpi label="New, waiting to be accepted" value={data && num(waiting)} detail={waiting ? `oldest ${ago(new Date(oldestNew), now)}` : 'none waiting'} tone={waiting ? 'warn' : 'ok'} onClick={() => setTab('new')} />
-        <Kpi label="Open leads" value={data && num(byTab.open.length)} detail="accepted, scheduled or in service" onClick={() => setTab('open')} />
+        <Kpi label="Open leads" value={data && num(byTab.open.length)} detail="accepted, scheduled, dispatched or deployed" onClick={() => setTab('open')} />
         <Kpi label="Completed in 7 days" value={data && num(doneWeek)} tone="ok" onClick={() => setTab('completed')} />
         <Kpi label="Declined or cancelled" value={data && num(byTab.closed.length)} detail="sent back to the call centre" tone={byTab.closed.length ? 'warn' : ''} onClick={() => setTab('closed')} />
       </div>
@@ -152,6 +156,7 @@ export default function Leads() {
                 <td style={{ maxWidth: 200 }}><div className="small strong truncate">{r.patient_name}</div>
                   <div className="tiny muted">{[r.patient_age, r.patient_gender].filter(Boolean).join('')}{r.patient_mobile ? ` · ${r.patient_mobile}` : ''}</div></td>
                 <td style={{ maxWidth: 300 }}><div className="small truncate">{r.service_names || r.services_requested || '–'}</div>
+                  {r.care_type === 'post_discharge' && <div className="tiny warn-text">Post-discharge{r.expected_discharge_on ? ` · discharge ${date(r.expected_discharge_on)}` : ''}{r.plan_days ? ` · ${r.plan_days} days` : ''}</div>}
                   {r.additional_info && <div className="tiny muted truncate" title={r.additional_info}>{r.additional_info}</div>}</td>
                 {!isProvider && <td className="small nowrap">{r.provider_name}</td>}
                 <td className="small">{r.branch || <span className="faint">–</span>}</td>
@@ -191,11 +196,15 @@ function LeadDrawer({ lead: r, onClose, onOpenCase, reload }) {
             {dl('Caller', [r.caller_name, r.caller_relation].filter(Boolean).join(' · '))}
             {dl('Address', [r.address, r.landmark, r.locality, r.pincode].filter(Boolean).join(', '))}
             {dl('Branch', r.branch)}
+            {dl('Hospital', r.care_type === 'post_discharge' && [r.hospital_name, r.hospital_ward].filter(Boolean).join(', '))}
+            {dl('Discharge', r.expected_discharge_on && `${date(r.expected_discharge_on)}${r.plan_days ? ` · ${r.plan_days}-day plan` : ''}`)}
             {dl('Services', r.service_names || r.services_requested)}
             {dl('Requirements', r.additional_info)}
             {dl('Clinical notes', r.clinical_notes)}
             {dl('Preferred slot', r.preferred_slot && dateTime(r.preferred_slot))}
             {dl('Visit', r.scheduled_at && dateTime(r.scheduled_at))}
+            {dl('Dispatched', r.dispatched_at && dateTime(r.dispatched_at))}
+            {dl('Deployed', r.started_at && dateTime(r.started_at))}
             {dl('Declined because', r.decline_reason)}
           </dl>
           <div className="tiny faint mt-8">Call recordings are not shared with service providers.</div>
@@ -220,5 +229,53 @@ function LeadDrawer({ lead: r, onClose, onOpenCase, reload }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+const SHEET_STATUS = { new: 'New', accepted: 'Accepted', scheduled: 'Scheduled', dispatched: 'Dispatched', in_progress: 'Deployed', completed: 'Completed', declined: 'Declined' };
+const cellText = (v) => (v instanceof Date ? v.toISOString() : String(v ?? '').trim());
+
+/** Temporary Excel sync for a partner: download open leads, update the Status and Note columns, upload. Each row goes
+ *  through the same lead rules as the buttons (update_referral); unknown cases or refused steps come back row by row. */
+function SheetSync({ rows, onDone, isProvider }) {
+  const toast = useToast();
+  const [res, setRes] = useState(null);
+  const [run, busy] = useAction();
+  const mine = rows.filter((r) => r.provider_code !== 'SM');
+  const download = () => {
+    const ws = XLSX.utils.json_to_sheet(mine.map((r) => ({
+      'Case no': r.case_no, ...(isProvider ? {} : { Provider: r.provider_code }), Patient: r.patient_name, Services: r.service_names || r.services_requested || '',
+      Hospital: [r.hospital_name, r.hospital_ward].filter(Boolean).join(', '), Discharge: r.expected_discharge_on || '',
+      Status: SHEET_STATUS[r.status] || r.status, 'Visit (IST)': r.scheduled_at ? dateTime(r.scheduled_at) : '', Note: '' })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Leads');
+    XLSX.writeFile(wb, `CareDesk-leads-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    rpc('log_access', { p_action: 'export', p_entity: 'case_referrals', p_entity_id: null, p_meta: { scope: 'partner_sheet', rows: mine.length } }).catch(() => {});
+  };
+  const upload = (f) => run(async () => {
+    if (!f) return;
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
+    const pick = (r, ...keys) => { const k = Object.keys(r).find((h) => keys.includes(h.toLowerCase().replace(/[^a-z]/g, ''))); return k ? cellText(r[k]) : ''; };
+    const out = raw.map((r) => ({ case_no: pick(r, 'caseno', 'case', 'caseid'), status: pick(r, 'status'), note: pick(r, 'note', 'notes', 'remarks') || null,
+      provider: pick(r, 'provider') || null })).filter((r) => r.case_no);
+    const r = await rpc('import_referral_updates', { p_rows: out });
+    setRes(r);
+    onDone?.();
+    toast.ok(`Sheet applied: ${r.updated} updated, ${r.skipped} unchanged${r.errors?.length ? `, ${r.errors.length} not applied` : ''}`);
+  });
+  return (
+    <Panel title="Excel status sync" sub="Until your team works on this page directly: download the open leads, set the Status column (Accepted, Dispatched, Deployed, Completed, Declined) and a note, then upload the file.">
+      <div className="row wrap" style={{ gap: 8 }}>
+        <Button size="sm" icon="download" onClick={download} disabled={!mine.length}>Download open leads</Button>
+        <label className={`btn sm ${busy ? 'disabled' : ''}`}>Upload updated sheet<input type="file" accept=".xlsx,.xls,.csv" hidden disabled={busy} onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ''; }} /></label>
+      </div>
+      {res?.errors?.length > 0 && (
+        <div className="mt-12 small">
+          <div className="strong">Rows not applied</div>
+          {res.errors.map((e) => <div key={e.row} className="danger-text">Row {e.row + 1}{e.case_no ? ` · ${e.case_no}` : ''}: {e.message}</div>)}
+        </div>
+      )}
+    </Panel>
   );
 }

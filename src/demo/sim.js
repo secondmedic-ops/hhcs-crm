@@ -197,6 +197,41 @@ const WEBHOOK_SAMPLE = (n) => ({
 });
 
 // ---------- router
+// demo WhatsApp session: kept across calls so "Scan QR" moves to connected
+const DEMO_QR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 250" width="220" height="220">
+  <rect width="250" height="250" fill="#ffffff"/>
+  <rect x="20" y="20" width="50" height="50" fill="#111827"/>
+  <rect x="28" y="28" width="34" height="34" fill="#ffffff"/>
+  <rect x="36" y="36" width="18" height="18" fill="#111827"/>
+  <rect x="180" y="20" width="50" height="50" fill="#111827"/>
+  <rect x="188" y="28" width="34" height="34" fill="#ffffff"/>
+  <rect x="196" y="36" width="18" height="18" fill="#111827"/>
+  <rect x="20" y="180" width="50" height="50" fill="#111827"/>
+  <rect x="28" y="188" width="34" height="34" fill="#ffffff"/>
+  <rect x="36" y="196" width="18" height="18" fill="#111827"/>
+  <rect x="176" y="176" width="36" height="36" fill="#111827"/>
+  <rect x="184" y="184" width="20" height="20" fill="#ffffff"/>
+  <rect x="190" y="190" width="8" height="8" fill="#111827"/>
+  <path d="M78 30 h10 v8 h-10z M96 30 h8 v8 h-8z M112 30 h8 v8 h-8z M128 30 h14 v8 h-14z M150 30 h8 v8 h-8z M166 30 h6 v8 h-6z M78 46 h8 v8 h-8z M102 46 h14 v8 h-14z M124 46 h8 v8 h-8z M140 46 h18 v8 h-18z M166 46 h6 v8 h-6z M30 78 v10 h8 v-10z M46 78 v8 h8 v-8z M62 78 v16 h8 v-16z M86 78 h8 v8 h-8z M102 78 h14 v8 h-14z M124 78 h24 v8 h-24z M156 78 h14 v8 h-14z M178 78 h14 v8 h-14z M200 78 h10 v8 h-10z M30 96 v8 h8 v-8z M46 102 v12 h8 v-12z M62 102 v8 h8 v-8z M78 94 h8 v16 h-8z M94 94 h16 v8 h-16z M118 94 h14 v8 h-14z M140 94 h8 v16 h-8z M156 94 h16 v8 h-16z M180 94 h8 v16 h-8z M196 94 h14 v8 h-14z M30 120 v8 h8 v-8z M46 122 v8 h8 v-8z M78 118 h16 v8 h-16z M102 118 h8 v8 h-8z M118 118 h14 v8 h-14z M140 118 h16 v8 h-16z M164 118 h8 v8 h-8z M180 118 h14 v8 h-14z M202 118 h8 v8 h-8z M30 136 v14 h8 v-14z M54 136 h8 v14 h-8z M70 136 h8 v8 h-8z M86 136 h16 v8 h-16z M110 136 h8 v8 h-8z M126 136 h16 v8 h-16z M150 136 h8 v14 h-8z M166 136 h16 v8 h-16z M190 136 h18 v8 h-18z M30 158 v14 h8 v-14z M46 158 v8 h8 v-8z M62 158 v14 h8 v-14z M78 152 h14 v8 h-14z M100 152 h8 v14 h-8z M116 152 h16 v8 h-16z M140 152 h10 v8 h-10z M158 152 h8 v14 h-8z M174 152 h16 v8 h-16z M198 152 h12 v8 h-12z M78 174 h14 v8 h-14z M100 174 h8 v8 h-8z M116 174 h8 v8 h-8z M132 174 h16 v8 h-16z M156 174 h12 v8 h-12z M78 190 h8 v8 h-8z M94 190 h14 v8 h-14z M116 190 h8 v8 h-8z M132 190 h8 v8 h-8z M148 190 h14 v8 h-14z M78 206 h16 v8 h-16z M102 206 h8 v8 h-8z M118 206 h14 v8 h-14z M140 206 h8 v8 h-8z M156 206 h16 v8 h-16z" fill="#111827"/>
+</svg>`;
+
+let demoWaState = {
+  status: 'connected',
+  connected: true,
+  mode: 'qr',
+  waba_configured: false,
+  bridge_online: true,
+  qr_svg: null,
+  qr_updated_at: null,
+  pairing_code: null,
+  phone: '+918049368621',
+  name: 'Hinduja Home Care (Demo)',
+  connected_at: new Date().toISOString(),
+  last_seen_at: new Date().toISOString(),
+  error: null,
+  demo: true,
+};
+
 export async function demoApi(path, body = {}, method) {
   await sleep(250 + Math.random() * 350);
   let m;
@@ -225,8 +260,22 @@ export async function demoApi(path, body = {}, method) {
       values ($1,$2,$3,$4,'outbound',$5,$6,$7,$8,'Message copy',$9)`, [c.workspace_id, m[1], c.patient_id, t.kind, a.id, a.agent_code || a.full_name, `${t.title} sent (template ${t.code})`, text, t.id]);
     return { text, delivery: { simulated: true } };
   }
-  if (path === '/whatsapp/session' || path === '/whatsapp/session/action') {
-    return { status: 'connected', connected: true, mode: 'qr', waba_configured: false, bridge_online: true, qr_svg: null, qr_updated_at: null, pairing_code: null, phone: '+918049368621', name: 'Hinduja Home Care (Demo)', connected_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), error: null, demo: true };
+  if (path === '/whatsapp/session') {
+    return { ...demoWaState, last_seen_at: new Date().toISOString() };
+  }
+  if (path === '/whatsapp/session/action') {
+    const act = body?.action || 'start';
+    if (act === 'logout' || act === 'disconnect') {
+      demoWaState = { ...demoWaState, status: 'disconnected', connected: false, qr_svg: null, phone: null, name: null };
+    } else if (act === 'start' || act === 'refresh_qr') {
+      demoWaState = { ...demoWaState, status: 'qr_ready', connected: false, qr_svg: DEMO_QR_SVG, qr_updated_at: new Date().toISOString(), bridge_online: true };
+      setTimeout(() => {
+        if (demoWaState.status === 'qr_ready') {
+          demoWaState = { ...demoWaState, status: 'connected', connected: true, qr_svg: null, phone: '+918049368621', name: 'Hinduja Home Care (Demo)', connected_at: new Date().toISOString() };
+        }
+      }, 7000);
+    }
+    return { ...demoWaState, last_seen_at: new Date().toISOString() };
   }
   if (path === '/whatsapp/send') {
     const a = await me();

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startLocalDb } from './local-db.mjs';
+import { ensureBridgeRunning } from '../../scripts/ensure-bridge.mjs';
 
 const root = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 if (!existsSync(join(root, 'dist'))) {
@@ -13,6 +14,7 @@ if (!existsSync(join(root, 'dist'))) {
 }
 const { url } = await startLocalDb({ root, demoData: true });
 console.log('Test database ready (in memory, demo data).');
+try { ensureBridgeRunning({ env: { CAREDESK_URL: 'http://127.0.0.1:8787', CAREDESK_BRIDGE_KEY: 'local-test-webhook-key' } }); } catch {}
 const worker = spawn('npx', ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', '8787',
   '--var', 'AUTH_MODE:off', '--var', 'BUILD_SHA:local', '--var', `DATABASE_URL:${url}`,
   '--var', 'MYOPERATOR_WEBHOOK_KEY:local-test-webhook-key', ...(process.env.GEMINI_API_KEY ? ['--var', `GEMINI_API_KEY:${process.env.GEMINI_API_KEY}`] : []), '--show-interactive-dev-session=false'], {

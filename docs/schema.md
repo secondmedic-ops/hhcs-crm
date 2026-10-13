@@ -142,6 +142,9 @@
 | qty | integer | NO |
 | line_total | numeric | NO |
 | created_at | timestamp with time zone | NO |
+| recommended | boolean | NO |
+| excluded | boolean | NO |
+| exclude_reason | text | YES |
 
 ## case_referrals
 | column | type | nullable |
@@ -163,6 +166,7 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
+| dispatched_at | timestamp with time zone | YES |
 
 ## case_stage_history
 | column | type | nullable |
@@ -224,6 +228,21 @@
 | branch | text | YES |
 | additional_info | text | YES |
 | external_ref | text | YES |
+| care_type | text | NO |
+| hospital_name | text | YES |
+| hospital_ward | text | YES |
+| treating_doctor | text | YES |
+| expected_discharge_on | date | YES |
+| spoke_with | text | YES |
+| decision_maker_name | text | YES |
+| decision_maker_relation | text | YES |
+| intake_disposition | text | YES |
+| validation_status | text | NO |
+| plan_days | integer | NO |
+| signoff_at | timestamp with time zone | YES |
+| signoff_by_name | text | YES |
+| signoff_mode | text | YES |
+| signoff_note | text | YES |
 
 ## complaints
 | column | type | nullable |
@@ -256,6 +275,28 @@
 | areas | text | YES |
 | status | text | NO |
 | run_url | text | YES |
+
+## discharge_assessments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| nurse_id | uuid | YES |
+| status | text | NO |
+| scheduled_at | timestamp with time zone | YES |
+| visited_at | timestamp with time zone | YES |
+| met_doctor | boolean | NO |
+| doctor_name | text | YES |
+| met_ward_staff | boolean | NO |
+| met_family | boolean | NO |
+| readiness | text | YES |
+| revised_discharge_on | date | YES |
+| home_setup_notes | text | YES |
+| clinical_summary | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| updated_at | timestamp with time zone | NO |
 
 ## escalation_matrix
 | column | type | nullable |
@@ -496,6 +537,7 @@
 | approved_by | uuid | YES |
 | approved_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | NO |
+| unit | text | NO |
 
 ## sla_policies
 | column | type | nullable |
@@ -573,6 +615,30 @@
 | case_no | text | YES |
 | requested_by_name | text | YES |
 | decided_by_name | text | YES |
+
+## v_assessments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| nurse_id | uuid | YES |
+| status | text | YES |
+| scheduled_at | timestamp with time zone | YES |
+| visited_at | timestamp with time zone | YES |
+| met_doctor | boolean | YES |
+| doctor_name | text | YES |
+| met_ward_staff | boolean | YES |
+| met_family | boolean | YES |
+| readiness | text | YES |
+| revised_discharge_on | date | YES |
+| home_setup_notes | text | YES |
+| clinical_summary | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | YES |
+| nurse_name | text | YES |
+| case_no | text | YES |
 
 ## v_assignments
 | column | type | nullable |
@@ -736,6 +802,21 @@
 | branch | text | YES |
 | additional_info | text | YES |
 | external_ref | text | YES |
+| care_type | text | YES |
+| hospital_name | text | YES |
+| hospital_ward | text | YES |
+| treating_doctor | text | YES |
+| expected_discharge_on | date | YES |
+| spoke_with | text | YES |
+| decision_maker_name | text | YES |
+| decision_maker_relation | text | YES |
+| intake_disposition | text | YES |
+| validation_status | text | YES |
+| plan_days | integer | YES |
+| signoff_at | timestamp with time zone | YES |
+| signoff_by_name | text | YES |
+| signoff_mode | text | YES |
+| signoff_note | text | YES |
 | patient_name | text | YES |
 | patient_age | integer | YES |
 | patient_gender | text | YES |
@@ -759,6 +840,8 @@
 | open_complaints | bigint | YES |
 | provider_names | text | YES |
 | providers_status | jsonb | YES |
+| items_recommended | bigint | YES |
+| items_agreed | bigint | YES |
 
 ## v_complaints
 | column | type | nullable |
@@ -858,6 +941,7 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | YES |
+| dispatched_at | timestamp with time zone | YES |
 | provider_code | text | YES |
 | provider_name | text | YES |
 | case_no | text | YES |
@@ -883,6 +967,12 @@
 | locality | text | YES |
 | assigned_name | text | YES |
 | service_names | text | YES |
+| care_type | text | YES |
+| hospital_name | text | YES |
+| hospital_ward | text | YES |
+| expected_discharge_on | date | YES |
+| plan_days | integer | YES |
+| signoff_at | timestamp with time zone | YES |
 
 ## v_whatsapp_chats
 | column | type | nullable |
