@@ -29,7 +29,7 @@ The returned token is limited to one session, must start within one minute, expi
 4. Allow microphone access when your browser asks. Use a current browser with microphone and AudioWorklet support, and open the CRM over HTTPS.
 5. Confirm that the status changes to **listening** and words appear. The grey preview is provisional; only final words are committed. Language detection is automatic, including English, Hindi and Marathi.
 6. Keep the CRM tab open. You can navigate between CRM pages while capture continues. Final words save about every 30 seconds and when you stop.
-7. Click **Stop and save** when finished. If the CRM receives the MyOperator call-ended event, it stops and saves automatically. If that event is delayed, stop manually after hanging up.
+7. Click **Stop and save** when finished. When the CRM receives the MyOperator call-ended event, the floating panel hides immediately and finishes saving in the background. Active calls also refresh every 15 seconds to recover missed notifications. If MyOperator's event is delayed, stop manually after hanging up. A failed save with captured words leaves a compact **Retry saving transcript** notice at the top of the page.
 8. Once the call is marked completed, automatic AI Summary uses the saved transcript. If automatic summaries are off, open **Calls & recordings**, select the call and click **Run AI summary**. Review the transcript and summary against the recording before acting.
 
 ## Audio source and limits
@@ -50,6 +50,8 @@ As checked on 13 October 2026, Google lists an estimated paid rate of **US$0.009
 - **Key refused or quota exceeded:** check that it belongs to the intended project, that Gemini API access is available, and that the project has remaining quota. Fix the problem, then Test key again.
 - **No live words:** check the selected microphone and speakerphone volume. A successful key test proves token creation, not microphone capture or live model access.
 - **Disconnected:** wait for reconnection; if it reports interruption, save the captured words before restarting.
+- **Empty connection failure:** use **Start transcription** to try again or **Close** to dismiss the panel. No new API key is needed just because the connection closed.
+- **Google high demand:** temporary server errors are retried twice. If Google remains unavailable, wait and use **Retry failed calls** in Settings to resume the summary queue.
 - **Summary still pending:** the call must be marked completed and the live transcript saved. The fallback queue runs once a minute. Use the call's summary button if automatic processing is off.
 - **Only one person's words:** the microphone hears only one person. Change the audio arrangement before relying on the transcript.
 

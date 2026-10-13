@@ -17,13 +17,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const NOT_CONFIGURED = 'AI is not configured: add the Gemini API key in Settings > Telephony & integrations';
 export const LIVE_TRANSCRIBE_MODEL = 'gemini-3.5-transcribe-live';
 
+/** Briefly retry Google's transient capacity errors, then keep the existing pause/queue handling. */
+async function geminiFetch(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init);
+    if (![500, 502, 503, 504].includes(res.status) || attempt === 2) return res;
+    await res.body?.cancel();
+    await sleep(1000 * 2 ** attempt + Math.floor(Math.random() * 250));
+  }
+}
+
 /** Mint a single-session token. The REST AuthToken pins the whole setup; the permanent key stays in the Worker. */
 export async function transcribeToken(env: Env, handle = '') {
   if (!env.GEMINI_API_KEY) throw new ApiError(503, NOT_CONFIGURED);
   const setup = { model: `models/${LIVE_TRANSCRIBE_MODEL}`, generationConfig: { responseModalities: ['TEXT'] },
     inputAudioTranscription: { languageCodes: [], mode: 'VERBATIM', customVocabulary: ['Hinduja', 'SecondMedic', 'MyOperator'] },
     sessionResumption: handle ? { handle } : {} };
-  const res = await fetch(`${BASE(env)}/v1beta/auth_tokens`, {
+  const res = await geminiFetch(`${BASE(env)}/v1beta/auth_tokens`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({ uses: 1, expireTime: new Date(Date.now() + 30 * 60e3).toISOString(),
       newSessionExpireTime: new Date(Date.now() + 60e3).toISOString(), bidiGenerateContentSetup: setup }),
@@ -121,7 +131,7 @@ async function geminiError(res: Response, what: string): Promise<Error> {
 export async function gemini(env: Env, parts: J[], o: { json?: boolean; temperature?: number; system?: string } = {}): Promise<any> {
   const json = o.json ?? true;
   if (!env.GEMINI_API_KEY) throw new ApiError(503, NOT_CONFIGURED);
-  const res = await fetch(`${BASE(env)}/v1beta/models/${MODEL(env)}:generateContent`, {
+  const res = await geminiFetch(`${BASE(env)}/v1beta/models/${MODEL(env)}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({

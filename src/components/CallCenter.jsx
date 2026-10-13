@@ -26,7 +26,7 @@ export function CallProvider({ children }) {
     if (!ops) return;
     const since = new Date(Date.now() - 2 * 3600e3).toISOString();
     const rows = await q(db.from('v_calls').select('*').in('status', ['ringing', 'answered']).gte('started_at', since).order('started_at', { ascending: false }).limit(10));
-    setCalls(rows.filter((c) => c.agent_id === profile.id || (takesInbound && !c.agent_id && c.direction === 'inbound')));
+    setCalls(rows.filter((c) => !c.ended_at && (c.agent_id === profile.id || (takesInbound && !c.agent_id && c.direction === 'inbound'))));
   }, [ops, takesInbound, profile?.id]);
 
   useEffect(() => { load(); if (!ops) return undefined; return subscribe(['calls'], load); }, [load, ops]);
@@ -34,6 +34,12 @@ export function CallProvider({ children }) {
   // an outbound call started from CareDesk shows as active for 10 minutes until MyOperator's record arrives
   const active = calls.find((c) => c.agent_id === profile?.id && c.status === 'answered')
     || calls.find((c) => c.agent_id === profile?.id && c.direction === 'outbound' && Date.now() - new Date(c.started_at).getTime() < 10 * 60e3);
+  // Recover a missed live notification while a call is open; stop polling immediately after hang-up.
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => load().catch(() => {}), 15000);
+    return () => clearInterval(timer);
+  }, [active?.id, load]);
   // a call still 'ringing' after 10 minutes never got its next event: no pop-up for it
   const ringing = calls.filter((c) => c.status === 'ringing' && c.direction === 'inbound' && !dismissed[c.id] && Date.now() - new Date(c.started_at).getTime() < 10 * 60e3);
   return (

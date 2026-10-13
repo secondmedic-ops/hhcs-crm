@@ -17,11 +17,11 @@ type J = Record<string, any>;
 
 const toIso = (v: unknown): string | null => {
   if (v == null || v === '') return null;
+  let d: Date;
   if (typeof v === 'number' || /^\d+$/.test(String(v))) {
     const n = Number(v);
-    return new Date(n < 1e12 ? n * 1000 : n).toISOString();
-  }
-  const d = new Date(String(v));
+    d = new Date(n < 1e12 ? n * 1000 : n);
+  } else d = new Date(String(v));
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
 const int = (v: unknown) => (v == null || v === '' || isNaN(Number(v)) ? null : Math.round(Number(v)));
@@ -211,11 +211,42 @@ async function soleLine(tx: Tx, ws: string): Promise<string | null> {
 
 const hms = (v: unknown): number | null => {
   if (v == null || v === '') return null;
-  if (typeof v === 'number') return Math.round(v);
-  const p = String(v).split(':').map(Number);
-  if (p.some((x) => isNaN(x))) return null;
-  return p.reduce((s, x) => s * 60 + x, 0);
+  const text = String(v).trim();
+  if (!/^\d+(?:\.\d+)?$/.test(text) && !/^\d+:[0-5]?\d(?::[0-5]?\d)?$/.test(text)) return null;
+  const seconds = Math.round(text.split(':').map(Number).reduce((s, x) => s * 60 + x, 0));
+  return Number.isSafeInteger(seconds) && seconds <= 2147483647 ? seconds : null;
 };
+
+const elapsedSeconds = (start: unknown, end: unknown): number | null => {
+  const s = toIso(start), e = toIso(end);
+  if (!s || !e) return null;
+  const seconds = Math.round((Date.parse(e) - Date.parse(s)) / 1000);
+  return seconds >= 0 && seconds <= 2147483647 ? seconds : null;
+};
+
+/** Legacy _ss is UTC seconds since midnight in some payloads, never a safe talk-time fallback. */
+export function afterCallTalkSeconds(o: J): number | null {
+  const elapsed = elapsedSeconds(o._st, o._et);
+  const valid = (seconds: number | null, limit = elapsed) => seconds != null && seconds <= 2147483647 && (limit == null || seconds <= limit + 1);
+  for (const field of [o._dr, o._drs]) {
+    const seconds = hms(field);
+    if (valid(seconds)) return seconds;
+  }
+  const legs: J[] = Array.isArray(o._ld) ? o._ld : [];
+  const durations = legs.map((leg) => {
+    const limit = elapsedSeconds(leg._st, leg._et) ?? elapsed;
+    for (const field of [leg._dr, leg._drs]) {
+      const seconds = hms(field);
+      if (valid(seconds, limit)) return seconds;
+    }
+    return null;
+  });
+  if (durations.length && durations.every((s) => s != null)) {
+    const total = durations.reduce<number>((sum, s) => sum + (s ?? 0), 0);
+    if (valid(total)) return total;
+  }
+  return elapsed;
+}
 
 /** After-call webhook: one message when the call is over, with status, times, agent legs and the recording. */
 async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string } | null> {
@@ -239,7 +270,7 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
   const patch: J = {
     status: connected ? 'completed' : direction === 'outbound' ? 'failed' : 'missed',
     ended_at: toIso(o._et) || new Date().toISOString(),
-    talk_seconds: connected ? hms(o._dr) ?? int(o._ss) : 0,
+    talk_seconds: connected ? afterCallTalkSeconds(o) : 0,
     raw: tx.json({ ...(call.raw || {}), end: o }),
   };
   if (connected && !call.answered_at) patch.answered_at = call.started_at;
