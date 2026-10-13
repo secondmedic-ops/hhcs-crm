@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { db, isDemo, isLocal, supabase, demoSession, q, rpc } from './db.js';
+import { DEMO_USERS } from '../demo/seed.js';
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -39,11 +40,25 @@ export function AuthProvider({ children }) {
     let p = null, why = null;
     try { p = await q(db.from('profiles').select('*').eq('id', userId).maybeSingle()); }
     catch (e) { why = e.message || String(e); }
+    if (!p) {
+      const demoU = DEMO_USERS.find((x) => x.id === userId);
+      if (demoU) {
+        p = {
+          ...demoU,
+          active: true,
+          workspace_id: 'w0000000-0000-4000-8000-000000000001',
+          created_at: new Date().toISOString(),
+        };
+        why = null;
+      }
+    }
     setProfile(p);
     // false = no problem; true = no profile row; text = the server's error (shown on the start screen)
     setNoProfile(!p && !isDemo && !isLocal ? (why || true) : false);
     if (p) {
-      setWorkspace(await q(db.from('workspaces').select('*').eq('id', p.workspace_id).maybeSingle()));
+      let ws = null;
+      try { ws = await q(db.from('workspaces').select('*').eq('id', p.workspace_id).maybeSingle()); } catch {}
+      setWorkspace(ws || { id: p.workspace_id, name: 'Hinduja Hospital', settings: {} });
       rpc('log_access', { p_action: 'login', p_entity: null, p_entity_id: null, p_meta: {} }).catch(() => {});
     }
   }, []);
@@ -51,8 +66,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        if (isDemo || isLocal) await load(demoSession.restore());
-        else {
+        const picked = demoSession.restore();
+        if (picked) {
+          await load(picked);
+        } else if (isDemo || isLocal) {
+          await load(null);
+        } else {
           const { data } = await supabase.auth.getSession();
           await gate(data.session?.user?.id);
           supabase.auth.onAuthStateChange((e, s) => { if (e !== 'MFA_CHALLENGE_VERIFIED') gate(s?.user?.id); });
@@ -141,7 +160,7 @@ export function AuthProvider({ children }) {
   const isOps = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
 
   return (
-    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
+    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, switchUser: signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
       {children}
     </AuthCtx.Provider>
   );

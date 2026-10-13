@@ -1,0 +1,34 @@
+{
+  "tasks": [
+    {
+      "id": "TASK-1",
+      "title": "Update fmt.js, pg-adapter.js, and auth.jsx",
+      "status": "done"
+    },
+    {
+      "id": "TASK-2",
+      "title": "Add styles for wide login card and department pills in styles.css",
+      "status": "done"
+    },
+    {
+      "id": "TASK-3",
+      "title": "Implement department selector and staff list in Login.jsx",
+      "status": "done"
+    },
+    {
+      "id": "TASK-4",
+      "title": "Add Login as button in Settings.jsx DepartmentsTab",
+      "status": "done"
+    },
+    {
+      "id": "TASK-5",
+      "title": "Verify build and linters",
+      "status": "done"
+    },
+    {
+      "id": "TASK-6",
+      "title": "Deploy via ship.mjs and verify production pipeline",
+      "status": "in_progress"
+    }
+  ]
+}
