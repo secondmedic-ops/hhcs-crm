@@ -653,3 +653,73 @@ textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 6
   .wa-thread-pane { max-height: none; }
 }
 
+
+/* ---------- Assessment checklist (Checklist.jsx): a form to print on A4 and fill by hand */
+.cl { max-width: 980px; background: var(--panel); border: 1px solid var(--line); padding: 20px 24px; color: var(--ink); font-size: 12.5px; line-height: 1.45; }
+.cl h1 { font-size: 18px; margin: 2px 0; }
+.cl h2 { font-size: 14px; margin: 0 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--ink); }
+.cl h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin: 14px 0 6px; }
+.cl p { margin: 6px 0; }
+.cl a { color: inherit; }
+.cl-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 2px solid var(--ink); padding-bottom: 8px; margin-bottom: 10px; }
+.cl-org { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.cl-sub { font-size: 11.5px; color: var(--muted); margin: 0 0 6px; }
+.cl-caseno { border: 1px solid var(--ink); padding: 6px 10px; min-width: 170px; display: flex; flex-direction: column; gap: 2px; }
+.cl-caseno .mono { font-size: 14px; min-height: 18px; }
+.cl-part { margin-top: 18px; }
+.cl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 16px; }
+.cl-grid.three { margin-top: 6px; }
+.cl-line { display: flex; flex-direction: column; min-width: 0; }
+.cl-line.wide { margin-top: 4px; }
+.cl-lbl { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.cl-fill { border-bottom: 1px solid var(--line); min-height: 20px; padding: 1px 0; overflow-wrap: anywhere; }
+.cl-box { display: inline-block; width: 11px; height: 11px; border: 1px solid var(--ink); vertical-align: -1px; flex: none; }
+.cl-ticks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px 20px; }
+.cl-ticks.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cl-ticks li { display: flex; gap: 8px; align-items: flex-start; }
+.cl-ticks li .cl-box { margin-top: 3px; }
+.cl-t { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
+.cl-t th, .cl-t td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; vertical-align: top; }
+.cl-t th { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--panel-2); }
+.cl-t .c { text-align: center; white-space: nowrap; }
+.cl-t .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+.cl-t tr.cl-blank td { height: 24px; }
+.cl-t tr.cl-dropped .cl-name { text-decoration: line-through; color: var(--muted); }
+.cl-sum td { vertical-align: middle; }
+.cl-hint { font-size: 11px; color: var(--muted); }
+.cl-write { border-bottom: 1px solid var(--line); min-height: 18px; }
+.cl-note { font-size: 11.5px; color: var(--ink-2); border-left: 2px solid var(--line); padding-left: 8px; }
+.cl-script { margin: 0 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.cl-in { display: inline-block; min-width: 90px; border-bottom: 1px solid var(--line); padding: 0 4px; }
+.cl-in.wide { min-width: 260px; }
+.cl-agreed { margin: 4px 0 8px; padding-left: 20px; columns: 2; column-gap: 24px; }
+.cl-agreed li { padding: 2px 0; break-inside: avoid; }
+.cl-blank-li { border-bottom: 1px solid var(--line); min-height: 20px; }
+.cl-opts { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin: 8px 0; }
+.cl-terms { margin: 6px 0; padding-left: 18px; font-size: 11.5px; }
+.cl-ama { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--ink); padding: 8px 10px; margin: 8px 0; }
+.cl-ama .cl-box { margin-top: 3px; }
+.cl-sign { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin-top: 12px; }
+.cl-sigbox { height: 52px; border-bottom: 1px solid var(--ink); }
+.cl-office { margin-top: 14px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.cl-foot { margin-top: 14px; font-size: 10.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; }
+@media (max-width: 820px) {
+  .cl { padding: 12px; }
+  .cl-head { flex-direction: column; }
+  .cl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cl-ticks.two, .cl-sign { grid-template-columns: minmax(0, 1fr); }
+  .cl-agreed { columns: 1; }
+  .cl-t { min-width: 560px; }
+}
+@page checklist { size: A4; margin: 11mm 11mm 13mm; }
+@media print {
+  .cl { page: checklist; max-width: none; border: 0; padding: 0; font-size: 9.5pt; background: #fff; color: #000; }
+  .cl .table-wrap { overflow: visible; }
+  .cl-t { min-width: 0; }
+  .cl-t tr, .cl-ticks li, .cl-sign > div, .cl-ama { break-inside: avoid; }
+  .cl h2, .cl h3 { break-after: avoid; }
+  .cl-page { break-before: page; margin-top: 0; }
+  .cl-fill, .cl-write, .cl-in, .cl-blank-li, .cl-t th, .cl-t td { border-color: #777; }
+  .cl-t th { background: none; }
+  .cl-box { border-color: #000; }
+}

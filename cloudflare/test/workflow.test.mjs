@@ -261,6 +261,15 @@ const [kAfter] = await as('sup', `select (dashboard_kpis(now() - interval '1 day
 const [cbDone] = (await db.query(`select status, completed_by from callbacks where id = $1`, [cbB])).rows;
 closedN === 1 && cbDone.status === 'done' && cbDone.completed_by === users.agent && kAfter.n === kBefore.n - 1
   ? ok(`patient connected -> callback done immediately, Callbacks pending ${kBefore.n} -> ${kAfter.n}`) : fail(JSON.stringify({ closedN, cbDone, kBefore, kAfter }));
+await db.query(`update calls set started_at = now() - interval '31 minutes' where id = $1`, [claim3[0].call_id]);
+const [{ id: cbD }] = (await db.query(`insert into callbacks(workspace_id, number, reason, due_at)
+  values ($1, '+919811100004', 'missed', now()) returning id`, [ws])).rows;
+let [{ c: claimLong }] = await system(`select autodial_claim() c`);
+claimLong.length === 0 ? ok('a 31-minute answered call still keeps the agent busy') : fail('agent redialled during a long call ' + JSON.stringify(claimLong));
+await db.query(`update calls set status = 'completed', ended_at = now() where id = $1`, [claim3[0].call_id]);
+let [{ c: claimReleased }] = await system(`select autodial_claim() c`);
+claimReleased.length === 1 && claimReleased[0].callback_id === cbD
+  ? ok('completed call releases the agent for the next callback') : fail('agent stayed busy after call completion ' + JSON.stringify(claimReleased));
 // attempts run out -> unreachable with the reason
 await db.query(`update callbacks set status = 'in_progress', attempts = 3, last_attempt_at = now() where id = $1`, [cbA]);
 const [{ r: retry2 }] = await system(`select callback_retry($1::uuid, 'call failed') r`, [cbA]);
@@ -337,6 +346,16 @@ tm.intake === 1 && tm.signed_off === 1 && Number(tm.conversion_pct) === 100 && t
   && bmmM?.deployed === 1 && Number(bmmM.deploy_sla_pct) === 100 && tm.dispositions.requirement_captured === 1 && tm.drop_reasons.length === 2
   ? ok('metrics: conversion 100%, 12 → 10 items, BMM deployed inside SLA') : fail(JSON.stringify(tm));
 await expectError('agent', `select transition_metrics(now() - interval '1 day', now())`, [], 'Not allowed');
+const [{ s: sheet }] = await as('field', `select care_plan_sheet($1, 30) s`, [pd.case_id]);
+const nurseOpt = (cover) => sheet.options.find((o) => o.code === 'NURSE-12H' && o.cover === cover);
+Number(nurseOpt('12-hour')?.plan_total) === 45000 && Number(nurseOpt('24-hour')?.plan_total) === 90000
+  && sheet.options.some((o) => o.code === 'VENT-HOME' && !o.priced && o.plan_total === null)
+  && sheet.case.items.length === 12 && sheet.case.items.filter((i) => i.excluded).length === 2
+  && Number(sheet.case.subtotal) === 219900 && Number(sheet.case.dropped_total) === 10500 && Number(sheet.case.recommended_total) === 230400
+  ? ok('checklist pricing: 30-day options (12 h / 24 h nursing), ventilator not priced, 10 agreed + 2 dropped') : fail(JSON.stringify(sheet).slice(0, 400));
+await expectError('bmm', `select care_plan_sheet($1, 30)`, [pd.case_id], 'Not allowed');
+await expectError('agent', `select care_plan_sheet(null, 30)`, [], 'Not allowed');
+await expectError('coord', `select care_plan_sheet(null, 0)`, [], 'Plan length');
 const [{ n: piiAudit }] = (await db.query(`select count(*)::int n from audit_log where table_name = 'cases' and changes::text like '%Mehta%'`)).rows;
 piiAudit === 0 ? ok('decision-maker name kept out of the audit log') : fail('name in audit_log');
 

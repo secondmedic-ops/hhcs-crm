@@ -714,18 +714,19 @@ async function handleWhatsAppBridge(sql: Sql, env: Env, body: J, changedAll: Set
           let [kase] = patient ? await tx`select id::text from cases where patient_id = ${patient.id}::uuid and stage not in ('closed','cancelled') order by created_at desc limit 1` : [];
           const name = String(m.name || '').trim() || patient?.full_name || 'WhatsApp contact';
           const isHistory = !!(m.historical || m.is_history);
+          if (isHistory) continue; // Never create patients or cases from historical chat syncs
 
-          if (inbound && !kase && !isHistory) {
+          if (inbound && !kase) {
             const [r] = await tx`select create_enquiry(${tx.json({
               workspace_id: ws, source_channel: 'whatsapp', services_requested: text.slice(0, 500),
               patient: { full_name: name, mobile: number }, caller_mobile: number,
             })}) as r`;
             kase = { id: r.r.case_id } as never;
             patient = { id: r.r.patient_id, full_name: name } as never;
-          } else if (!patient) {
+          } else if (!patient && number.startsWith('+91')) {
             const [r] = await tx`select upsert_patient(${tx.json({ workspace_id: ws, full_name: name, mobile: number })}) as id`;
             patient = { id: r.id, full_name: name } as never;
-          } else if (m.name && patient.full_name === 'WhatsApp contact' && name !== 'WhatsApp contact') {
+          } else if (m.name && patient?.full_name === 'WhatsApp contact' && name !== 'WhatsApp contact') {
             await tx`update patients set full_name = ${name} where id = ${patient.id}::uuid`;
           }
 

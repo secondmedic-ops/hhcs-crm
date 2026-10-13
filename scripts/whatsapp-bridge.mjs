@@ -247,20 +247,23 @@ async function startSocket(resetAuth = false) {
       }
     });
 
-    currentSock.ev.on('messaging-history.set', ({ contacts, messages }) => {
-      for (const c of contacts || []) {
-        const phone = jidToPhone(c.id);
-        const label = c.notify || c.name || c.verifiedName;
-        if (phone && label) contactNames.set(phone, String(label).trim());
-      }
-      const recent = (messages || []).slice(-80);
-      queueMessagesForSync(recent, true);
-      flushSyncQueue().catch(() => {});
+    currentSock.ev.on('messaging-history.set', () => {
+      // Do NOT sync personal chat history into CareDesk CRM!
+      // This prevents dumping personal chats and contacts into the hospital patient records.
     });
 
     currentSock.ev.on('messages.upsert', ({ messages, type }) => {
-      queueMessagesForSync(messages, type !== 'notify');
-      flushSyncQueue().catch(() => {});
+      // ONLY process live incoming messages (type === 'notify'), never history syncs or appends
+      if (type !== 'notify') return;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const live = (messages || []).filter((m) => {
+        const ts = typeof m.messageTimestamp === 'number' ? m.messageTimestamp : Number(m.messageTimestamp?.low || m.messageTimestamp || 0);
+        return nowSec - ts < 180; // only live messages received in the last 3 minutes
+      });
+      if (live.length) {
+        queueMessagesForSync(live, false);
+        flushSyncQueue().catch(() => {});
+      }
     });
 
     currentSock.ev.on('connection.update', async (update) => {

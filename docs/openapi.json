@@ -1227,6 +1227,10 @@
       "supervisor",
       "medical_desk"
     ],
+    "cleanup_whatsapp_autogen": [
+      "admin",
+      "supervisor"
+    ],
     "assign_staff": [
       "coordinator",
       "supervisor"
@@ -1334,6 +1338,14 @@
     "transition_metrics": [
       "supervisor",
       "coordinator",
+      "client_manager",
+      "client_clinical"
+    ],
+    "care_plan_sheet": [
+      "coordinator",
+      "field_staff",
+      "supervisor",
+      "medical_desk",
       "client_manager",
       "client_clinical"
     ],

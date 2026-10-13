@@ -27,6 +27,7 @@ const Mis = lazy(() => import('./pages/Mis.jsx'));
 const Audit = lazy(() => import('./pages/Audit.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Find = lazy(() => import('./pages/Find.jsx'));
+const Checklist = lazy(() => import('./pages/Checklist.jsx'));
 
 function Boot({ children }) {
   const [ready, setReady] = useState(false);
@@ -83,6 +84,7 @@ function Routed() {
           <Route path="audit" element={g('/audit', <Audit />)} />
           <Route path="settings" element={g('/settings', <Settings />)} />
           <Route path="find" element={g('/patients', <Find />)} />
+          <Route path="checklist" element={g('/checklist', <Checklist />)} />
           <Route path="*" element={<Navigate to={homeFor(profile.role)} replace />} />
         </Route>
       </Routes>

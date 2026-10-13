@@ -6,6 +6,7 @@
 //     partner leads (diagnostics to SecondMedic, manpower and equipment to Book My Medicare)
 // Every change goes through a database action (set_intake, schedule_validation, record_validation, record_signoff).
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad } from '../lib/hooks.js';
 import { inr, date, dateTime, toLocalInput, fromLocalInput, istDateStr } from '../lib/fmt.js';
@@ -43,7 +44,7 @@ export function TransitionPanel({ c, services, people, items, canAct, can, profi
   return (
     <Panel title={pd ? 'Post-discharge transition' : 'Intake'}
       sub={pd ? 'Intake, on-site validation at Hinduja, family sign-off. Partner leads go out only after sign-off.' : 'Interaction reason for this enquiry'}
-      actions={<div className="row gap-8">{pd && <Badge kind={vk}>{vl}</Badge>}{canAct && !edit && <Button size="xs" kind="ghost" icon="edit" onClick={() => setEdit(true)}>{c.intake_disposition ? 'Edit intake' : 'Record intake'}</Button>}</div>}>
+      actions={<div className="row gap-8">{pd && <Badge kind={vk}>{vl}</Badge>}{pd && can('coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical') && <Link className="btn xs ghost" to={`/checklist?case=${c.id}`}>Checklist</Link>}{canAct && !edit && <Button size="xs" kind="ghost" icon="edit" onClick={() => setEdit(true)}>{c.intake_disposition ? 'Edit intake' : 'Record intake'}</Button>}</div>}>
       {pd && <JourneyStrip state={c.journey_state} />}
       {edit ? <IntakeForm c={c} onDone={() => setEdit(false)} /> : <IntakeView c={c} />}
 

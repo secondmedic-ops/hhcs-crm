@@ -68,7 +68,7 @@ export default function Shell() {
               <span className="truncate" style={{ color: '#fff' }}>{profile.full_name}</span>
               <span className="tiny" style={{ color: 'var(--side-muted)' }}>{ROLE_LABEL[profile.role]}{profile.agent_code ? ` · ${profile.agent_code}` : ''}</span>
             </div>
-            <button className="btn ghost sm" style={{ color: 'var(--side-ink)' }} onClick={signOut} title="Sign out" aria-label="Sign out"><Icon name="out" /></button>
+            <button className="btn ghost sm" style={{ color: 'var(--side-ink)' }} onClick={() => signOut()} title="Sign out" aria-label="Sign out"><Icon name="out" /></button>
           </div>
           <div className="tiny mt-8" style={{ color: 'var(--side-muted)' }}>
             <a href="/terms" style={{ color: 'inherit' }}>Terms</a> · <a href="/privacy" style={{ color: 'inherit' }}>Privacy</a> · DPDP Act 2023

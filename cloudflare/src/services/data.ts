@@ -54,6 +54,7 @@ export const RPC: Record<string, readonly Role[]> = {
   create_enquiry: OPS, advance_case: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
   record_consent: OPS, callback_update: OPS, set_my_availability: OPS,
   set_autodial: ['supervisor', 'admin', 'client_manager'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
+  cleanup_whatsapp_autogen: ['admin', 'supervisor'],
   assign_staff: ['coordinator', 'supervisor'],
   field_update: ['field_staff', 'coordinator', 'supervisor'],
   upsert_sample: [...OPS, 'field_staff'],
@@ -71,12 +72,13 @@ export const RPC: Record<string, readonly Role[]> = {
   import_referral_updates: ['provider', 'supervisor', 'client_manager'],
   log_deployment: ['provider', 'supervisor', 'client_manager'], set_payment_schedule: OPS,
   transition_metrics: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
+  care_plan_sheet: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'],
   case_gates: WITH_PROVIDER, render_template: ALL, log_access: WITH_PROVIDER,
   dashboard_kpis: ALL,
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
 };
 /** Read-only actions that may ride in a batch. */
-export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics']);
+export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => !!role && !!roles && roles.includes(role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);

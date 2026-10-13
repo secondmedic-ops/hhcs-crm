@@ -352,6 +352,10 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check((await rpc('agent', 'transition_metrics', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date().toISOString() })).status === 403, 'agent cannot read transition metrics');
   const tmx = await batch('client', [{ kind: 'rpc', fn: 'transition_metrics', args: { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() } }]);
   check(tmx.status === 200 && tmx.body?.results?.[0]?.data?.intake >= 1, 'Hinduja management reads transition metrics', JSON.stringify(tmx.body).slice(0, 200));
+  check((await rpc('bmm', 'care_plan_sheet', { p_case: tcid, p_days: 30 })).status === 403, 'partner cannot read the assessment checklist pricing');
+  const cps = await batch('client', [{ kind: 'rpc', fn: 'care_plan_sheet', args: { p_case: tcid, p_days: 30 } }]);
+  check(cps.status === 200 && cps.body?.results?.[0]?.data?.options?.length > 0 && cps.body.results[0].data.case?.items,
+    'checklist pricing: 30-day options + case items in one read', JSON.stringify(cps.body).slice(0, 200));
   check((await rpc('agent', 'log_deployment', { p_referral: lead?.id, p: { resource_type: 'staff' } })).status === 403, 'agent cannot log partner work orders');
   check((await rpc('bmm', 'set_payment_schedule', { p_case: tcid, p_rows: [] })).status === 403, 'partner cannot set a payment schedule');
   check((await batch('bmm', [sel('v_payment_schedule', { cols: 'id' })])).status === 403, 'partner cannot read payment schedules');

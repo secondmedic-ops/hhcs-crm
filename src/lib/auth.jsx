@@ -16,6 +16,7 @@ export const NAV = [
   { to: '/patients', label: 'Patients', icon: 'person', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/field', label: 'Dispatch board', icon: 'pin', roles: ['coordinator', 'supervisor', 'client_manager'] },
   { to: '/my-visits', label: 'My visits', icon: 'pin', roles: ['field_staff'] },
+  { to: '/checklist', label: 'Assessment checklist', icon: 'list', roles: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/approvals', label: 'Approvals', icon: 'stamp', roles: ['client_manager', 'supervisor', 'coordinator', 'admin'], badge: 'approvals' },
   { to: '/escalations', label: 'Escalations', icon: 'flag', roles: ['coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'escalations' },
   { to: '/complaints', label: 'Complaints', icon: 'alert', roles: ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'medical_desk'] },
@@ -94,7 +95,7 @@ export function AuthProvider({ children }) {
     const t = setInterval(() => {
       if (Date.now() - last > mins * 60000) {
         sessionStorage.setItem('caredesk.idle', '1');
-        supabase.auth.signOut().finally(() => { try { window.history.replaceState(null, '', '/'); } catch { /* ignore */ } setProfile(null); });
+        signOut();
       }
     }, 20000);
     return () => { clearInterval(t); evs.forEach((e) => window.removeEventListener(e, bump)); };
@@ -109,9 +110,31 @@ export function AuthProvider({ children }) {
   // not on the page the previous user was on (e.g. Settings)
   const resetAddress = () => { try { window.history.replaceState(null, '', '/'); } catch { /* not a browser */ } };
   const signOut = async () => {
-    if (isDemo || isLocal) demoSession.set(null); else await supabase.auth.signOut();
-    resetAddress();
-    setProfile(null); setMfa(null); setNoProfile(false);
+    try {
+      if (isDemo || isLocal) {
+        demoSession.set(null);
+      } else if (supabase) {
+        await supabase.auth.signOut().catch(() => {});
+      }
+    } catch {
+      /* ignore sign out errors */
+    } finally {
+      try {
+        demoSession.set(null);
+        sessionStorage.clear();
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('sb-') || k.includes('auth') || k.includes('token') || k.includes('caredesk'))) {
+            localStorage.removeItem(k);
+          }
+        }
+      } catch { /* storage blocked */ }
+      setProfile(null);
+      setMfa(null);
+      setNoProfile(false);
+      resetAddress();
+      window.location.href = '/';
+    }
   };
   const can = (...roles) => !!profile && roles.includes(profile.role);
   const isClient = profile && ['client_manager', 'client_clinical'].includes(profile.role);
