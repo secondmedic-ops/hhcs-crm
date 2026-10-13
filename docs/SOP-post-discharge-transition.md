@@ -54,6 +54,8 @@ Gate to Pricing, in addition to the standard checks: the interaction reason is "
 ### Step 2: On-site clinical validation at Hinduja (stage: Enquiry)
 
 1. The coordinator desk chooses **Schedule visit** and picks the Care Coordinator (nurse) and the time. The nurse is notified.
+Before the visit, the nurse prints the **Assessment & closure checklist** (form HHCS-CL-01: **Checklist** on the case's Post-discharge transition panel, or **Assessment checklist** in the menu for a blank form). It is prefilled with the patient, hospital, decision-maker, the recommended items and the plan prices, and covers this step (Part A: file check, doctor and ward-nurse points; Part B: equipment, manpower shifts, home measurements and power), the consultation in Step 3 (Part C: script, options table, rate card) and the sign-off (Part D: scope, items not included, against-medical-advice box, consent, signatures). The paper form is a working record: everything on it is entered on the case the same day, and the signed form goes to the coordinator desk.
+
 2. At the hospital, the nurse:
    - meets the **treating doctor** (required before confirming readiness);
    - meets the **ward staff** for current orders, medicines and devices;
@@ -69,7 +71,7 @@ Gate to Pricing, in addition to the standard checks: the interaction reason is "
 ### Step 3: Commercials and family negotiation (stage: Pricing)
 
 1. Advance the case to Pricing. Prices come only from the approved rate card. An item without an approved price shows "Not priced", and no quote or sign-off is possible until Hinduja management approves its price.
-2. The Care Coordinator meets the decision-maker and goes through the 30-day cost, item by item.
+2. The Care Coordinator meets the decision-maker and goes through the 30-day cost, item by item, following the script in Part C of the checklist: must-have items (the treating doctor's decision) first, then optional ones. If cost or space is a problem, offer in order: drop optional items, 12-hour instead of 24-hour cover where the doctor allows, a shorter first period with a day-15 review, a payment schedule. A must-have item is never dropped to close the sale; if the family declines one, tick "Against medical advice" in Part D and the medical desk is told.
 3. Customise the scope in **Services & quote**:
    - **Drop** a recommended item the family does not want, and record why (home space, budget, family will arrange, clinically optional). For example, 12 items become 10.
    - Change quantities where the plan is shorter or lighter.
