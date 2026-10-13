@@ -26,6 +26,8 @@ export default defineConfig({
   optimizeDeps: { exclude: ['@electric-sql/pglite'] },
   server: {
     port: 3000,
+    host: '0.0.0.0',
+    allowedHosts: true,
     proxy: { '/api': { target: BACKEND, ws: true, changeOrigin: true }, '/webhooks': { target: BACKEND, changeOrigin: true } },
   },
   preview: { port: 3000 },

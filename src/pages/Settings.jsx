@@ -1,13 +1,13 @@
 // Settings: profile & MFA, workspace policy, rate card, templates, SLAs, escalation matrix, zones, users,
 // telephony & integrations, and the data-exit export. Each tab is shown only to the roles that can use it.
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
 import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
-import { homeFor, useAuth } from '../lib/auth.jsx';
-import { inr, dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
+import { useAuth } from '../lib/auth.jsx';
+import { inr, dateTime, ago, ROLE_LABEL } from '../lib/fmt.js';
 import {
   PageHead, Panel, Tabs, Badge, Button, Modal, Drawer, Field, Input, Select, Textarea, Check, Segmented, Kpi,
   TableSkeleton, Skeleton, Empty, ErrorNote, useAction, useToast,
@@ -627,11 +627,21 @@ function UsersTab() {
 // A department is a login role (profiles.role): pick one to see exactly the staff in it. Partner staff (role provider)
 // are split by partner. Counts are of active logins; disabled logins are listed only when asked for. Same rights as Users:
 // the admin edits logins (role, status); a supervisor sets a login's MyOperator telephony only.
+const DEPARTMENTS = [
+  ['agent', 'Contact centre', 'Calls and WhatsApp, new enquiries, quotes, the callback queue. Sees masked phone numbers.'],
+  ['coordinator', 'Coordination', 'All active cases, booking, field and hospital-visit assignment, reconciliation.'],
+  ['supervisor', 'Supervision', 'Everything operational: recordings, QA, MIS, audit, controlled export.'],
+  ['field_staff', 'Field team', 'Only their assigned visits: check-in, samples, payment collection, hospital validation visits.'],
+  ['medical_desk', 'Medical desk', 'Clinical triage and escalations.'],
+  ['client_manager', 'Hinduja management', 'Full visibility, approvals (discounts, rate card, templates), export.'],
+  ['client_clinical', 'Hinduja clinical', 'Clinical records, escalations, MIS.'],
+  ['admin', 'Platform admin', 'SecondMedic configuration and users only; no patient data.'],
+  ['provider', 'Service partners', 'Partner staff (for example Book My Medicare): only the leads sent to their partner, never calls or recordings.'],
+];
 const CALLING = ['agent', 'coordinator', 'supervisor', 'medical_desk'];   // need a MyOperator user to place calls
 
 function DepartmentsTab() {
-  const { can, switchUser } = useAuth();
-  const nav = useNavigate();
+  const { can } = useAuth();
   const admin = can('admin');
   const [tel, setTel] = useState(null);
   const [sp, setSp] = useSearchParams();
@@ -708,13 +718,8 @@ function DepartmentsTab() {
                   <td>{now(x)}</td>
                   <td className="small nowrap">{x.last_seen_at ? ago(x.last_seen_at) : <span className="muted">never</span>}</td>
                   <td>{x.active ? <Badge kind="ok">Active</Badge> : <Badge>Disabled</Badge>}</td>
-                  <td className="right">
-                    <div className="row gap-4" style={{ justifyContent: 'flex-end' }}>
-                      <Button size="xs" kind="ghost" onClick={async () => { await switchUser(x.id); nav(homeFor(x.role)); }}>Login as</Button>
-                      {admin ? <Button size="xs" onClick={() => setEdit(x)}>Edit</Button>
-                        : x.role !== 'provider' && <Button size="xs" onClick={() => setTel(x)}>Telephony</Button>}
-                    </div>
-                  </td>
+                  <td className="right">{admin ? <Button size="xs" onClick={() => setEdit(x)}>Edit</Button>
+                    : x.role !== 'provider' && <Button size="xs" onClick={() => setTel(x)}>Telephony</Button>}</td>
                 </tr>
               ))}</tbody>
             </table></div>

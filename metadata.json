@@ -1,0 +1,7 @@
+{
+  "name": "CareDesk · Hinduja Home Care",
+  "description": "CareDesk CRM for Hinduja Home Care Services x SecondMedic with patient management, call center, transitions, and WhatsApp integration.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

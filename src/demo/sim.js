@@ -260,19 +260,20 @@ export async function demoApi(path, body = {}, method) {
       values ($1,$2,$3,$4,'outbound',$5,$6,$7,$8,'Message copy',$9)`, [c.workspace_id, m[1], c.patient_id, t.kind, a.id, a.agent_code || a.full_name, `${t.title} sent (template ${t.code})`, text, t.id]);
     return { text, delivery: { simulated: true } };
   }
-  if (path === '/whatsapp/session' || path === '/whatsapp/session/action') {
-    if (method === 'POST' || body?.action) {
-      const act = body?.action || 'start';
-      if (act === 'logout' || act === 'disconnect') {
-        demoWaState = { ...demoWaState, status: 'disconnected', connected: false, qr_svg: null, phone: null, name: null };
-      } else if (act === 'start' || act === 'refresh_qr') {
-        demoWaState = { ...demoWaState, status: 'qr_ready', connected: false, qr_svg: DEMO_QR_SVG, qr_updated_at: new Date().toISOString(), bridge_online: true };
-        setTimeout(() => {
-          if (demoWaState.status === 'qr_ready') {
-            demoWaState = { ...demoWaState, status: 'connected', connected: true, qr_svg: null, phone: '+918049368621', name: 'Hinduja Home Care (Demo)', connected_at: new Date().toISOString() };
-          }
-        }, 7000);
-      }
+  if (path === '/whatsapp/session') {
+    return { ...demoWaState, last_seen_at: new Date().toISOString() };
+  }
+  if (path === '/whatsapp/session/action') {
+    const act = body?.action || 'start';
+    if (act === 'logout' || act === 'disconnect') {
+      demoWaState = { ...demoWaState, status: 'disconnected', connected: false, qr_svg: null, phone: null, name: null };
+    } else if (act === 'start' || act === 'refresh_qr') {
+      demoWaState = { ...demoWaState, status: 'qr_ready', connected: false, qr_svg: DEMO_QR_SVG, qr_updated_at: new Date().toISOString(), bridge_online: true };
+      setTimeout(() => {
+        if (demoWaState.status === 'qr_ready') {
+          demoWaState = { ...demoWaState, status: 'connected', connected: true, qr_svg: null, phone: '+918049368621', name: 'Hinduja Home Care (Demo)', connected_at: new Date().toISOString() };
+        }
+      }, 7000);
     }
     return { ...demoWaState, last_seen_at: new Date().toISOString() };
   }
