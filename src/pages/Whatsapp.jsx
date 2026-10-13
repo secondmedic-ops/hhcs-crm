@@ -34,6 +34,8 @@ export default function Whatsapp() {
   const [extractedModal, setExtractedModal] = useState(null);
   const [qrModal, setQrModal] = useState(false);
   const [newChatModal, setNewChatModal] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const threadEndRef = useRef(null);
 
   const { data, loading, reload } = useLoad(async () => {
@@ -192,8 +194,22 @@ export default function Whatsapp() {
       setExtracting(false);
     }
   };
+  const doLogout = async () => {
+    setLogoutBusy(true);
+    try {
+      await whatsappSessionAction({ action: 'logout' });
+      setConfirmLogout(false);
+      toast('WhatsApp session disconnected');
+      reload();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setLogoutBusy(false);
+    }
+  };
 
   const waitingCount = chats.filter((c) => c.needs_reply).length;
+
   const isConnected = !!waSession?.connected;
   const connLabel = waSession?.status === 'connected'
     ? `WhatsApp linked (${waSession.phone || waSession.name || 'Active'})`
@@ -229,9 +245,33 @@ export default function Whatsapp() {
                 <span className="dot" style={{ color: isConnected ? 'var(--ok)' : 'var(--warn)' }} /> {connLabel}
               </Button>
             )}
+            {isOps && isConnected && (
+              <Button kind="danger" onClick={() => setConfirmLogout(true)} disabled={logoutBusy}>
+                <Icon name="x" /> Disconnect WhatsApp
+              </Button>
+            )}
           </div>
         }
       />
+
+      {confirmLogout && (
+        <Modal
+          title="Disconnect WhatsApp?"
+          onClose={() => setConfirmLogout(false)}
+          footer={
+            <>
+              <Button kind="ghost" onClick={() => setConfirmLogout(false)} disabled={logoutBusy}>Cancel</Button>
+              <Button kind="danger" onClick={doLogout} disabled={logoutBusy}>
+                <Icon name="x" /> {logoutBusy ? 'Disconnecting…' : 'Yes, disconnect'}
+              </Button>
+            </>
+          }
+        >
+          <p>This will unlink your WhatsApp from CareDesk. The bridge will disconnect and you'll need to scan the QR code again to reconnect.</p>
+          <p style={{ marginTop: 8 }}>All existing chat history will be preserved.</p>
+        </Modal>
+      )}
+
 
       {!isConnected && isOps && (
         <div className="banner mb-12" style={{ justifyContent: 'space-between' }}>
