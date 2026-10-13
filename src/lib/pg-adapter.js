@@ -56,7 +56,7 @@ class Query {
   then(res, rej) { return this.c.exec(this.spec).then(res, rej); }
 }
 
-const READ_ONLY_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report']);
+const READ_ONLY_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings']);
 
 // ---------------------------------------------------------------- production / local test: through the Worker
 export function createApiClient() {
