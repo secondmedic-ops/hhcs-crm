@@ -145,6 +145,18 @@
 | recommended | boolean | NO |
 | excluded | boolean | NO |
 | exclude_reason | text | YES |
+| exclude_category | text | YES |
+
+## case_journey_history
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| from_state | USER-DEFINED | YES |
+| to_state | USER-DEFINED | NO |
+| changed_by | uuid | YES |
+| changed_at | timestamp with time zone | NO |
 
 ## case_referrals
 | column | type | nullable |
@@ -243,6 +255,10 @@
 | signoff_by_name | text | YES |
 | signoff_mode | text | YES |
 | signoff_note | text | YES |
+| decision_maker_mobile | text | YES |
+| hospital_room | text | YES |
+| journey_state | USER-DEFINED | NO |
+| journey_at | timestamp with time zone | YES |
 
 ## complaints
 | column | type | nullable |
@@ -297,6 +313,7 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
+| doctor_recommendations | text | YES |
 
 ## escalation_matrix
 | column | type | nullable |
@@ -399,6 +416,31 @@
 | read_at | timestamp with time zone | YES |
 | created_at | timestamp with time zone | NO |
 
+## partner_deployments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| referral_id | uuid | NO |
+| case_item_id | uuid | YES |
+| resource_type | text | NO |
+| staff_name | text | YES |
+| staff_ref | text | YES |
+| shift | text | YES |
+| equipment_model | text | YES |
+| equipment_serial | text | YES |
+| status | text | NO |
+| dispatched_at | timestamp with time zone | YES |
+| delivered_at | timestamp with time zone | YES |
+| installed_at | timestamp with time zone | YES |
+| active_from | timestamp with time zone | YES |
+| ended_at | timestamp with time zone | YES |
+| note | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| updated_at | timestamp with time zone | NO |
+
 ## patients
 | column | type | nullable |
 |---|---|---|
@@ -426,6 +468,19 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
+
+## payment_schedule
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| case_id | uuid | NO |
+| seq | integer | NO |
+| label | text | NO |
+| due_on | date | NO |
+| pct | numeric | NO |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
 
 ## payments
 | column | type | nullable |
@@ -637,6 +692,7 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | YES |
+| doctor_recommendations | text | YES |
 | nurse_name | text | YES |
 | case_no | text | YES |
 
@@ -817,6 +873,10 @@
 | signoff_by_name | text | YES |
 | signoff_mode | text | YES |
 | signoff_note | text | YES |
+| decision_maker_mobile | text | YES |
+| hospital_room | text | YES |
+| journey_state | USER-DEFINED | YES |
+| journey_at | timestamp with time zone | YES |
 | patient_name | text | YES |
 | patient_age | integer | YES |
 | patient_gender | text | YES |
@@ -842,6 +902,7 @@
 | providers_status | jsonb | YES |
 | items_recommended | bigint | YES |
 | items_agreed | bigint | YES |
+| decision_maker_mobile_display | text | YES |
 
 ## v_complaints
 | column | type | nullable |
@@ -866,6 +927,37 @@
 | patient_name | text | YES |
 | owner_name | text | YES |
 | resolve_due | timestamp with time zone | YES |
+
+## v_deployments
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| referral_id | uuid | YES |
+| case_item_id | uuid | YES |
+| resource_type | text | YES |
+| staff_name | text | YES |
+| staff_ref | text | YES |
+| shift | text | YES |
+| equipment_model | text | YES |
+| equipment_serial | text | YES |
+| status | text | YES |
+| dispatched_at | timestamp with time zone | YES |
+| delivered_at | timestamp with time zone | YES |
+| installed_at | timestamp with time zone | YES |
+| active_from | timestamp with time zone | YES |
+| ended_at | timestamp with time zone | YES |
+| note | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | YES |
+| provider_code | text | YES |
+| provider_name | text | YES |
+| case_no | text | YES |
+| service_name | text | YES |
+| service_code | text | YES |
+| item_qty | integer | YES |
 
 ## v_escalations
 | column | type | nullable |
@@ -920,6 +1012,22 @@
 | case_count | bigint | YES |
 | last_case_at | timestamp with time zone | YES |
 | lifetime_value | numeric | YES |
+
+## v_payment_schedule
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| case_id | uuid | YES |
+| seq | integer | YES |
+| label | text | YES |
+| due_on | date | YES |
+| pct | numeric | YES |
+| amount | numeric | YES |
+| cumulative_due | numeric | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | YES |
+| status | text | YES |
 
 ## v_referrals
 | column | type | nullable |

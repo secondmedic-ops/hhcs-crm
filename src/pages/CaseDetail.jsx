@@ -518,7 +518,7 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
                 <tr key={r.id} className={r.excluded ? 'muted' : ''}>
                   <td><div style={r.excluded ? { textDecoration: 'line-through' } : null}>{r.service_name}{r.recommended && <> <Badge kind="outline">Recommended</Badge></>}</div>
                     <div className="tiny muted mono">{r.service_code}<span className="cd-show-sm"> · {CAT_LABEL[r.category] || r.category}</span></div>
-                    {r.excluded && <div className="tiny">Dropped: {r.exclude_reason}</div>}</td>
+                    {r.excluded && <div className="tiny">Dropped{r.exclude_category ? ` (${(DROP_CATS.find((x) => x[0] === r.exclude_category) || [])[1] || r.exclude_category})` : ''}: {r.exclude_reason}</div>}</td>
                   <td className="small cd-hide-sm">{CAT_LABEL[r.category] || r.category}</td>
                   <td className="num">{Number(r.unit_price) > 0 ? inr(r.unit_price) : <span className="warn-text tiny">Not priced</span>}</td>
                   <td className="num">{r.qty}</td>
@@ -552,10 +552,8 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
         )}
 
         {drop && (
-          <Confirm title={`Drop ${drop.service_name}`} confirmLabel="Drop item" needReason reasonLabel="Why the family is dropping it" busy={busy} onClose={() => setDrop(null)}
-            onConfirm={async (reason) => { await run(() => rpc('set_item_scope', { p_item: drop.id, p_included: false, p_reason: reason, p_qty: null }), 'Item dropped from the plan'); setDrop(null); }}>
-            <div className="small muted">Recommended at the hospital validation. The reason goes on the timeline and into the MIS.{c.signoff_at ? ' The family has signed off: changing the total needs a new sign-off.' : ''}</div>
-          </Confirm>
+          <DropItem item={drop} signedOff={!!c.signoff_at} busy={busy} onClose={() => setDrop(null)}
+            onDrop={async (category, reason) => { await run(() => rpc('set_item_scope', { p_item: drop.id, p_included: false, p_reason: reason, p_qty: null, p_category: category }), 'Item dropped from the plan'); setDrop(null); }} />
         )}
         {editable && (
           <div className="cd-discount">
@@ -615,6 +613,22 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
         {!showQuote && c.quote_sent_at && <div className="small muted">Quote sent {dateTime(c.quote_sent_at)}</div>}
       </div>
     </Panel>
+  );
+}
+
+const DROP_CATS = [['cost', 'Cost'], ['space', 'Space at home'], ['unwilling', 'Family not willing'], ['clinical', 'Not clinically needed'],
+  ['arranged_elsewhere', 'Arranged elsewhere'], ['other', 'Other']];
+
+function DropItem({ item, signedOff, busy, onClose, onDrop }) {
+  const [cat, setCat] = useState('');
+  const [reason, setReason] = useState('');
+  return (
+    <Modal title={`Drop ${item.service_name}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="danger" disabled={busy || !cat || !reason.trim()} onClick={() => onDrop(cat, reason.trim())}>Drop item</Button></>}>
+      <div className="small muted mb-8">Recommended at the hospital validation. The reason goes on the timeline and into the MIS.{signedOff ? ' The family has signed off: changing the total needs a new sign-off.' : ''}</div>
+      <Field label="Reason"><Select value={cat} onChange={(e) => setCat(e.target.value)} placeholder="Choose" options={DROP_CATS} /></Field>
+      <Field label="Details" className="mt-12"><Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What the family said" /></Field>
+    </Modal>
   );
 }
 

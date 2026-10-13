@@ -269,6 +269,9 @@ const Row = ({ k, v }) => <tr><td className="muted">{k}</td><td className="num">
 
 const DISP = { requirement_captured: 'Requirement captured', information_only: 'Information only', price_enquiry: 'Price enquiry', follow_up_requested: 'Follow-up requested',
   not_interested: 'Not interested', already_arranged: 'Already arranged elsewhere', wrong_number: 'Wrong number', duplicate: 'Duplicate enquiry' };
+const JOURNEY_ORDER = [['intake_logged', 'Intake logged'], ['onsite_assessed', 'Onsite assessed'], ['commercial_approved', 'Commercial approved'],
+  ['partner_dispatched', 'Partner dispatched'], ['setup_installed', 'Setup installed'], ['active_care', 'Active care'], ['closed', 'Discharge / closure'], ['cancelled', 'Cancelled']];
+const DROP_CAT = { cost: 'Cost', space: 'Space at home', unwilling: 'Family not willing', clinical: 'Not clinically needed', arranged_elsewhere: 'Arranged elsewhere', other: 'Other' };
 const hrs = (h) => (h == null ? '–' : h >= 48 ? `${(h / 24).toFixed(1)} days` : `${Number(h).toFixed(1)} h`);
 
 /** Post-discharge transitions opened in the period: conversion, TAT per step, items kept, partner fulfilment SLA. */
@@ -298,10 +301,14 @@ function TransitionMis({ t, loading }) {
             ))}</tbody>
           </table>
         </div>
+        {Object.keys(t.journey || {}).length > 0 && <div className="mt-16"><div className="upper mb-8">Where the cases are now</div>
+          <HBars data={JOURNEY_ORDER.filter(([k]) => t.journey[k]).map(([k, l]) => ({ k: l, v: t.journey[k] }))} label="k" value="v" /></div>}
+        {Object.keys(t.drop_categories || {}).length > 0 && <div className="mt-16"><div className="upper mb-8">Why items were dropped</div>
+          <HBars data={Object.entries(t.drop_categories).map(([k, v]) => ({ k: DROP_CAT[k] || k, v }))} label="k" value="v" color="#9a5b0b" /></div>}
         {Object.keys(t.dispositions).length > 0 && <div className="mt-16"><div className="upper mb-8">Interaction reasons (all enquiries)</div>
           <HBars data={Object.entries(t.dispositions).map(([k, v]) => ({ k: DISP[k] || k, v }))} label="k" value="v" /></div>}
         {t.drop_reasons.length > 0 && <div className="mt-16"><div className="upper mb-8">Items dropped in negotiation</div>
-          <div className="col small" style={{ gap: 4 }}>{t.drop_reasons.slice(0, 12).map((d, i) => <div key={i}><strong>{d.service}</strong> · {d.reason}</div>)}</div></div>}
+          <div className="col small" style={{ gap: 4 }}>{t.drop_reasons.slice(0, 12).map((d, i) => <div key={i}><strong>{d.service}</strong> · {DROP_CAT[d.category] || 'Other'}: {d.reason}</div>)}</div></div>}
       </>}
     </Panel>
   );

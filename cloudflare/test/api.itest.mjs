@@ -352,6 +352,13 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check((await rpc('agent', 'transition_metrics', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date().toISOString() })).status === 403, 'agent cannot read transition metrics');
   const tmx = await batch('client', [{ kind: 'rpc', fn: 'transition_metrics', args: { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() } }]);
   check(tmx.status === 200 && tmx.body?.results?.[0]?.data?.intake >= 1, 'Hinduja management reads transition metrics', JSON.stringify(tmx.body).slice(0, 200));
+  check((await rpc('agent', 'log_deployment', { p_referral: lead?.id, p: { resource_type: 'staff' } })).status === 403, 'agent cannot log partner work orders');
+  check((await rpc('bmm', 'set_payment_schedule', { p_case: tcid, p_rows: [] })).status === 403, 'partner cannot set a payment schedule');
+  check((await batch('bmm', [sel('v_payment_schedule', { cols: 'id' })])).status === 403, 'partner cannot read payment schedules');
+  const depList = await batch('bmm', [sel('v_deployments', { cols: 'id,status,equipment_serial' }), sel('case_journey_history', { cols: 'to_state' })]);
+  check(depList.status === 200, 'partner reads its work orders and the journey', JSON.stringify(depList.body).slice(0, 160));
+  const jr = await batch('agent', [sel('v_cases', { cols: 'journey_state', filters: [{ col: 'id', op: 'eq', val: tcid }], mode: 'single' })]);
+  check(jr.body?.results?.[0]?.data?.journey_state === 'intake_logged', 'new post-discharge case starts at Intake logged', JSON.stringify(jr.body).slice(0, 160));
   check((await rpc('agent', 'import_cases', { p_rows: [] })).status === 403, 'agents cannot import old CRM data');
   const im = await rpc('sup', 'import_cases', { p_rows: [{ ref: 'API-1', patient_name: 'Imported Via Api', mobile: '9811177002', services: 'physiotherapy', status: 'open', branch: 'Khar' }] });
   check(im.status === 200 && im.body?.data?.imported === 1, 'supervisor imports a row from the old CRM', JSON.stringify(im.body));

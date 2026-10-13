@@ -208,6 +208,7 @@ function LeadDrawer({ lead: r, onClose, onOpenCase, reload }) {
             {dl('Declined because', r.decline_reason)}
           </dl>
           <div className="tiny faint mt-8">Call recordings are not shared with service providers.</div>
+          {r.provider_code !== 'SM' && <WorkOrders lead={r} />}
         </div>
         <div className="col gap-12">
           <div className="section-title">Progress notes and history</div>
@@ -277,5 +278,82 @@ function SheetSync({ rows, onDone, isProvider }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+const WO_STATUS = { dispatched: ['accent', 'Dispatched'], delivered: ['info', 'Delivered'], installed: ['plum', 'Installed'], active: ['ok', 'On duty / in use'],
+  returned: ['', 'Returned'], cancelled: ['', 'Cancelled'] };
+const WO_NEXT = { staff: { dispatched: ['active', 'Mark on duty'], active: ['returned', 'Relieved'] },
+  equipment: { dispatched: ['delivered', 'Delivered'], delivered: ['installed', 'Installed'], installed: ['active', 'In use'], active: ['returned', 'Picked up'] } };
+
+/** Book My Medicare work orders for one lead: each nurse / attendant (staff ID, shift) and each piece of equipment (model,
+ *  serial), with dispatch, delivery, install and on-duty times. Logging the first one moves the lead to Dispatched,
+ *  the first install / on-duty to Deployed. */
+function WorkOrders({ lead }) {
+  const { profile } = useAuth();
+  const can = canMove(profile, lead) && ['accepted', 'scheduled', 'dispatched', 'in_progress'].includes(lead.status);
+  const wo = useLoad(() => q(db.from('v_deployments').select('*').eq('referral_id', lead.id).order('created_at')), [lead.id], ['partner_deployments']);
+  const items = useLoad(() => q(db.from('case_items').select('id,service_name,category,qty,excluded').eq('case_id', lead.case_id).order('created_at')), [lead.case_id]);
+  const mine = (items.data || []).filter((i) => !i.excluded && (!lead.categories?.length || lead.categories.includes(i.category)));
+  const [form, setForm] = useState(null);
+  const [step, setStep] = useState(null);
+  const [run, busy] = useAction();
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const save = (p, msg) => run(async () => { await rpc('log_deployment', { p_referral: lead.id, p }); setForm(null); setStep(null); wo.reload(); }, msg);
+  const ok = form && (form.resource_type === 'staff' ? form.staff_name?.trim() && form.staff_ref?.trim() : true);
+  return (
+    <div className="col gap-8 mt-16">
+      <div className="section-title">Staff and equipment</div>
+      {wo.loading ? <TableSkeleton rows={2} cols={3} /> : (wo.data || []).length ? (
+        <table className="t compact"><tbody>{wo.data.map((d) => {
+          const [k, l] = WO_STATUS[d.status] || ['', d.status];
+          const nx = WO_NEXT[d.resource_type]?.[d.status];
+          return (
+            <tr key={d.id}>
+              <td><div className="small strong">{d.resource_type === 'staff' ? `${d.staff_name} · ID ${d.staff_ref}` : `${d.equipment_model || d.service_name || 'Equipment'}`}</div>
+                <div className="tiny muted">{d.service_name ? `${d.service_name} · ` : ''}{d.resource_type === 'staff' ? (d.shift ? `${d.shift} shift` : '') : (d.equipment_serial ? `Serial ${d.equipment_serial}` : 'Serial not logged')}</div>
+                <div className="tiny faint">{[d.dispatched_at && `out ${dateTime(d.dispatched_at)}`, d.delivered_at && `delivered ${dateTime(d.delivered_at)}`,
+                  d.installed_at && `installed ${dateTime(d.installed_at)}`, d.active_from && `from ${dateTime(d.active_from)}`].filter(Boolean).join(' · ')}</div></td>
+              <td className="nowrap"><Badge kind={k}>{l}</Badge></td>
+              {can && <td className="right nowrap">{nx && <Button size="xs" disabled={busy} onClick={() => (nx[0] === 'installed' && !d.equipment_serial ? setStep({ d, to: nx[0], serial: '' })
+                : save({ id: d.id, status: nx[0] }, `${l} → ${WO_STATUS[nx[0]][1]}`))}>{nx[1]}</Button>}</td>}
+            </tr>
+          );
+        })}</tbody></table>
+      ) : <div className="small muted">Nothing dispatched yet.</div>}
+      {step && (
+        <div className="row gap-8">
+          <Input className="grow" value={step.serial} onChange={(e) => setStep((x) => ({ ...x, serial: e.target.value }))} placeholder="Equipment serial number" aria-label="Equipment serial number" />
+          <Button size="sm" kind="primary" disabled={busy || !step.serial.trim()} onClick={() => save({ id: step.d.id, status: step.to, equipment_serial: step.serial.trim() }, 'Installed · serial logged')}>Save</Button>
+          <Button size="sm" onClick={() => setStep(null)}>Cancel</Button>
+        </div>
+      )}
+      {can && !form && <div className="row gap-8">
+        <Button size="sm" onClick={() => setForm({ resource_type: 'staff', case_item_id: '', staff_name: '', staff_ref: '', shift: 'day', note: '' })}>Dispatch staff</Button>
+        <Button size="sm" onClick={() => setForm({ resource_type: 'equipment', case_item_id: '', equipment_model: '', equipment_serial: '', note: '' })}>Dispatch equipment</Button>
+      </div>}
+      {form && (
+        <div className="col gap-8">
+          <Field label="For item"><Select value={form.case_item_id} onChange={set('case_item_id')} placeholder="Choose" options={mine.map((i) => [i.id, `${i.service_name} × ${i.qty}`])} /></Field>
+          {form.resource_type === 'staff' ? (
+            <div className="grid g3" style={{ gap: 8 }}>
+              <Field label="Name"><Input value={form.staff_name} onChange={set('staff_name')} /></Field>
+              <Field label="Staff ID"><Input value={form.staff_ref} onChange={set('staff_ref')} placeholder="BMM-N-114" /></Field>
+              <Field label="Shift"><Select value={form.shift} onChange={set('shift')} options={[['day', 'Day (12 h)'], ['night', 'Night (12 h)'], ['24h', '24 hours']]} /></Field>
+            </div>
+          ) : (
+            <div className="grid g2" style={{ gap: 8 }}>
+              <Field label="Model"><Input value={form.equipment_model} onChange={set('equipment_model')} placeholder="Airvo 2" /></Field>
+              <Field label="Serial number" hint="needed at delivery"><Input value={form.equipment_serial} onChange={set('equipment_serial')} /></Field>
+            </div>
+          )}
+          <Field label="Note (optional)"><Input value={form.note} onChange={set('note')} /></Field>
+          <div className="row gap-8">
+            <Button size="sm" kind="primary" disabled={!ok || busy} onClick={() => save({ ...form, case_item_id: form.case_item_id || null, status: 'dispatched' }, 'Dispatched · lead updated')}>Save as dispatched</Button>
+            <Button size="sm" onClick={() => setForm(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

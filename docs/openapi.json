@@ -806,6 +806,59 @@
       "client_clinical",
       "admin"
     ],
+    "payment_schedule": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "v_payment_schedule": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
+    "partner_deployments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "v_deployments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "case_journey_history": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
     "mis_snapshots": [
       "supervisor",
       "coordinator",
@@ -1266,6 +1319,17 @@
       "provider",
       "supervisor",
       "client_manager"
+    ],
+    "log_deployment": [
+      "provider",
+      "supervisor",
+      "client_manager"
+    ],
+    "set_payment_schedule": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
     ],
     "transition_metrics": [
       "supervisor",

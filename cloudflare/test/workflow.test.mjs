@@ -305,7 +305,7 @@ await as('coord', `select advance_case($1, null)`, [pd.case_id]); ok('enquiry �
 const itemId = async (code) => (await db.query(`select id from case_items where case_id = $1 and service_code = $2`, [pd.case_id, code])).rows[0].id;
 await expectError('coord', `select set_item_scope($1, false, null)`, [await itemId('OXY-CONC')], 'reason');
 await as('coord', `select set_item_scope($1, false, 'Space: HF machine covers oxygen')`, [await itemId('OXY-CONC')]);
-await as('coord', `select set_item_scope($1, false, 'Family will arrange')`, [await itemId('AIRBED')]);
+await as('coord', `select set_item_scope($1, false, 'Family will arrange', null, 'arranged_elsewhere')`, [await itemId('AIRBED')]);
 const [sc] = await as('coord', `select subtotal, items_recommended, items_agreed from v_cases where id = $1`, [pd.case_id]);
 Number(sc.subtotal) === 219900 && Number(sc.items_recommended) === 12 && Number(sc.items_agreed) === 10 ? ok('12 → 10 items, 30-day subtotal ₹219900') : fail(JSON.stringify(sc));
 await expectError('coord', `select record_signoff($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ mode: 'in_person' })], 'decision-maker');
@@ -339,6 +339,46 @@ tm.intake === 1 && tm.signed_off === 1 && Number(tm.conversion_pct) === 100 && t
 await expectError('agent', `select transition_metrics(now() - interval '1 day', now())`, [], 'Not allowed');
 const [{ n: piiAudit }] = (await db.query(`select count(*)::int n from audit_log where table_name = 'cases' and changes::text like '%Mehta%'`)).rows;
 piiAudit === 0 ? ok('decision-maker name kept out of the audit log') : fail('name in audit_log');
+
+console.log('\nDischarge data model: drop categories, partner work orders, payment schedule, journey states');
+tm.drop_categories?.arranged_elsewhere === 1 && tm.drop_categories?.other === 1 ? ok('drop reasons by category (arranged elsewhere, other)') : fail(JSON.stringify(tm.drop_categories));
+await expectError('coord', `select set_item_scope($1, false, 'x', null, 'made_up')`, [await itemId('SUCTION')], 'Unknown reason category');
+const bmmLead = (await db.query(`select r.id from case_referrals r join providers p on p.id = r.provider_id where r.case_id = $1 and p.code = 'BMM'`, [pd.case_id])).rows[0].id;
+const smLead = (await db.query(`select r.id from case_referrals r join providers p on p.id = r.provider_id where r.case_id = $1 and p.code = 'SM'`, [pd.case_id])).rows[0].id;
+await expectError('bmm', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ resource_type: 'staff', staff_name: 'Nurse Rekha' })], 'staff ID');
+await expectError('bmm', `select log_deployment($1, $2::jsonb)`, [smLead, JSON.stringify({ resource_type: 'staff', staff_name: 'X', staff_ref: '1' })], 'Not allowed');
+await expectError('agent', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ resource_type: 'staff', staff_name: 'X', staff_ref: '1' })], 'Not allowed');
+await expectError('bmm', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ resource_type: 'staff', staff_name: 'X', staff_ref: '1', case_item_id: await itemId('LAB-CBC') })], 'not part of this lead');
+const [{ d: hf }] = await as('bmm', `select log_deployment($1, $2::jsonb) d`, [bmmLead, JSON.stringify({ resource_type: 'equipment', case_item_id: await itemId('HFNC'), equipment_model: 'Airvo 2' })]);
+await expectError('bmm', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ id: hf.id, status: 'installed' })], 'serial number');
+await as('bmm', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ id: hf.id, status: 'installed', equipment_serial: 'AV2-0091' })]);
+await expectError('bmm', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ id: hf.id, status: 'dispatched' })], 'cannot go back');
+const [{ j: jInstalled }] = await as('coord', `select journey_state j from cases where id = $1`, [pd.case_id]);
+jInstalled === 'setup_installed' ? ok('HF machine installed (serial logged) -> Setup installed') : fail('journey ' + jInstalled);
+await as('bmm', `select log_deployment($1, $2::jsonb)`, [bmmLead, JSON.stringify({ resource_type: 'staff', case_item_id: await itemId('NURSE-12H'), staff_name: 'Nurse Rekha', staff_ref: 'BMM-N-114', shift: 'day', status: 'active' })]);
+const [{ j: jActive }] = await as('coord', `select journey_state j from cases where id = $1`, [pd.case_id]);
+jActive === 'active_care' ? ok('nurse on duty (staff ID BMM-N-114) -> Active care') : fail('journey ' + jActive);
+const [{ n: depSeen }] = await as('bmm', `select count(*)::int n from v_deployments where case_id = $1`, [pd.case_id]);
+const [{ n: depSeenCoord }] = await as('coord', `select count(*)::int n from v_deployments where equipment_serial = 'AV2-0091'`);
+depSeen === 2 && depSeenCoord === 1 ? ok('work orders visible to the partner and the coordinator') : fail(JSON.stringify({ depSeen, depSeenCoord }));
+const hist2 = (await db.query(`select to_state from case_journey_history where case_id = $1 order by id`, [pd.case_id])).rows.map((r) => r.to_state);
+const want = ['onsite_assessed', 'commercial_approved', 'partner_dispatched', 'setup_installed', 'active_care'];
+let at = 0; for (const st of hist2) if (st === want[at]) at++;
+at === want.length ? ok('journey history: ' + want.join(' -> ')) : fail(JSON.stringify(hist2));
+await expectError('coord', `select set_payment_schedule($1, $2::jsonb)`, [pd.case_id, JSON.stringify([{ label: 'Advance', due_on: '2026-10-14', pct: 50 }, { label: 'Balance', due_on: '2026-10-29', pct: 40 }])], 'add up to 100');
+const [{ r: sched }] = await as('coord', `select set_payment_schedule($1, $2::jsonb) r`, [pd.case_id, JSON.stringify([
+  { label: 'Advance', due_on: '2030-01-01', pct: 33.33 }, { label: 'Day 10', due_on: '2030-01-10', pct: 33.33 }, { label: 'Day 20', due_on: '2030-01-20', pct: 33.34 }])]);
+const [{ t: caseTotal }] = await as('coord', `select total t from cases where id = $1`, [pd.case_id]);
+const sumSched = sched.reduce((a, x) => a + Math.round(Number(x.amount) * 100), 0);
+sched.length === 3 && sumSched === Math.round(Number(caseTotal) * 100) && sched.every((x) => x.status === 'due')
+  ? ok(`payment schedule: 3 instalments add up to the total ₹${caseTotal}`) : fail(JSON.stringify({ sched, caseTotal }));
+const [{ n: provSched }] = await as('bmm', `select count(*)::int n from v_payment_schedule`);
+provSched === 0 ? ok('partner cannot see the payment schedule') : fail('provider sees schedule');
+const [{ n: pdDmAudit }] = (await db.query(`select count(*)::int n from audit_log where changes::text like '%9820099999%'`)).rows;
+await as('agent', `select set_intake($1, $2::jsonb)`, [pd.case_id, JSON.stringify({ decision_maker_mobile: '9820099999', hospital_room: 'Room 512' })]);
+const [dm] = await as('agent', `select decision_maker_mobile_display d, hospital_room r from v_cases where id = $1`, [pd.case_id]);
+const [{ n: dmAudit }] = (await db.query(`select count(*)::int n from audit_log where changes::text like '%9820099999%'`)).rows;
+dm.d.includes('XXX') && dm.r === 'Room 512' && dmAudit === pdDmAudit ? ok('decision-maker mobile masked for agents, kept out of the audit log') : fail(JSON.stringify({ dm, dmAudit }));
 
 expect(problems).toEqual([]);
 }, 120000);
