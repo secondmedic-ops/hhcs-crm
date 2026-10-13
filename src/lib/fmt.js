@@ -49,6 +49,17 @@ export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
   medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider',
 };
+export const DEPARTMENTS = [
+  ['agent', 'Contact centre', 'Calls and WhatsApp, new enquiries, quotes, the callback queue. Sees masked phone numbers.'],
+  ['coordinator', 'Coordination', 'All active cases, booking, field and hospital-visit assignment, reconciliation.'],
+  ['supervisor', 'Supervision', 'Everything operational: recordings, QA, MIS, audit, controlled export.'],
+  ['field_staff', 'Field team', 'Only their assigned visits: check-in, samples, payment collection, hospital validation visits.'],
+  ['medical_desk', 'Medical desk', 'Clinical triage and escalations.'],
+  ['client_manager', 'Hinduja management', 'Full visibility, approvals (discounts, rate card, templates), export.'],
+  ['client_clinical', 'Hinduja clinical', 'Clinical records, escalations, MIS.'],
+  ['admin', 'Platform admin', 'SecondMedic configuration and users only; no patient data.'],
+  ['provider', 'Service partners', 'Partner staff (for example Book My Medicare): only the leads sent to their partner, never calls or recordings.'],
+];
 export const CHANNEL_LABEL = { phone: 'Phone', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email', chat: 'Chat', note: 'Note', system: 'System', crm_edit: 'CRM edit', field: 'Field', lab: 'Lab', payment: 'Payment', walkin: 'Walk-in', referral: 'Referral' };
 
 export const initials = (name = '') => name.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();

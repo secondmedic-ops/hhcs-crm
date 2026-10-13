@@ -51,8 +51,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        if (isDemo || isLocal) await load(demoSession.restore());
-        else {
+        const picked = demoSession.restore();
+        if (picked) {
+          await load(picked);
+        } else if (isDemo || isLocal) {
+          await load(null);
+        } else {
           const { data } = await supabase.auth.getSession();
           await gate(data.session?.user?.id);
           supabase.auth.onAuthStateChange((e, s) => { if (e !== 'MFA_CHALLENGE_VERIFIED') gate(s?.user?.id); });
@@ -141,7 +145,7 @@ export function AuthProvider({ children }) {
   const isOps = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
 
   return (
-    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
+    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, switchUser: signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
       {children}
     </AuthCtx.Provider>
   );
