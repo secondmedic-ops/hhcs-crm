@@ -724,6 +724,43 @@ function WhatsAppSetup() {
   );
 }
 
+// Callback auto-dialer (Hinduja MoM, Oct 2026): missed and abandoned callers are called back automatically.
+function AutodialPanel() {
+  const cfg = useLoad(() => rpc('autodial_settings', {}), [], ['workspaces', 'profiles', 'callbacks']);
+  const [f, setF] = useState(null);
+  const [run, busy] = useAction();
+  useEffect(() => { if (cfg.data && !f) setF({ enabled: cfg.data.enabled, buffer: cfg.data.buffer_minutes, attempts: cfg.data.max_attempts }); }, [cfg.data, f]);
+  const save = () => run(async () => {
+    await rpc('set_autodial', { p_enabled: f.enabled, p_buffer_minutes: Number(f.buffer), p_max_attempts: Number(f.attempts) });
+    cfg.reload();
+  }, 'Auto-dialer settings saved');
+  const d = cfg.data;
+  const gap = f ? Math.max(2, Math.round(Number(f.buffer) / Number(f.attempts))) : null;
+  return (
+    <Panel title="Callback auto-dialer" sub="Missed and abandoned callers are called back automatically: CareDesk rings a free agent who is Available, then MyOperator bridges the patient in.">
+      <ErrorNote error={cfg.error} />
+      {!f ? <Skeleton lines={3} /> : (
+        <div className="col gap-12">
+          <Check label="Auto-dial callbacks" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
+          <div className="form-grid">
+            <Field label="Call back within" hint="the buffer: the callback is due at the end of it">
+              <Segmented options={[[30, '30 min'], [45, '45 min'], [60, '60 min']]} value={Number(f.buffer)} onChange={(v) => setF({ ...f, buffer: v })} />
+            </Field>
+            <Field label="Attempts" hint={`spread across the buffer, about ${gap} min apart`}>
+              <Select value={f.attempts} onChange={(e) => setF({ ...f, attempts: e.target.value })} options={[1, 2, 3, 4, 5].map((n) => [n, String(n)])} />
+            </Field>
+          </div>
+          <div className="small muted">
+            {d.agents_available} of {d.agents_linked} linked agents Available now · {d.queue_waiting} waiting · {d.queue_dialling} dialling.
+            {' '}A callback is closed as done the moment the patient connects. If the patient is not reached by the end of the buffer, it is marked Unreachable and the supervisor is alerted. Call back, Mark done and Unreachable stay available as manual overrides.
+          </div>
+          <div><Button size="sm" kind="primary" disabled={busy} onClick={save}>Save</Button></div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function MyOperatorConnection() {
   const toast = useToast();
   const s = useLoad(() => moSettings(), []);
@@ -894,6 +931,7 @@ function TelephonyTab() {
         {h.data?.demo && <div className="tiny faint mt-12">Demo mode: telephony and AI are simulated in the browser.</div>}
       </Panel>
 
+      {isAdmin && <AutodialPanel />}
       {isAdmin ? <MyOperatorConnection /> : (
         <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}

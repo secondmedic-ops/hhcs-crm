@@ -1123,6 +1123,25 @@
       "supervisor",
       "medical_desk"
     ],
+    "set_my_availability": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "set_autodial": [
+      "supervisor",
+      "admin",
+      "client_manager"
+    ],
+    "autodial_settings": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "admin",
+      "client_manager"
+    ],
     "capture_feedback": [
       "agent",
       "coordinator",

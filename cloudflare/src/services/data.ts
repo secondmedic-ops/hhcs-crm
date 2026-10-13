@@ -50,7 +50,8 @@ export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert'
 /** Business actions and who may call them (each function checks again inside the database). */
 export const RPC: Record<string, readonly Role[]> = {
   create_enquiry: OPS, advance_case: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
-  record_consent: OPS, callback_update: OPS, capture_feedback: OPS, set_report_status: OPS,
+  record_consent: OPS, callback_update: OPS, set_my_availability: OPS,
+  set_autodial: ['supervisor', 'admin', 'client_manager'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
   assign_staff: ['coordinator', 'supervisor'],
   field_update: ['field_staff', 'coordinator', 'supervisor'],
   upsert_sample: [...OPS, 'field_staff'],
@@ -67,7 +68,7 @@ export const RPC: Record<string, readonly Role[]> = {
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
 };
 /** Read-only actions that may ride in a batch. */
-export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report']);
+export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => !!role && !!roles && roles.includes(role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);

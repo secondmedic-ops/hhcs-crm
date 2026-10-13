@@ -265,6 +265,12 @@ async function onInCall(tx: Tx, env: Env, o: J) {
   if (agent && call.agent_id !== agent.id && call.status !== 'completed') { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
   if (Number(o.call_state) === 1 && call.status === 'ringing') { patch.status = 'answered'; patch.answered_at = new Date().toISOString(); }
   if (Object.keys(patch).length) [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
+  if (patch.status === 'answered') await onConnected(tx, call);
+}
+
+/** The patient is on the line: an outbound callback is done now, so "Callbacks pending" drops live, not at call end. */
+async function onConnected(tx: Tx, call: J) {
+  if (call.direction === 'outbound') await tx`select callback_connected(${call.id}::uuid)`;
 }
 
 async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string } | null> {
@@ -327,6 +333,7 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
     if (patch.raw) patch.raw = tx.json(patch.raw);
     [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
   }
+  if (ev.event_type === 'call.answered') await onConnected(tx, call);
   if (ev.event_type === 'call.end') return afterCallEnded(tx, call);
   return null;
 }
@@ -343,10 +350,11 @@ async function afterCallEnded(tx: Tx, call: J): Promise<{ aiCallId?: string }> {
         values (${call.workspace_id}, ${call.id}, ${call.customer_number}, ${call.patient_id}, ${call.status === 'abandoned' ? 'abandoned' : 'missed'}, ${due})`;
     }
   }
-  // a successful outbound call to a pending callback number completes it
-  if (call.direction === 'outbound' && call.status === 'completed' && call.customer_number) {
-    await tx`update callbacks set status = 'done', completed_at = now(), completed_by = ${call.agent_id}
-      where workspace_id = ${call.workspace_id} and number = ${call.customer_number} and status in ('pending','in_progress')`;
+  // a successful outbound call to a pending callback number completes it (if the answered event did not already)
+  if (call.direction === 'outbound' && call.status === 'completed' && call.customer_number) await onConnected(tx, call);
+  // a callback attempt that did not reach the patient: back to the queue for the next attempt, or unreachable
+  if (call.direction === 'outbound' && call.status !== 'completed' && call.callback_id) {
+    await tx`select callback_retry(${call.callback_id}::uuid, ${'call ' + call.status})`;
   }
   if (call.patient_id || call.case_id) {
     const summary = `${call.direction === 'inbound' ? 'Inbound' : 'Outbound'} call ${call.status}` +

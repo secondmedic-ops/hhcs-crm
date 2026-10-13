@@ -1,4 +1,5 @@
-// Callback queue (slide 11): every missed or abandoned call is queued with a 10-minute callback target.
+// Callback queue (slide 11): every missed or abandoned call is queued. With the auto-dialer on (Settings > Telephony),
+// CareDesk rings a free, Available agent and bridges the patient in; the buttons stay as manual overrides.
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
@@ -8,7 +9,7 @@ import { dial } from '../lib/api.js';
 import { num, pct, ago, time, istDayRange } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, useAction, useToast } from '../components/ui.jsx';
 
-const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id';
+const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled';
 const REASON = { missed: ['Missed', 'danger'], abandoned: ['Abandoned', 'warn'], requested: ['Requested', 'info'], followup: ['Follow-up', ''] };
 
 export default function Callbacks() {
@@ -30,6 +31,8 @@ export default function Callbacks() {
     ]);
     return { pending, done: today.filter((x) => x.status === 'done'), today, unreachable };
   }, [], ['callbacks', 'calls']);
+  const auto = useLoad(() => rpc('autodial_settings', {}).catch(() => null), [], ['workspaces', 'profiles', 'callbacks']);
+  const ad = auto.data;
 
   const overdue = data?.pending.filter((x) => new Date(x.due_at) < now).length;
   const met = data?.done.filter((x) => new Date(x.completed_at) <= new Date(x.due_at)).length;
@@ -54,8 +57,13 @@ export default function Callbacks() {
 
   return (
     <>
-      <PageHead title="Callback queue" sub="Missed and abandoned calls are queued automatically · call back within 10 minutes · numbers are masked for agents" />
+      <PageHead title="Callback queue" sub={ad?.enabled
+        ? `Auto-dialer on · each caller is called back within ${ad.buffer_minutes} minutes, up to ${ad.max_attempts} attempts · numbers are masked for agents`
+        : 'Missed and abandoned calls are queued automatically · call back within 10 minutes · numbers are masked for agents'} />
       <ErrorNote error={error} />
+      {ad?.enabled && ad.agents_available === 0 && data?.pending.length > 0 && (
+        <div className="small warn-text mb-12">No agent is marked Available, so the auto-dialer is waiting. Switch to Available in the top bar to take callbacks.</div>
+      )}
 
       <div className="kpis mb-16">
         <Kpi label="Pending" value={data && num(data.pending.length)} detail={data && `${data.pending.filter((x) => x.status === 'in_progress').length} being dialled`} tone={data?.pending.length ? 'warn' : 'ok'} onClick={() => setTab('pending')} />
@@ -99,7 +107,10 @@ export default function Callbacks() {
                     {tab === 'pending' ? <Countdown due={cb.due_at} compact />
                       : cb.status === 'unreachable' ? <Badge kind="warn">Unreachable · {time(cb.completed_at)}</Badge>
                         : <Badge kind={late ? 'danger' : 'ok'}>{late ? 'Late' : 'On time'} · {time(cb.completed_at)}</Badge>}
-                    {cb.status === 'in_progress' && <> <Badge kind="info">Dialling</Badge></>}
+                    {cb.status === 'in_progress' && <> <Badge kind="info">{cb.auto_dialled ? `Auto-dialling${cb.assignee_name ? ' · ' + cb.assignee_name : ''}` : 'Dialling'}</Badge></>}
+                    {cb.status === 'pending' && cb.next_attempt_at && (
+                      <div className="tiny muted">{new Date(cb.next_attempt_at) <= now ? 'Auto-dial: waiting for a free agent' : `Auto-dial at ${time(cb.next_attempt_at)}`}</div>
+                    )}
                   </td>
                   <td className="num">{cb.attempts}</td>
                   <td className="small">{cb.assignee_name || <span className="faint">–</span>}</td>

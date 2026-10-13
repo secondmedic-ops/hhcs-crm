@@ -211,5 +211,69 @@ old1?.stage === 'closed' && old1.branch === 'Khar' && old1.d === '2026-08-01' &&
   ? ok('imported case keeps old ID, date, branch, status; routed to its provider') : fail(JSON.stringify(old1));
 const [old2] = await as('agent', `select stage, case_no from v_cases where external_ref = 'OLD-1002'`);
 old2?.stage === 'enquiry' && /^HHC-/.test(old2.case_no) ? ok('open imported case visible to agents with a new Case ID') : fail(JSON.stringify(old2));
+
+console.log('\nScenario: callback auto-dialer (30 / 45 / 60 min buffer, agent availability, done on connect)');
+async function system(sql, params = []) {
+  await db.exec('reset role');
+  await db.query(`select set_config('request.jwt.claim.role', 'service_role', false), set_config('request.jwt.claim.sub', '', false)`);
+  try { return (await db.query(sql, params)).rows; }
+  finally { await db.query(`select set_config('request.jwt.claim.role', 'authenticated', false)`); }
+}
+// clean slate for the queue: earlier scenarios leave callbacks behind
+await db.query(`update callbacks set status = 'done' where workspace_id = $1 and status in ('pending','in_progress')`, [ws]);
+await expectError('agent', `select set_autodial(true, 30, 3)`, [], 'Only a supervisor');
+await expectError('sup', `select set_autodial(true, 20, 3)`, [], '30, 45 or 60');
+const [{ r: cfgSet }] = await as('sup', `select set_autodial(true, 30, 3) r`);
+cfgSet.enabled && cfgSet.buffer_minutes === 30 && cfgSet.max_attempts === 3 ? ok('supervisor turns the auto-dialer on, 30 min, 3 attempts') : fail(JSON.stringify(cfgSet));
+await db.query(`update profiles set myoperator_user_id = 'mo-a07', available = false where id = $1`, [users.agent]);
+await db.query(`update profiles set myoperator_user_id = null, available = false where workspace_id = $1 and id <> $2`, [ws, users.agent]);
+const [{ id: cbA }] = (await db.query(`insert into callbacks(workspace_id, number, reason, due_at) values ($1, '+919811100001', 'missed', now() + interval '10 minutes') returning id`, [ws])).rows;
+const [qA] = (await db.query(`select extract(epoch from due_at - created_at)::int s, next_attempt_at is not null n from callbacks where id = $1`, [cbA])).rows;
+qA.s === 1800 && qA.n ? ok('new missed call: due at the end of the 30-minute buffer, queued to dial now') : fail(JSON.stringify(qA));
+let [{ c: claim0 }] = await system(`select autodial_claim() c`);
+claim0.length === 0 ? ok('no agent Available -> nothing dialled, callback waits') : fail('dialled with nobody available ' + JSON.stringify(claim0));
+const [{ r: avail }] = await as('agent', `select set_my_availability(true) r`);
+avail.available && avail.linked ? ok('agent marks themselves Available (linked to MyOperator)') : fail(JSON.stringify(avail));
+await expectError('client', `select set_my_availability(true)`, [], 'Not allowed');
+let [{ c: claim1 }] = await system(`select autodial_claim() c`);
+claim1.length === 1 && claim1[0].agent_id === users.agent && claim1[0].myoperator_user_id === 'mo-a07' && claim1[0].number === '+919811100001'
+  ? ok('auto-dialer pairs the callback with the free Available agent') : fail(JSON.stringify(claim1));
+const [cbRow] = (await db.query(`select status, attempts, assigned_to, auto_dialled from callbacks where id = $1`, [cbA])).rows;
+const [callRow] = (await db.query(`select status, direction, callback_id, agent_id from calls where id = $1`, [claim1[0].call_id])).rows;
+cbRow.status === 'in_progress' && cbRow.attempts === 1 && cbRow.auto_dialled && callRow.callback_id === cbA && callRow.direction === 'outbound'
+  ? ok('callback in progress (attempt 1) with its outbound call row') : fail(JSON.stringify({ cbRow, callRow }));
+await db.query(`insert into callbacks(workspace_id, number, reason, due_at) values ($1, '+919811100002', 'abandoned', now())`, [ws]);
+let [{ c: claim2 }] = await system(`select autodial_claim() c`);
+claim2.length === 0 ? ok('agent already on a call -> second callback is not dialled to them') : fail('double-booked ' + JSON.stringify(claim2));
+// the attempt is not answered: back to the queue, next attempt spread across the buffer (30 / 3 = 10 min)
+await db.query(`update calls set status = 'failed', ended_at = now() where id = $1`, [claim1[0].call_id]);
+const [{ r: retry1 }] = await system(`select callback_retry($1::uuid, 'call failed') r`, [cbA]);
+const [cbRetry] = (await db.query(`select status, round(extract(epoch from next_attempt_at - last_attempt_at) / 60)::int gap from callbacks where id = $1`, [cbA])).rows;
+retry1 === 'pending' && cbRetry.gap === 10 ? ok('no answer -> next attempt in 10 min') : fail(JSON.stringify({ retry1, cbRetry }));
+// second callback is now dialled to the free agent; the patient picks up -> done at once, pending count drops
+let [{ c: claim3 }] = await system(`select autodial_claim() c`);
+const cbB = claim3[0]?.callback_id;
+claim3.length === 1 ? ok('agent free again -> next due callback dialled') : fail(JSON.stringify(claim3));
+const [kBefore] = await as('sup', `select (dashboard_kpis(now() - interval '1 day', now() + interval '1 day')->>'callbacks_pending')::int n`);
+await db.query(`update calls set status = 'answered', answered_at = now() where id = $1`, [claim3[0].call_id]);
+const [{ n: closedN }] = await system(`select callback_connected($1::uuid) n`, [claim3[0].call_id]);
+const [kAfter] = await as('sup', `select (dashboard_kpis(now() - interval '1 day', now() + interval '1 day')->>'callbacks_pending')::int n`);
+const [cbDone] = (await db.query(`select status, completed_by from callbacks where id = $1`, [cbB])).rows;
+closedN === 1 && cbDone.status === 'done' && cbDone.completed_by === users.agent && kAfter.n === kBefore.n - 1
+  ? ok(`patient connected -> callback done immediately, Callbacks pending ${kBefore.n} -> ${kAfter.n}`) : fail(JSON.stringify({ closedN, cbDone, kBefore, kAfter }));
+// attempts run out -> unreachable with the reason
+await db.query(`update callbacks set status = 'in_progress', attempts = 3, last_attempt_at = now() where id = $1`, [cbA]);
+const [{ r: retry2 }] = await system(`select callback_retry($1::uuid, 'call failed') r`, [cbA]);
+const [cbGone] = (await db.query(`select status, notes from callbacks where id = $1`, [cbA])).rows;
+retry2 === 'unreachable' && cbGone.status === 'unreachable' && /3 attempt/.test(cbGone.notes) ? ok('3 attempts without answer -> unreachable, reason noted') : fail(JSON.stringify({ retry2, cbGone }));
+// auto-dialer off: manual queue as before, a failed manual call goes back to pending
+await as('sup', `select set_autodial(false, 45, 3)`);
+const [{ id: cbC }] = (await db.query(`insert into callbacks(workspace_id, number, due_at) values ($1, '+919811100003', now() + interval '10 minutes') returning id`, [ws])).rows;
+const [cbManual] = (await db.query(`select extract(epoch from due_at - created_at)::int s, next_attempt_at from callbacks where id = $1`, [cbC])).rows;
+let [{ c: claim4 }] = await system(`select autodial_claim() c`);
+cbManual.s === 600 && cbManual.next_attempt_at === null && claim4.length === 0 ? ok('auto-dialer off -> 10-minute manual queue, nothing dialled') : fail(JSON.stringify({ cbManual, claim4 }));
+await expectError('agent', `select autodial_claim()`, [], 'System only');
+const [{ r: adView }] = await as('agent', `select autodial_settings() r`);
+adView.enabled === false && adView.buffer_minutes === 45 && adView.agents_available === 1 ? ok('agents read the auto-dial settings and who is Available') : fail(JSON.stringify(adView));
 expect(problems).toEqual([]);
 }, 120000);

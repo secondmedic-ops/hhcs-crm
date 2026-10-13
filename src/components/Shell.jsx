@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { db, q, isDemo, isLocal, resetDemo, subscribe } from '../lib/db.js';
+import { db, q, rpc, isDemo, isLocal, resetDemo, subscribe } from '../lib/db.js';
 import { NAV, homeFor, useAuth } from '../lib/auth.jsx';
 import { useKey, useLoad } from '../lib/hooks.js';
 import { ago, ROLE_LABEL } from '../lib/fmt.js';
@@ -84,12 +84,38 @@ export default function Shell() {
             <span className="kbd" style={{ marginLeft: 'auto' }}>Ctrl K</span>
           </button>
           <div className="grow" />
+          <Availability />
           <Notifications />
         </header>
         <main className="page"><Outlet /></main>
       </div>
       {cmd && <CommandBar onClose={() => setCmd(false)} />}
     </div>
+  );
+}
+
+// Available / Away for auto-dialled callbacks: the dialer rings only agents who are Available, linked to MyOperator
+// and not on a call. Shown to the roles that take callbacks.
+function Availability() {
+  const { profile, can, reload } = useAuth();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  if (!can('agent', 'coordinator', 'supervisor')) return null;
+  const on = !!profile.available;
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      const r = await rpc('set_my_availability', { p_available: !on });
+      await reload();
+      if (r?.available && !r.linked) toast.error('You are Available, but your login is not linked to MyOperator yet, so no calls can be routed to you.');
+      else toast(r?.available ? 'Available: auto-dialled callbacks will ring your phone' : 'Away: no auto-dialled callbacks');
+    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <Button size="sm" kind={on ? 'primary' : undefined} disabled={busy} onClick={toggle} aria-pressed={on}
+      title={on ? 'You receive auto-dialled callbacks. Click to go Away.' : 'Click to receive auto-dialled callbacks'}>
+      <span className="dot" style={{ color: on ? 'var(--ok)' : 'var(--faint)' }} />{on ? 'Available' : 'Away'}
+    </Button>
   );
 }
 

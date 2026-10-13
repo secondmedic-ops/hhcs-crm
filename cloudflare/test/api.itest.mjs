@@ -173,6 +173,8 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const b3 = { session_id: 'sess-out-1', direction: 'outbound', customer_identifier: '+919930011223' };
   await hook({ ...b3, event_id: 'o1', event_type: 'call.initiated', payload: { client_ref_id: obd?.body?.reference_id } });
   await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ answered_at: t0 + 5, ring_duration: 5 }] } });
+  const live = await one(`select cb.status, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, cb.id, dial.body?.call_id);
+  check(live?.status === 'done' && live.cid === cb.id, 'patient connected -> callback done at once, before the call ends (dashboard pending drops live)', JSON.stringify(live));
   await hook({ ...b3, event_id: 'o3', event_type: 'call.end', timestamp: t0 + 100, payload: { legs: [{ talk_duration: 95 }] } });
   const out = await one(`select session_id, status from calls where id = $1`, dial.body?.call_id);
   check(out?.session_id === 'sess-out-1' && out?.status === 'completed', 'webhook matched to the CRM call by reference', JSON.stringify(out));
@@ -378,6 +380,39 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
     ],
   }, newKey)).json();
   check(syncIn.ok && syncIn.imported === 1, 'WhatsApp bridge syncs live inbound reply into CRM', JSON.stringify(syncIn));
+
+  // ---- 9. callback auto-dialer (Hinduja MoM): settings by role, Available switch, cron dials, connect closes
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
+  check((await rpc('agent', 'set_autodial', { p_enabled: true, p_buffer_minutes: 30, p_max_attempts: 3 })).status === 403, 'agents cannot change the auto-dialer');
+  check((await rpc('field', 'set_my_availability', { p_available: true })).status === 403, 'field staff have no Available switch');
+  const adOn = await rpc('sup', 'set_autodial', { p_enabled: true, p_buffer_minutes: 45, p_max_attempts: 3 });
+  check(adOn.status === 200 && adOn.body?.data?.enabled && adOn.body.data.buffer_minutes === 45, 'supervisor turns on the auto-dialer (45 min)', JSON.stringify(adOn.body));
+  await sql`update callbacks set status = 'done' where status in ('pending','in_progress')`;
+  await sql`update calls set status = 'completed' where status in ('ringing','answered')`;
+  await sql`update profiles set available = false`;
+  const av = await rpc('agent', 'set_my_availability', { p_available: true });
+  check(av.status === 200 && av.body?.data?.available === true && av.body.data.linked === true, 'linked agent goes Available', JSON.stringify(av.body));
+  await hook({ session_id: 'sess-auto-1', event_id: 'a1', event_type: 'call.end', direction: 'inbound', customer_identifier: '+919930055501',
+    system_identifier: '+918049368621', timestamp: Math.floor(Date.now() / 1000), payload: { status: 'missed', legs: [] } }, newKey);
+  const queued = await one(`select id::text, round(extract(epoch from due_at - created_at) / 60)::int m, next_attempt_at is not null n from callbacks where number = '+919930055501'`);
+  check(queued?.m === 45 && queued.n, 'missed call -> callback due in the 45-minute buffer, queued to auto-dial', JSON.stringify(queued));
+  const before = obdCalls.length;
+  const cron = await fetch(base + '/cdn-cgi/handler/scheduled?cron=' + encodeURIComponent('* * * * *')).catch(() => null)
+    || await fetch(base + '/cdn-cgi/local/scheduled').catch(() => null);
+  for (let i = 0; i < 20 && obdCalls.length === before; i++) await new Promise((r) => setTimeout(r, 250));
+  const autoObd = obdCalls.at(-1);
+  const autoRow = await one(`select status, attempts, auto_dialled, assigned_to::text a from callbacks where id = $1`, queued?.id ?? null);
+  check(cron?.ok && obdCalls.length === before + 1 && autoObd?.body?.user_id === 'mo-77' && autoObd.body.number === '+919930055501'
+    && autoRow?.status === 'in_progress' && autoRow.auto_dialled && autoRow.a === U.agent,
+    'cron auto-dials the callback through the Available agent (agent-first bridge)', JSON.stringify({ cron: cron?.status, n: obdCalls.length - before, autoRow, body: autoObd?.body }));
+  const pend0 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
+  const bA = { session_id: 'sess-auto-out', direction: 'outbound', customer_identifier: '+919930055501' };
+  await hook({ ...bA, event_id: 'a2', event_type: 'call.initiated', payload: { client_ref_id: autoObd?.body?.reference_id } }, newKey);
+  await hook({ ...bA, event_id: 'a3', event_type: 'call.answered', timestamp: Math.floor(Date.now() / 1000), payload: { legs: [{ answered_at: Math.floor(Date.now() / 1000), ring_duration: 4 }] } }, newKey);
+  const pend1 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
+  check(pend0 === 1 && pend1 === 0 && (await one(`select status from callbacks where id = $1`, queued?.id ?? null))?.status === 'done',
+    'patient connects -> Callbacks pending 1 -> 0 on the dashboard', JSON.stringify({ pend0, pend1 }));
+  await rpc('sup', 'set_autodial', { p_enabled: false, p_buffer_minutes: 30, p_max_attempts: 3 });
 
   return { total, failed };
 }

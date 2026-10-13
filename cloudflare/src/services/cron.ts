@@ -7,6 +7,7 @@ import type { Env } from '../env';
 import { misNarrative } from './ai';
 import { notifyLive } from './live';
 import { syncCallLogs } from './mo-sync';
+import { runAutodial } from './autodial';
 
 const istDate = (offsetDays = 0) => new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 86400e3).toISOString().slice(0, 10);
 
@@ -18,7 +19,13 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
       try { const r = await syncCallLogs(env, sql, exec); if (r.ok === false) console.log('myoperator sync', r.error); }
       catch (e) { console.log('myoperator sync', (e as Error).message); }
       const { changed } = await asSystem(sql, (tx) => tx`select sla_scan()`);
-      notifyLive(env, exec, changed);
+      // callback auto-dialer after the sync, so a missed call it just brought in can be dialled this minute
+      try {
+        const r = await runAutodial(env, sql);
+        changed.push(...r.changed);
+        if (r.dialled || r.failed) console.log('autodial', JSON.stringify({ dialled: r.dialled, failed: r.failed }));
+      } catch (e) { console.log('autodial', (e as Error).message); }
+      notifyLive(env, exec, [...new Set(changed)]);
       return;
     }
     const today = new Date(Date.now() + 5.5 * 3600e3);

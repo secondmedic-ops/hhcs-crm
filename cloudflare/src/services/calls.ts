@@ -55,8 +55,9 @@ export async function dial(c: Ctx, body: J) {
       if (!k) return null;
       patientId = k.patient_id; number = body.use_caller && k.caller_mobile ? k.caller_mobile : k.mobile;
     } else if (body.callback_id) {
-      const [cb] = await tx`update callbacks set status = 'in_progress', assigned_to = ${c.user.id}, last_attempt_at = now()
-        where id = ${body.callback_id} and workspace_id = ${ws} returning number, patient_id`;
+      const [cb] = await tx`update callbacks set status = 'in_progress', assigned_to = ${c.user.id}, last_attempt_at = now(),
+          attempts = attempts + 1, next_attempt_at = null, auto_dialled = false
+        where id = ${body.callback_id} and workspace_id = ${ws} and status in ('pending','in_progress') returning number, patient_id`;
       if (!cb) return null;
       number = cb.number; patientId = cb.patient_id;
     } else if (patientId) {
@@ -66,8 +67,8 @@ export async function dial(c: Ctx, body: J) {
       number = normMobile(body.number);
     }
     if (!number) return null;
-    const [call] = await tx`insert into calls (workspace_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, session_id, click_to_call_ref)
-      values (${ws}, 'outbound', ${number}, ${c.user.id}, ${c.user.fullName}, 'ringing', ${patientId}, ${caseId}, ${ref}, ${ref}) returning id`;
+    const [call] = await tx`insert into calls (workspace_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, session_id, click_to_call_ref, callback_id)
+      values (${ws}, 'outbound', ${number}, ${c.user.id}, ${c.user.fullName}, 'ringing', ${patientId}, ${caseId}, ${ref}, ${ref}, ${body.callback_id || null}) returning id`;
     return { callId: call.id as string, number };
   });
   if (!result) throw new ApiError(400, 'No number to dial');

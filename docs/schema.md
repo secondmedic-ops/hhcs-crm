@@ -82,6 +82,8 @@
 | completed_by | uuid | YES |
 | notes | text | YES |
 | created_at | timestamp with time zone | NO |
+| next_attempt_at | timestamp with time zone | YES |
+| auto_dialled | boolean | NO |
 
 ## calls
 | column | type | nullable |
@@ -118,6 +120,7 @@
 | click_to_call_ref | text | YES |
 | raw | jsonb | YES |
 | created_at | timestamp with time zone | NO |
+| callback_id | uuid | YES |
 
 ## case_counters
 | column | type | nullable |
@@ -421,6 +424,9 @@
 | last_seen_at | timestamp with time zone | YES |
 | created_at | timestamp with time zone | NO |
 | provider_id | uuid | YES |
+| available | boolean | NO |
+| available_since | timestamp with time zone | YES |
+| last_autodial_at | timestamp with time zone | YES |
 
 ## providers
 | column | type | nullable |
@@ -641,6 +647,8 @@
 | patient_name | text | YES |
 | assignee_name | text | YES |
 | open_case_id | uuid | YES |
+| next_attempt_at | timestamp with time zone | YES |
+| auto_dialled | boolean | YES |
 
 ## v_calls
 | column | type | nullable |
