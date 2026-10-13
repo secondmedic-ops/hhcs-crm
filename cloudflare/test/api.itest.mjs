@@ -529,6 +529,32 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await call('sup', 'POST', '/api/v1/admin/ai', { api_key: '', model: '', auto: true });
   check((await call('agent', 'GET', '/api/v1/ai/status')).body?.enabled === false, 'removing the saved key turns summaries off again');
 
+  // BMM's proposed connection is closed by default and always uses the existing JWT boundary.
+  check((await call(null,'GET','/api/v1/bmm/leads')).status === 401,'BMM leads require login');
+  check((await call('agent','GET','/api/v1/bmm/leads')).status === 403,'agent cannot use BMM machine interface');
+  check((await call('admin','GET','/api/v1/bmm/leads')).status === 403,'admin receives no partner patient data');
+  check((await call(null,'POST',`/api/v1/bmm/leads/${cid}/status`,{})).status === 401,'BMM status updates require login');
+  check((await call('sup','POST',`/api/v1/bmm/leads/${cid}/status`,{})).status === 403,'status interface is provider-only');
+  check((await rpc('agent','bmm_settings')).status === 403,'BMM settings are tech-only');
+  check((await rpc('sup','bmm_settings')).body?.data?.enabled === false,'BMM interface starts disabled');
+  check((await call('bmm','GET','/api/v1/bmm/leads')).status === 400,'disabled BMM interface cannot disclose leads');
+  check((await rpc('sup','set_bmm_integration',{p_enabled:true,p_contract_confirmed:false})).status === 400,'BMM confirmation required before activation');
+  check((await rpc('sup','set_bmm_integration',{p_enabled:true,p_contract_confirmed:true})).status === 200,'confirmed BMM interface enabled in disposable rehearsal');
+  check((await call('bmm','GET','/api/v1/bmm/leads?limit=101')).status === 400,'BMM pagination validated');
+  const partnerCase=await rpc('agent','create_enquiry',{p:{patient:{full_name:'BMM API test',mobile:'9899002201',address:'Test address',pincode:'400058'},consent:true,service_ids:[svc['NURSE-12H']]}});
+  const partnerId=partnerCase.body?.data?.case_id;
+  const leadRow=await one('select id::text from case_referrals where case_id=$1 and provider_id=$2',partnerId,bmmProvider);
+  const bmmList=await call('bmm','GET','/api/v1/bmm/leads');
+  const exposed=bmmList.body?.leads?.find(r=>r.referral_id===leadRow?.id);
+  check(bmmList.status === 200 && exposed?.items?.[0]?.service_code === 'NURSE-12H' && !('clinical_notes' in (exposed || {})),'BMM API returns own scoped service payload',JSON.stringify(bmmList.body).slice(0,150));
+  const partnerBody={event_id:'33000000-0000-4000-8000-000000000001',expected_status:'new',status:'accepted'};
+  const updatePath=`/api/v1/bmm/leads/${leadRow?.id}/status`;
+  check((await call('bmm','POST',updatePath,partnerBody)).body?.duplicate === false,'BMM status applied through existing workflow');
+  check((await call('bmm','POST',updatePath,partnerBody)).body?.duplicate === true,'BMM duplicate request is idempotent');
+  check((await call('bmm','POST',updatePath,{...partnerBody,status:'declined',note:'changed'})).status === 409,'BMM conflicting event rejected');
+  check((await call('bmm','POST',updatePath,{...partnerBody,event_id:'33000000-0000-4000-8000-000000000002',status:'scheduled',scheduled_at:'2026-10-16T10:00:00Z'})).status === 409,'BMM stale expected status rejected');
+  check((await call('bmm','POST',updatePath,{...partnerBody,event_id:'bad'})).status === 400,'BMM event ID validated');
+  check((await rpc('sup','set_bmm_integration',{p_enabled:false,p_contract_confirmed:false})).status === 200,'BMM disabled again after rehearsal');
   return { total, failed };
 }
 

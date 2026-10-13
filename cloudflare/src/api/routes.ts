@@ -8,6 +8,7 @@ import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../se
 import { whatsappSession, whatsappSessionAction } from '../services/myoperator';
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
+import { bmmLeads, bmmStatus } from '../services/bmm';
 import { aiSettings, createUser, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testMo, webhookEvents } from '../services/admin';
 
 export type Access = 'public' | 'login' | readonly Role[];
@@ -41,6 +42,8 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/live', access: ALL, summary: 'WebSocket: table names that changed' },
   { method: 'GET', path: '/api/v1/local/users', access: ALL, summary: 'Local test only: logins to pick from' },
   { method: 'POST', path: '/api/v1/batch', access: ALL, handler: (c, b) => batch(c, b), summary: 'Several reads in one transaction (RLS per user)' },
+  { method: 'GET', path: '/api/v1/bmm/leads', access: ['provider'], handler: (c) => bmmLeads(c), summary: 'BMM assigned lead snapshot, authenticated and enabled only' },
+  { method: 'POST', path: '/api/v1/bmm/leads/{id}/status', access: ['provider'], handler: (c, b) => bmmStatus(c, b), summary: 'BMM status update with event deduplication and current-status check' },
   { method: 'POST', path: '/api/v1/data/{table}', access: ALL, handler: async (c, b) => changing(await write(c, c.params.table, b), c), summary: 'One read or write on an allowed table' },
   { method: 'POST', path: '/api/v1/rpc/{fn}', access: ALL, handler: async (c, b) => changing(await rpc(c, c.params.fn, b ?? {}), c), summary: 'One business action' },
   { method: 'POST', path: '/api/v1/calls/dial', access: OPS, handler: (c, b) => dial(c, b ?? {}), summary: 'MyOperator click-to-call' },

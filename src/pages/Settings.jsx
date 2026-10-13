@@ -24,6 +24,7 @@ const TABS = [
   ['escalation', 'Escalation matrix', ALL],
   ['zones', 'Zones', ['supervisor', 'admin']],
   ['users', 'Users', ['admin', 'supervisor']],
+  ['departments', 'Departments & staff', ['admin', 'supervisor']],
   ['telephony', 'Telephony & integrations', ['admin', 'supervisor']],
   ['import', 'Import from old CRM', ['supervisor', 'client_manager']],
   ['data', 'Data & exit', ['client_manager']],
@@ -53,6 +54,7 @@ export default function Settings() {
       {tab === 'escalation' && <EscalationTab />}
       {tab === 'zones' && <ZonesTab />}
       {tab === 'users' && <UsersTab />}
+      {tab === 'departments' && <DepartmentsTab />}
       {tab === 'telephony' && <TelephonyTab />}
       {tab === 'import' && <ImportTab />}
       {tab === 'data' && <DataTab />}
@@ -621,6 +623,117 @@ function UsersTab() {
   );
 }
 
+// ------------------------------------------------------------------ departments & staff (platform admin and supervisors)
+// A department is a login role (profiles.role): pick one to see exactly the staff in it. Partner staff (role provider)
+// are split by partner. Counts are of active logins; disabled logins are listed only when asked for. Same rights as Users:
+// the admin edits logins (role, status); a supervisor sets a login's MyOperator telephony only.
+const DEPARTMENTS = [
+  ['agent', 'Contact centre', 'Calls and WhatsApp, new enquiries, quotes, the callback queue. Sees masked phone numbers.'],
+  ['coordinator', 'Coordination', 'All active cases, booking, field and hospital-visit assignment, reconciliation.'],
+  ['supervisor', 'Supervision', 'Everything operational: recordings, QA, MIS, audit, controlled export.'],
+  ['field_staff', 'Field team', 'Only their assigned visits: check-in, samples, payment collection, hospital validation visits.'],
+  ['medical_desk', 'Medical desk', 'Clinical triage and escalations.'],
+  ['client_manager', 'Hinduja management', 'Full visibility, approvals (discounts, rate card, templates), export.'],
+  ['client_clinical', 'Hinduja clinical', 'Clinical records, escalations, MIS.'],
+  ['admin', 'Platform admin', 'SecondMedic configuration and users only; no patient data.'],
+  ['provider', 'Service partners', 'Partner staff (for example Book My Medicare): only the leads sent to their partner, never calls or recordings.'],
+];
+const CALLING = ['agent', 'coordinator', 'supervisor', 'medical_desk'];   // need a MyOperator user to place calls
+
+function DepartmentsTab() {
+  const { can } = useAuth();
+  const admin = can('admin');
+  const [tel, setTel] = useState(null);
+  const [sp, setSp] = useSearchParams();
+  const dept = DEPARTMENTS.some(([k]) => k === sp.get('dept')) ? sp.get('dept') : 'agent';
+  const pick = (k) => setSp({ tab: 'departments', dept: k }, { replace: true });
+  const [find, setFind] = useState('');
+  const [disabled, setDisabled] = useState(false);
+  const [partner, setPartner] = useState('');
+  const [edit, setEdit] = useState(null);
+  const u = useLoad(() => q(db.from('profiles').select('id,full_name,email,phone,role,agent_code,myoperator_user_id,myoperator_extension,zone_id,skills,on_duty,available,active,last_seen_at,provider_id,created_at')
+    .order('full_name')), [], ['profiles']);
+  const prov = useLoad(() => q(db.from('providers').select('id,code,name').order('code', { ascending: false })), []);
+  const zones = useLoad(() => q(db.from('zones').select('id,name').order('name')), []);
+  const zoneName = (id) => (zones.data || []).find((z) => z.id === id)?.name;
+  const provName = (id) => (prov.data || []).find((p) => p.id === id)?.name;
+  const all = u.data || [];
+  const count = (role) => {
+    const rs = all.filter((x) => x.role === role);
+    return { active: rs.filter((x) => x.active).length, off: rs.filter((x) => !x.active).length };
+  };
+  const [, title, about] = DEPARTMENTS.find(([k]) => k === dept);
+  const needle = find.trim().toLowerCase();
+  const rows = all.filter((x) => x.role === dept && (disabled || x.active)
+    && (dept !== 'provider' || !partner || (partner === 'none' ? !x.provider_id : x.provider_id === partner))
+    && (!needle || [x.full_name, x.email, x.phone, x.agent_code].some((v) => String(v || '').toLowerCase().includes(needle))));
+  const c = count(dept);
+  // "now": field staff use the on-duty switch, everyone else the Available / Away switch in the top bar
+  const now = (x) => (!x.active ? null : (dept === 'field_staff' ? x.on_duty : x.available) ? <Badge kind="ok" dot>{dept === 'field_staff' ? 'On duty' : 'Available'}</Badge> : <span className="small muted">{dept === 'field_staff' ? 'Off duty' : 'Away'}</span>);
+  const unknown = all.filter((x) => !DEPARTMENTS.some(([k]) => k === x.role));
+  return (
+    <>
+      <div className="dp-grid">
+        <Panel tight title="Departments" actions={<span className="small muted">{all.filter((x) => x.active).length} active staff</span>}>
+          {u.loading ? <div className="panel-body"><Skeleton lines={9} /></div> : (
+            <div role="listbox" aria-label="Departments">
+              {DEPARTMENTS.map(([k, label]) => {
+                const n = count(k);
+                return (
+                  <button key={k} type="button" role="option" aria-selected={k === dept} className={`dp-item${k === dept ? ' on' : ''}`} onClick={() => pick(k)}>
+                    <span className="grow">{label}{ROLE_LABEL[k] !== label && <span className="tiny muted dp-role">{ROLE_LABEL[k]}</span>}</span>
+                    <span className="mono small">{n.active}</span>{n.off > 0 && <span className="tiny muted">+{n.off} off</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+        <Panel tight title={<div><h3>{title}</h3><div className="tiny muted">{about}</div></div>}
+          actions={<span className="small muted">{c.active} active{c.off ? ` · ${c.off} disabled` : ''}</span>}>
+          <div className="panel-body row wrap gap-8" style={{ alignItems: 'flex-end', borderBottom: '1px solid var(--line-2)' }}>
+            <Input placeholder="Search name, email, phone, code" value={find} onChange={(e) => setFind(e.target.value)} style={{ width: 260, maxWidth: '100%' }} aria-label="Search staff" />
+            {dept === 'provider' && <Select value={partner} onChange={(e) => setPartner(e.target.value)} placeholder="All partners" style={{ width: 200 }}
+              options={[...(prov.data || []).map((p) => [p.id, p.name]), ['none', 'No partner set']]} aria-label="Partner" />}
+            <Check label="Show disabled logins" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
+          </div>
+          <ErrorNote error={u.error} />
+          {u.loading ? <TableSkeleton rows={6} cols={6} /> : rows.length ? (
+            <div className="table-wrap"><table className="t">
+              <thead><tr>
+                <th>Name</th><th>Agent code</th>
+                {CALLING.includes(dept) && <th>MyOperator</th>}
+                {dept === 'field_staff' && <><th>Zone</th><th>Skills</th></>}
+                {dept === 'provider' && <th>Partner</th>}
+                <th>Now</th><th>Last seen</th><th>Status</th><th />
+              </tr></thead>
+              <tbody>{rows.map((x) => (
+                <tr key={x.id} className={x.active ? '' : 'muted'}>
+                  <td><div>{x.full_name}</div><div className="tiny muted">{[x.email, x.phone].filter(Boolean).join(' · ') || '–'}</div></td>
+                  <td className="mono small">{dash(x.agent_code)}</td>
+                  {CALLING.includes(dept) && <td className="small">{x.myoperator_user_id ? <span className="mono">{x.myoperator_user_id}{x.myoperator_extension ? ` · ext ${x.myoperator_extension}` : ''}</span> : <Badge kind="warn">Not linked</Badge>}</td>}
+                  {dept === 'field_staff' && <><td className="small">{dash(zoneName(x.zone_id))}</td><td className="small">{x.skills?.length ? x.skills.join(', ') : '–'}</td></>}
+                  {dept === 'provider' && <td className="small">{x.provider_id ? dash(provName(x.provider_id)) : <Badge kind="danger">No partner set</Badge>}</td>}
+                  <td>{now(x)}</td>
+                  <td className="small nowrap">{x.last_seen_at ? ago(x.last_seen_at) : <span className="muted">never</span>}</td>
+                  <td>{x.active ? <Badge kind="ok">Active</Badge> : <Badge>Disabled</Badge>}</td>
+                  <td className="right">{admin ? <Button size="xs" onClick={() => setEdit(x)}>Edit</Button>
+                    : x.role !== 'provider' && <Button size="xs" onClick={() => setTel(x)}>Telephony</Button>}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          ) : <Empty title={needle || partner ? 'No staff match' : `No ${disabled ? '' : 'active '}staff in ${title}`}>{admin ? "Add a login in Users, or change a login's role with Edit." : 'The platform admin adds logins and changes roles.'}</Empty>}
+        </Panel>
+      </div>
+      {unknown.length > 0 && <div className="small danger-text mt-8">{unknown.length} login{unknown.length === 1 ? ' has' : 's have'} a role outside these departments: {unknown.map((x) => x.full_name).join(', ')}.</div>}
+      <div className="small muted mt-8">{admin ? "Changing a login's role (Edit) moves it to that department and changes what it can see at once." : "Supervisors set each login's MyOperator user id, extension and phone (Telephony); the platform admin adds logins and changes roles."} Every change is in the audit trail.</div>
+      {tel && <TelephonyForm u={tel} onClose={() => setTel(null)} onSaved={() => { setTel(null); u.reload(); }} />}
+      {edit && <UserForm providers={prov.data || []} u={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); u.reload(); }} />}
+    </>
+  );
+}
+
 function TelephonyForm({ u, onClose, onSaved }) {
   const [f, setF] = useState({ myoperator_user_id: u.myoperator_user_id || '', myoperator_extension: u.myoperator_extension || '', phone: u.phone || '' });
   const [run, busy] = useAction();
@@ -984,6 +1097,7 @@ function TelephonyTab() {
       </Panel>
 
       {isAdmin && <AutodialPanel />}
+      {isAdmin && <BmmIntegration />}
       {isAdmin ? <MyOperatorConnection /> : (
         <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}
@@ -1017,6 +1131,32 @@ function TelephonyTab() {
 }
 
 // ------------------------------------------------------------------ import from the old Hinduja CRM
+function BmmIntegration() {
+  const cfg = useLoad(() => rpc('bmm_settings', {}), [], ['bmm_integration_settings','profiles','providers']);
+  const [f,setF] = useState(null);
+  const [run,busy] = useAction();
+  useEffect(() => { if (cfg.data && !f) setF({enabled:cfg.data.enabled,confirmed:cfg.data.contract_confirmed}); },[cfg.data,f]);
+  const save = () => run(async () => {
+    const saved = await rpc('set_bmm_integration',{p_enabled:f.enabled,p_contract_confirmed:f.confirmed});
+    cfg.setData(saved);setF({enabled:saved.enabled,confirmed:saved.contract_confirmed});
+  },'BMM integration settings saved');
+  const d = cfg.data;
+  return <Panel title="Book My Medicare integration" sub="BMM can retrieve its assigned leads and send progress updates using a dedicated provider login. Confirm their system supports this connection before activation.">
+    <ErrorNote error={cfg.error} />
+    {cfg.loading || (!f && !cfg.error) ? <Skeleton lines={3} /> : f && d && <div className="col gap-12">
+      <div className="row gap-8"><Badge kind={d.enabled ? 'ok' : 'outline'}>{d.enabled ? 'Enabled' : 'Disabled'}</Badge><span className="small">{d.provider_logins} active BMM provider login{d.provider_logins === 1 ? '' : 's'}</span></div>
+      {!d.provider_active && <div className="small warn-text">Book My Medicare must be active before enabling this connection.</div>}
+      {!d.provider_logins && <div className="small warn-text">An administrator must create a provider login assigned to Book My Medicare under Settings, Users.</div>}
+      <Check label="BMM has confirmed the connection format" checked={f.confirmed} onChange={e => setF({...f,confirmed:e.target.checked,enabled:e.target.checked && f.enabled})} />
+      <Check label="Enable BMM system access" checked={f.enabled} disabled={!f.confirmed || !d.provider_logins || !d.provider_active} onChange={e => setF({...f,enabled:e.target.checked})} />
+      <div><Button kind="primary" disabled={busy} onClick={save}>Save BMM settings</Button></div>
+      <div className="small">Only BMM-assigned services are shared. Patient details stay on hold until family sign-off. Calls, recordings, clinical validation and buying prices are excluded.</div>
+      <dl className="kv"><dt>Retrieve leads</dt><dd className="mono small">GET /api/v1/bmm/leads</dd><dt>Update progress</dt><dd className="mono small">POST /api/v1/bmm/leads/&#123;id&#125;/status</dd></dl>
+      <div className="tiny muted">Existing Provider leads and Excel status sync remain available while this connection is disabled.</div>
+    </div>}
+  </Panel>;
+}
+
 // Excel / CSV from the previous CRM -> patients and cases. Column names are matched loosely (e.g. "Phone",
 // "Contact No" -> mobile). Each row gets a new CareDesk Case ID; the old ID is kept, so importing the same file
 // again skips rows already in. Done in steps of 200 rows; errors are listed by row number.

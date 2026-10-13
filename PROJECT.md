@@ -39,6 +39,8 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
 
 ## Everyday use
 
+BMM system access: the HHCS-side authenticated lead/progress API is prepared but **disabled by default**. See `docs/BMM-INTEGRATION.md`. BMM must confirm the contract before activation under Settings > Telephony & integrations > Book My Medicare integration. Deployment of this change is on hold pending BMM documentation; no BMM endpoint or credentials have been assumed.
+
 | You want to | Do this |
 |---|---|
 | Ship any change | Double-click `SHIP.bat` |

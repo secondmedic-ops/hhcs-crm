@@ -64,6 +64,26 @@
 | actor_id | uuid | YES |
 | at | timestamp with time zone | NO |
 
+## bmm_integration_settings
+| column | type | nullable |
+|---|---|---|
+| workspace_id | uuid | NO |
+| enabled | boolean | NO |
+| contract_confirmed | boolean | NO |
+| updated_by | uuid | YES |
+| updated_at | timestamp with time zone | NO |
+
+## bmm_status_events
+| column | type | nullable |
+|---|---|---|
+| workspace_id | uuid | NO |
+| event_id | uuid | NO |
+| referral_id | uuid | NO |
+| payload_hash | text | NO |
+| applied_status | text | NO |
+| applied_by | uuid | NO |
+| received_at | timestamp with time zone | NO |
+
 ## callbacks
 | column | type | nullable |
 |---|---|---|
