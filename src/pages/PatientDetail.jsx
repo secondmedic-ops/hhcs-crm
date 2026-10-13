@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
-import { dial } from '../lib/api.js';
+import { dial, aiCall as summariseCall, aiStatus } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { inr, num, ago, dateLong, dateTime, time, dur, CHANNEL_LABEL } from '../lib/fmt.js';
@@ -10,6 +10,7 @@ import {
   PageHead, Panel, Badge, Button, StageBadge, SlaBadge, Tabs, Modal, Field, Input, Select, Skeleton, TableSkeleton, Empty, ErrorNote, AiTag, useAction, useToast,
 } from '../components/ui.jsx';
 import Icon, { channelIcon } from '../components/icons.jsx';
+import { AiCallState, SUMMARY_ROLES } from '../components/AiCallState.jsx';
 
 const dash = (v) => (v == null || v === '' ? '–' : v);
 const GENDER = { M: 'Male', F: 'Female', O: 'Other' };
@@ -46,7 +47,7 @@ export default function PatientDetail() {
     return [...a, ...b].filter((x) => !seen.has(x.id) && seen.add(x.id)).sort((x, y) => new Date(y.occurred_at) - new Date(x.occurred_at));
   }, [id, cases.data], ['interactions']);
 
-  const calls = useLoad(() => q(db.from('v_calls').select('id,direction,status,started_at,talk_seconds,ring_seconds,agent_label,case_id,case_no,ai_summary,ai_sentiment,ai_intent,has_recording,qa_pct,disposition')
+  const calls = useLoad(() => q(db.from('v_calls').select('id,direction,status,started_at,talk_seconds,ring_seconds,agent_label,case_id,case_no,ai_summary,ai_sentiment,ai_intent,has_recording,qa_pct,disposition,ai_status,ai_error,ai_started_at')
     .eq('patient_id', id).order('started_at', { ascending: false }).limit(200)), [id], ['calls']);
 
   const pays = useLoad(async () => {
@@ -55,8 +56,17 @@ export default function PatientDetail() {
     return q(db.from('payments').select('id,case_id,amount,mode,txn_ref,receipt_no,collected_at,reconciled,exception,gateway_status').in('case_id', caseIds).order('collected_at', { ascending: false }));
   }, [cases.data], ['payments']);
 
+  const ai = useLoad(() => aiStatus().catch(() => null), []);
+  const [summarising, setSummarising] = useState(null);
+  const canSummarise = can(...SUMMARY_ROLES);
+  // a summary can take up to a minute: Gemini listens to the whole recording
+  const summarise = async (callId) => { setSummarising(callId); await run(() => summariseCall(callId), 'AI summary ready'); setSummarising(null); calls.reload(); };
+
   const p = pat.data;
   const aiCall = (calls.data || []).find((c) => c.ai_summary);
+  // the newest recorded call, when it is newer than the summary shown (or there is no summary yet)
+  const lastRec = (calls.data || []).find((c) => c.has_recording);
+  const pendingRec = lastRec && !lastRec.ai_summary && (!aiCall || new Date(lastRec.started_at) > new Date(aiCall.started_at)) ? lastRec : null;
 
   if (pat.loading) return <><Skeleton height={44} /><div className="grid g-main-side mt-16"><Panel><TableSkeleton rows={8} cols={4} /></Panel><Panel><Skeleton lines={8} /></Panel></div></>;
   if (!p) return <><PageHead title="Patient" /><ErrorNote error={pat.error} /><Empty title="Patient not found">The record may be outside your access or the link is wrong. <a href="/patients" onClick={(e) => { e.preventDefault(); nav('/patients'); }}>Back to patients</a></Empty></>;
@@ -95,7 +105,7 @@ export default function PatientDetail() {
           ]} />
           {tab === 'timeline' && <Timeline load={timeline} caseNo={caseNo} onCase={(cid) => nav(`/cases/${cid}`)} />}
           {tab === 'cases' && <CasesTab load={cases} onOpen={(cid) => nav(`/cases/${cid}`)} />}
-          {tab === 'calls' && <CallsTab load={calls} onCase={(cid) => nav(`/cases/${cid}`)} />}
+          {tab === 'calls' && <CallsTab load={calls} onCase={(cid) => nav(`/cases/${cid}`)} ai={ai.data} canRun={canSummarise} summarising={summarising} onSummarise={summarise} />}
           {tab === 'payments' && canPay && <PaymentsTab load={pays} caseNo={caseNo} onCase={(cid) => nav(`/cases/${cid}`)} />}
         </div>
 
@@ -106,7 +116,8 @@ export default function PatientDetail() {
                 <div className="small">{aiCall.ai_summary}</div>
                 <div className="tiny muted mt-8">From the {aiCall.direction} call {ago(aiCall.started_at)}{aiCall.case_no ? ` on ${aiCall.case_no}` : ''}{aiCall.ai_intent ? ` · intent ${aiCall.ai_intent.replace(/_/g, ' ')}` : ''}{aiCall.ai_sentiment ? ` · ${aiCall.ai_sentiment}` : ''}. Advisory; verify on the recording.</div>
               </div>
-            ) : <Empty title="No AI call summary yet">Summaries appear a minute after a recorded call ends.</Empty>}
+            ) : !pendingRec ? <Empty title="No AI call summary yet">{ai.data?.enabled === false ? 'AI summaries are off. A supervisor adds the Gemini key in Settings > Telephony & integrations.' : 'No recorded call with this patient yet. A summary appears a minute or two after a recorded call ends.'}</Empty> : null}
+            {!calls.loading && pendingRec && <AiCallState call={pendingRec} enabled={ai.data?.enabled} canRun={canSummarise} busy={summarising === pendingRec.id} onRun={summarise} showWhen />}
           </Panel>
 
           <Panel title="Contact & address">
@@ -221,7 +232,7 @@ function CasesTab({ load, onOpen }) {
   );
 }
 
-function CallsTab({ load, onCase }) {
+function CallsTab({ load, onCase, ai, canRun, summarising, onSummarise }) {
   return (
     <Panel tight>
       <ErrorNote error={load.error} />
@@ -238,6 +249,7 @@ function CallsTab({ load, onCase }) {
               {c.qa_pct != null && <Badge kind={c.qa_pct >= 80 ? 'ok' : 'warn'}>QA {Math.round(c.qa_pct)}%</Badge>}
             </div>
             {c.ai_summary && <div className="small mt-4"><AiTag /> {c.ai_summary}</div>}
+            <AiCallState call={c} enabled={ai?.enabled} canRun={canRun} busy={summarising === c.id} onRun={onSummarise} />
             {c.disposition && <div className="tiny muted mt-4">Disposition: {c.disposition}</div>}
           </div>
         </div>

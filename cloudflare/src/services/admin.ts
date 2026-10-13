@@ -1,4 +1,4 @@
-// Settings > Users (new login) and Settings > Telephony (integration status, last webhook events).
+// Settings > Users (new login) and Settings > Telephony (integration status, last webhook events, MyOperator, AI summaries).
 import type { Ctx } from '../api/context';
 import { ROLES, supabaseBase } from '../api/auth';
 import { ApiError } from '../domain/errors';
@@ -7,6 +7,8 @@ import type { Env } from '../env';
 import { MO_FIELDS, clearMoCache, describeMo, missingCallingSettings, moEnv, randomKey } from './myoperator-config';
 import { loadWhatsAppQr } from './myoperator';
 import { syncCallLogs, syncState } from './mo-sync';
+import { aiEnv, clearAiCache, describeAi } from './ai-config';
+import { gemini } from './ai';
 
 type J = Record<string, any>;
 
@@ -40,12 +42,12 @@ export async function webhookEvents(c: Ctx) {
 }
 
 export async function integrations(c: Ctx) {
-  const [e, qr] = await Promise.all([moEnv(c.env, c.sql), loadWhatsAppQr(c.sql)]);
+  const [e, qr, ai] = await Promise.all([moEnv(c.env, c.sql), loadWhatsAppQr(c.sql), aiEnv(c.env, c.sql)]);
   return {
     supabase: !!(e.HYPERDRIVE || e.DATABASE_URL), auth: !!e.SUPABASE_URL, telephony: missingCallingSettings(e).length === 0,
     webhook: !!e.MYOPERATOR_WEBHOOK_KEY, recordings: !!e.MYOPERATOR_API_TOKEN,
     whatsapp: !!(e.MYOPERATOR_WABA_API_KEY && e.MYOPERATOR_WABA_PHONE_ID) || qr.status === 'connected',
-    ai: !!e.GEMINI_API_KEY, mis_email: !!(e.RESEND_API_KEY && e.MIS_RECIPIENTS), user_admin: !!e.SUPABASE_SERVICE_ROLE_KEY,
+    ai: !!ai.GEMINI_API_KEY, mis_email: !!(e.RESEND_API_KEY && e.MIS_RECIPIENTS), user_admin: !!e.SUPABASE_SERVICE_ROLE_KEY,
     webhook_url: (e.APP_URL || new URL(c.req.url).origin) + '/webhooks/myoperator', build: e.BUILD_SHA || 'dev',
   };
 }
@@ -224,4 +226,62 @@ export async function setTelephony(c: Ctx, b: J) {
 /** Run the call-log sync now (Settings > Telephony > Sync now). */
 export async function syncNow(c: Ctx) {
   return syncCallLogs(c.env, c.sql, c.exec, { force: true });
+}
+
+// ---------- AI call summaries (Settings > Telephony & integrations > AI call summaries) ----------
+
+/** Key (last 4 characters only), model, auto switch, and how the last 14 days of recorded calls stand. */
+export async function aiSettings(c: Ctx) {
+  const [stats] = await c.sql`select
+      count(*) filter (where ai_processed_at is not null)::int as done,
+      count(*) filter (where ai_processed_at is null and ai_status = 'failed')::int as failed,
+      count(*) filter (where ai_processed_at is null and ai_status = 'skipped')::int as skipped,
+      count(*) filter (where ai_processed_at is null and (ai_status is null or ai_status = 'processing'))::int as waiting
+    from calls where workspace_id = ${c.user.workspaceId}::uuid and recording_filename is not null and started_at > now() - interval '14 days'`;
+  const [last] = await c.sql`select ai_error, ai_started_at from calls
+    where workspace_id = ${c.user.workspaceId}::uuid and ai_status = 'failed' order by ai_started_at desc nulls last limit 1`;
+  return { ...(await describeAi(c.env, c.sql)), stats: stats ?? { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: last ?? null };
+}
+
+/** Save what was typed: api_key ('' removes the app key, the Worker secret applies again), model ('' = default), auto. */
+export async function saveAiSettings(c: Ctx, b: J) {
+  const input: J = {};
+  for (const k of ['api_key', 'model'] as const) {
+    if (b?.[k] === undefined) continue;
+    if (b[k] !== null && typeof b[k] !== 'string') throw new ApiError(400, `${k} must be text`);
+    const t = String(b[k] ?? '').trim();
+    if (t.length > 200) throw new ApiError(400, `${k} is too long`);
+    if (k === 'model' && t && !/^[a-z0-9][a-z0-9.-]*$/i.test(t)) throw new ApiError(400, 'Model name: letters, digits, dots and dashes only (for example gemini-2.5-flash)');
+    input[k] = t;
+  }
+  if (b?.auto !== undefined) {
+    if (typeof b.auto !== 'boolean') throw new ApiError(400, 'auto must be true or false');
+    input.auto = b.auto ? 'on' : 'off';
+  }
+  const { changed } = await asSystem(c.sql, async (tx) => {
+    const [row] = await tx`select settings from integration_settings where provider = 'ai' for update`;
+    const next: J = { ...((row?.settings as J) || {}) };
+    for (const [k, v] of Object.entries(input)) { if (v) next[k] = v; else delete next[k]; }
+    await tx`insert into integration_settings (provider, settings, updated_at, updated_by)
+      values ('ai', ${tx.json(next)}, now(), ${c.user.id}::uuid)
+      on conflict (provider) do update set settings = excluded.settings, updated_at = now(), updated_by = excluded.updated_by`;
+    await tx`insert into access_log (workspace_id, user_id, action, entity, meta)
+      values (${c.user.workspaceId}::uuid, ${c.user.id}::uuid, 'settings_changed', 'ai', ${tx.json({ fields: Object.keys(input) })})`;
+    return null;
+  });
+  c.changed.push(...changed);
+  clearAiCache();
+  return aiSettings(c);
+}
+
+/** One small request to Gemini with the saved key and model (no patient data). */
+export async function testAi(c: Ctx) {
+  const env = await aiEnv(c.env, c.sql);
+  if (!env.GEMINI_API_KEY) return { ok: false, message: 'No Gemini API key yet' };
+  try {
+    const r = await gemini(env, [{ text: 'Reply with the JSON {"ok": true}.' }], { temperature: 0 });
+    return r?.ok === true ? { ok: true, message: `Gemini answered (model ${(await describeAi(c.env, c.sql)).model})` } : { ok: false, message: 'Gemini answered, but not as expected' };
+  } catch (e) {
+    return { ok: false, message: String((e as Error).message || e).slice(0, 300) };
+  }
 }

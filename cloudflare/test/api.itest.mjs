@@ -13,7 +13,7 @@ const U = {
 const ROLE = { agent: 'agent', agent2: 'agent', coord: 'coordinator', sup: 'supervisor', field: 'field_staff', client: 'client_manager',
   clinical: 'client_clinical', admin: 'admin', medical: 'medical_desk', bmm: 'provider' };
 
-export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhookKey }) {
+export async function runApiTests({ base, token, sql, wrongKey, obdCalls, geminiCalls = [], webhookKey }) {
   const failed = [];
   let total = 0;
   const check = (cond, name, extra = '') => { total++; if (!cond) failed.push(name + (extra ? ' -> ' + extra : '')); };
@@ -450,6 +450,64 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
     'rejected manual dial keeps the auto-retry scheduled', JSON.stringify({ response: rejectedManualCallback.body, retryState }));
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
   await rpc('sup', 'set_autodial', { p_enabled: false, p_buffer_minutes: 30, p_max_attempts: 3 });
+
+  // ---- AI call summaries: settings, status, failure kept on the call, then the full flow (Gemini and the recording are stand-ins)
+  const recCall = (await one(`select id::text from calls where session_id = 'sess-in-1'`))?.id;
+  check((await call('agent', 'GET', '/api/v1/admin/ai')).status === 403, 'AI settings: agents kept out');
+  let aist = await call('agent', 'GET', '/api/v1/ai/status');
+  check(aist.status === 200 && aist.body?.enabled === false, 'AI status: off without a key', JSON.stringify(aist.body));
+  check((await call('bmm', 'GET', '/api/v1/ai/status')).status === 403, 'provider kept out of AI status');
+  const noKey = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
+  check(noKey.status === 503 && JSON.stringify(noKey.body).includes('Gemini API key'), 'summary without a key: says where to add it', JSON.stringify(noKey.body));
+  let aiSet = await call('sup', 'POST', '/api/v1/admin/ai', { api_key: 'gm-bad' });
+  check(aiSet.status === 200 && aiSet.body?.key?.set && aiSet.body.key.value === '…-bad' && !JSON.stringify(aiSet.body).includes('gm-bad'),
+    'Gemini key saved in the app; only its last 4 characters come back', JSON.stringify(aiSet.body));
+  check((await call('sup', 'POST', '/api/v1/admin/ai', { model: 'bad model!' })).status === 400, 'odd model name refused');
+  const badKey = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
+  const badRow = await one(`select ai_status, ai_error, ai_attempts from calls where id = $1`, recCall);
+  check(badKey.status === 502 && badRow?.ai_status === 'failed' && /API key not valid/.test(badRow.ai_error || '') && badRow.ai_attempts === 1,
+    'wrong key: the call shows failed with the reason (kept for retry)', JSON.stringify({ body: badKey.body, badRow }));
+  aiSet = await call('sup', 'POST', '/api/v1/admin/ai', { api_key: 'gm-test', model: 'gemini-test' });
+  const aiTest = await call('sup', 'POST', '/api/v1/admin/ai/test', {});
+  check(aiTest.body?.ok === true, 'Test key: Gemini answers', JSON.stringify(aiTest.body));
+  check((await call('bmm', 'POST', `/api/v1/ai/calls/${recCall}`, {})).status === 403, 'provider cannot run AI on calls');
+  const g0 = geminiCalls.length;
+  const aiOk = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
+  const aiRow = await one(`select ai_status, ai_summary, ai_error, ai_attempts, ai_extracted->>'next_action' na from calls where id = $1`, recCall);
+  check(aiOk.status === 200 && aiRow?.ai_status === 'done' && aiRow.ai_summary?.startsWith('Caller asked') && aiRow.na && !aiRow.ai_error && aiRow.ai_attempts === 2,
+    'recorded call summarised: summary, next action, status done', JSON.stringify({ body: aiOk.body, aiRow }));
+  const used = geminiCalls.slice(g0);
+  const gen = used.find((x) => x.path.includes(':generateContent'));
+  check(used.some((x) => x.path.startsWith('/upload-session/') && x.bytes === 4096) && gen?.fileUri && !gen.inline && gen.path.includes('/models/gemini-test:')
+    && used.some((x) => x.method === 'DELETE' && x.path.endsWith('/files/rh1')),
+    'recording sent as a file (no base64), saved model used, file deleted afterwards', JSON.stringify(used));
+  check(used.every((x) => !x.url.includes('key=')), 'Gemini key never put in a URL');
+  const vcall = await batch('sup', [sel('v_calls', { cols: 'ai_status,ai_summary,ai_error', filters: [{ col: 'id', op: 'eq', val: recCall }], mode: 'single' })]);
+  check(vcall.body?.results?.[0]?.data?.ai_status === 'done', 'v_calls shows the AI status to the screens', JSON.stringify(vcall.body).slice(0, 200));
+  check((await one(`select count(*)::int n from qa_reviews where call_id = $1 and ai_generated`, recCall))?.n >= 1, 'AI QA score stored with the summary');
+  const aiStats = await call('sup', 'GET', '/api/v1/admin/ai');
+  check(aiStats.body?.stats?.done >= 1 && aiStats.body.model === 'gemini-test', 'settings: last 14 days counts and the saved model', JSON.stringify(aiStats.body));
+  // the every-minute sweep: a recorded call the webhook never summarised (e.g. brought in by the call-log sync), and a short one
+  const [{ id: lateCall }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, status, started_at, ended_at, talk_seconds, recording_filename)
+    values (${ws}, 'myoperator', 'inbound', '+919820012012', 'completed', now() - interval '3 minutes', now() - interval '2 minutes', 95, 'rec-late.mp3') returning id::text`;
+  const [{ id: shortCall }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, status, started_at, ended_at, talk_seconds, recording_filename)
+    values (${ws}, 'myoperator', 'inbound', '+919820012013', 'completed', now() - interval '5 minutes', now() - interval '5 minutes', 4, 'rec-short.mp3') returning id::text`;
+  const tick = await fetch(`${base}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent('* * * * *')}`);
+  const tickInfo = `scheduled ${tick.status} ${(await tick.text()).slice(0, 80)}`;
+  let late = null;
+  for (let i = 0; i < 40 && late?.ai_status !== 'done'; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    late = await one(`select ai_status, ai_summary, ai_error from calls where id = $1`, lateCall);
+  }
+  const short = await one(`select ai_status, ai_error from calls where id = $1`, shortCall);
+  check(late?.ai_status === 'done' && !!late.ai_summary, 'cron sweep summarises a recorded call the webhook missed', tickInfo + ' ' + JSON.stringify(late));
+  check(short?.ai_status === 'skipped' && /talk time/.test(short.ai_error || ''), 'cron sweep skips calls under 10 seconds', JSON.stringify(short));
+  await call('sup', 'POST', '/api/v1/admin/ai', { auto: false });
+  aist = await call('agent', 'GET', '/api/v1/ai/status');
+  check(aist.body?.enabled === true && aist.body.auto === false, 'auto switch off: summaries on request only', JSON.stringify(aist.body));
+  // back to no AI, so later runs start from the same place
+  await call('sup', 'POST', '/api/v1/admin/ai', { api_key: '', model: '', auto: true });
+  check((await call('agent', 'GET', '/api/v1/ai/status')).body?.enabled === false, 'removing the saved key turns summaries off again');
 
   return { total, failed };
 }

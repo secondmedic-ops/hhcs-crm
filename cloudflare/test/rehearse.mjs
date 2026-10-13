@@ -34,6 +34,7 @@ const ADMIN_KEY = 'rehearsal-secret';
 const authDb = postgres(DB, { max: 1, onnotice: () => {} });
 // ... and for MyOperator's click-to-call (OBD) API: requests are recorded for the API checks.
 const obdCalls = [];
+const geminiCalls = [];
 const jwks = http.createServer(async (req, res) => {
   const send = (code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   if (req.url === '/auth/v1/.well-known/jwks.json') return send(200, { keys: [jwk] });
@@ -66,6 +67,39 @@ const jwks = http.createServer(async (req, res) => {
       { uuid: 'mo-77', name: 'Agent One', email: 'agent@rehearsal.test', contact_number: '+919800000077', extension: '11' },
       { uuid: 'mo-88', name: 'Agent Two', email: 'agent2@rehearsal.test', contact_number: '+919800000088', extension: '12' },
     ] });
+  }
+  // MyOperator recording link + the audio file, and Google Gemini (Files API + generateContent) stand-ins for AI call summaries
+  if (req.url.startsWith('/mo/recordings/link')) {
+    const u = new URL(req.url, 'http://x');
+    if (u.searchParams.get('token') !== 'api-tok') return send(200, { status: 'error', message: 'Invalid token' });
+    return send(200, { url: `${SUPABASE}/audio/${u.searchParams.get('file')}` });
+  }
+  if (req.url.startsWith('/audio/')) { res.writeHead(200, { 'Content-Type': 'audio/mpeg' }); return res.end(Buffer.alloc(4096, 7)); }
+  if (req.url.startsWith('/gemini/')) {
+    const chunks = []; for await (const ch of req) chunks.push(ch);
+    const raw = Buffer.concat(chunks);
+    const path = req.url.slice('/gemini'.length);
+    const key = req.headers['x-goog-api-key'];
+    const g = { method: req.method, path, url: req.url, bytes: raw.length };
+    geminiCalls.push(g);
+    if (path.startsWith('/upload-session/')) return send(200, { file: { name: 'files/rh1', uri: `${SUPABASE}/gemini/v1beta/files/rh1`, mimeType: 'audio/mpeg', state: 'ACTIVE', sizeBytes: String(raw.length) } });
+    if (key !== 'gm-test') return send(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.' } });
+    if (path.startsWith('/upload/v1beta/files')) { res.writeHead(200, { 'Content-Type': 'application/json', 'x-goog-upload-url': `${SUPABASE}/gemini/upload-session/1` }); return res.end('{}'); }
+    if (req.method === 'DELETE') return send(200, {});
+    if (path.includes(':generateContent')) {
+      const parts = JSON.parse(raw.toString() || '{}').contents?.[0]?.parts || [];
+      g.fileUri = parts.find((p) => p.fileData)?.fileData?.fileUri || null;
+      g.inline = parts.some((p) => p.inlineData);
+      const out = parts.some((p) => /Reply with the JSON/.test(p.text || '')) ? { ok: true } : {
+        transcript: 'Agent: Hinduja Home Care, Priya speaking.\nCaller: I need a blood test at home for my mother tomorrow.',
+        language: 'English', summary: 'Caller asked for a home blood test for his mother tomorrow morning. Consent given; the agent will share the quote on WhatsApp.',
+        next_action: 'Send the quote on WhatsApp today', intent: 'new_booking', sentiment: 'neutral',
+        extracted: { caller_relation: 'son', service_codes: ['LAB-CBC'], urgent: false }, consent_given: true, flags: [],
+        qa: { greeting: 5, consent: 5, price_accuracy: 4, empathy: 4, closure: 4 }, qa_notes: 'Read back the reference before closing.',
+      };
+      return send(200, { candidates: [{ content: { parts: [{ text: JSON.stringify(out) }] }, finishReason: 'STOP' }] });
+    }
+    return send(404, { error: { message: 'not found' } });
   }
   if (req.url.startsWith('/auth/v1/admin/users')) {
     if (req.headers.apikey !== ADMIN_KEY) return send(401, { msg: 'Invalid API key' });
@@ -110,10 +144,11 @@ writeFileSync(envFile, [
   `SUPABASE_URL=${SUPABASE}`, `SUPABASE_SERVICE_ROLE_KEY=${ADMIN_KEY}`, 'EXPOSE_CONTRACT=1', 'BUILD_SHA=rehearsal', 'GEMINI_API_KEY=',
   'MYOPERATOR_WEBHOOK_KEY=rehearsal-hook', 'MYOPERATOR_COMPANY_ID=co-1', 'MYOPERATOR_SECRET_TOKEN=st', 'MYOPERATOR_OBD_API_KEY=obd-key',
   `MYOPERATOR_OBD_URL=${SUPABASE}/obd`, `MYOPERATOR_API_URL=${SUPABASE}/mo`,
+  `MYOPERATOR_RECORDING_URL=${SUPABASE}/mo/recordings/link`, `GEMINI_API_URL=${SUPABASE}/gemini`,
 ].join('\n') + '\n', { mode: 0o600 });
 let log = '';
 const noProxy = ['127.0.0.1', 'localhost', process.env.NO_PROXY].filter(Boolean).join(',');
-const worker = spawn('npx', ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', String(PORT), '--env-file', envFile,
+const worker = spawn('npx', ['wrangler', 'dev', '--ip', '127.0.0.1', '--port', String(PORT), '--env-file', envFile, '--test-scheduled',
   '--show-interactive-dev-session=false', '--log-level', 'warn'], {
   cwd: join(root, 'cloudflare'), shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'],
   detached: process.platform !== 'win32', // own process group, so stopping it also stops workerd
@@ -155,7 +190,7 @@ try {
   const health = await (await fetch(base + '/api/v1/health')).json();
   if (health.database !== 'UP') fail('Worker cannot reach the database: ' + JSON.stringify(health));
 
-  const results = await runApiTests({ base, token, sql, wrongKey: (await generateKeyPair('ES256')).privateKey, obdCalls, webhookKey: 'rehearsal-hook' });
+  const results = await runApiTests({ base, token, sql, wrongKey: (await generateKeyPair('ES256')).privateKey, obdCalls, geminiCalls, webhookKey: 'rehearsal-hook' });
   if (results.failed.length) fail(`${results.failed.length} of ${results.total} API checks failed:\n  ` + results.failed.join('\n  '));
   console.log(`API checks OK: ${results.total} passed`);
 

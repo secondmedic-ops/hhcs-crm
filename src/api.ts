@@ -63,6 +63,7 @@ export const api = {
   aiBrief: (caseId: string) => request<Record<string, unknown>>(`/api/v1/ai/cases/${caseId}/brief`, { method: 'POST', body: {} }),
   aiCommand: (q: string) => request<Record<string, unknown>>('/api/v1/ai/command', { method: 'POST', body: { q } }),
   aiExtract: (text: string) => request<Record<string, unknown>>('/api/v1/ai/extract-enquiry', { method: 'POST', body: { text } }),
+  aiStatus: () => request<{ enabled: boolean; auto: boolean }>('/api/v1/ai/status'),
 
   createUser: (u: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/admin/users', { method: 'POST', body: u }),
   webhookEvents: () => request<Record<string, unknown>[]>('/api/v1/admin/webhooks'),
@@ -72,6 +73,9 @@ export const api = {
   saveMoSettings: (body: { values?: Record<string, string>; generate_webhook_key?: boolean }) => request<Record<string, any>>('/api/v1/admin/myoperator', { method: 'POST', body }),
   syncMo: () => request<Record<string, any>>('/api/v1/admin/myoperator/sync', { method: 'POST', body: {} }),
   testMo: () => request<Record<string, { ok: boolean; message: string }>>('/api/v1/admin/myoperator/test', { method: 'POST', body: {} }),
+  aiSettings: () => request<Record<string, any>>('/api/v1/admin/ai'),
+  saveAiSettings: (body: { api_key?: string; model?: string; auto?: boolean }) => request<Record<string, any>>('/api/v1/admin/ai', { method: 'POST', body }),
+  testAi: () => request<{ ok: boolean; message: string }>('/api/v1/admin/ai/test', { method: 'POST', body: {} }),
   moUsers: () => request<{ users: Record<string, any>[]; profiles: Record<string, any>[] }>('/api/v1/admin/myoperator/users'),
   linkMoUsers: (body: { links?: { profile_id: string; myoperator_user_id: string | null }[]; auto?: boolean }) => request<{ linked: number; unlinked: number }>('/api/v1/admin/myoperator/users', { method: 'POST', body }),
 };

@@ -6,8 +6,9 @@ import type { Role } from './auth';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
 import { whatsappSession, whatsappSessionAction } from '../services/myoperator';
-import { caseBrief, command, extractEnquiry, processCall } from '../services/ai';
-import { createUser, integrations, linkMoUsers, moSettings, moUsers, saveMoSettings, setTelephony, syncNow, testMo, webhookEvents } from '../services/admin';
+import { aiStatus, caseBrief, command, extractEnquiry, summariseCall } from '../services/ai';
+import { aiEnv } from '../services/ai-config';
+import { aiSettings, createUser, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testMo, webhookEvents } from '../services/admin';
 
 export type Access = 'public' | 'login' | readonly Role[];
 export interface Route {
@@ -22,7 +23,9 @@ const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff
 const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
 const WA_OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'admin'];
 const RECORDINGS: readonly Role[] = ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'];
-const AI_CALLS: readonly Role[] = ['supervisor', 'coordinator', 'agent', 'client_manager'];
+const AI_CALLS: readonly Role[] = ['supervisor', 'coordinator', 'agent', 'client_manager', 'medical_desk'];
+/** Staff who see calls (never provider logins). */
+const CALL_VIEW: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'];
 const ADMIN: readonly Role[] = ['admin'];
 const TECH: readonly Role[] = ['admin', 'supervisor'];
 
@@ -47,9 +50,10 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/whatsapp/session', access: ALL, handler: (c) => whatsappSession(c), summary: 'WhatsApp QR and WABA connection status' },
   { method: 'POST', path: '/api/v1/whatsapp/session', access: WA_OPS, handler: (c, b) => whatsappSessionAction(c, b ?? {}), summary: 'Start, sync or disconnect WhatsApp QR session' },
   { method: 'POST', path: '/api/v1/whatsapp/send', access: WA_OPS, handler: (c, b) => sendWhatsAppChat(c, b ?? {}), summary: 'Send a WhatsApp reply or approved template' },
-  { method: 'POST', path: '/api/v1/ai/calls/{id}', access: AI_CALLS, handler: (c) => processCall(c.env, c.params.id, c.exec), summary: 'AI: transcript, summary, QA of a recorded call' },
+  { method: 'POST', path: '/api/v1/ai/calls/{id}', access: AI_CALLS, handler: (c) => summariseCall(c, c.params.id), summary: 'AI: transcript, summary, QA of a recorded call (a call the user can see)' },
+  { method: 'GET', path: '/api/v1/ai/status', access: CALL_VIEW, handler: (c) => aiStatus(c), summary: 'Whether AI call summaries are on' },
   { method: 'POST', path: '/api/v1/ai/cases/{id}/brief', access: ALL, handler: async (c) => { const r = await caseBrief(c.env, c.sql, c.user.id, c.params.id); c.changed.push(...r.changed); return r.brief; }, summary: 'AI case brief' },
-  { method: 'POST', path: '/api/v1/ai/command', access: ALL, handler: (c, b) => command(c.env, String(b?.q || '').slice(0, 400), c.user.role || ''), summary: 'AI command bar' },
+  { method: 'POST', path: '/api/v1/ai/command', access: ALL, handler: async (c, b) => command(await aiEnv(c.env, c.sql), String(b?.q || '').slice(0, 400), c.user.role || ''), summary: 'AI command bar' },
   { method: 'POST', path: '/api/v1/ai/extract-enquiry', access: OPS, handler: (c, b) => extractEnquiry(c.env, c.sql, c.user.id, String(b?.text || '').slice(0, 4000)), summary: 'AI enquiry extraction' },
   { method: 'POST', path: '/api/v1/admin/users', access: ADMIN, handler: (c, b) => createUser(c, b), summary: 'Create a login and its profile' },
   { method: 'GET', path: '/api/v1/admin/webhooks', access: TECH, handler: (c) => webhookEvents(c), summary: 'Last 50 MyOperator webhook events' },
@@ -57,6 +61,9 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/admin/myoperator', access: TECH, handler: (c) => moSettings(c), summary: 'MyOperator connection: fields set, webhook address, last event' },
   { method: 'POST', path: '/api/v1/admin/myoperator', access: TECH, handler: (c, b) => saveMoSettings(c, b ?? {}), summary: 'Save MyOperator connection values' },
   { method: 'POST', path: '/api/v1/admin/myoperator/sync', access: TECH, handler: (c) => syncNow(c), summary: 'Read new calls from the MyOperator call log now' },
+  { method: 'GET', path: '/api/v1/admin/ai', access: TECH, handler: (c) => aiSettings(c), summary: 'AI call summaries: key set, model, auto switch, last 14 days' },
+  { method: 'POST', path: '/api/v1/admin/ai', access: TECH, handler: (c, b) => saveAiSettings(c, b ?? {}), summary: 'Save the Gemini key, model and auto-summary switch' },
+  { method: 'POST', path: '/api/v1/admin/ai/test', access: TECH, handler: (c) => testAi(c), summary: 'Test the Gemini key' },
   { method: 'POST', path: '/api/v1/admin/myoperator/test', access: TECH, handler: (c) => testMo(c), summary: 'Test the MyOperator connection' },
   { method: 'GET', path: '/api/v1/admin/myoperator/users', access: TECH, handler: (c) => moUsers(c), summary: 'MyOperator users and the CRM logins linked to them' },
   { method: 'POST', path: '/api/v1/admin/users/telephony', access: TECH, handler: (c, b) => setTelephony(c, b ?? {}), summary: 'Set a user\'s MyOperator user id, extension and phone' },

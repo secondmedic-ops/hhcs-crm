@@ -1,10 +1,11 @@
 // Scheduled jobs (wrangler.jsonc triggers)
 //   * * * * *    SLA scan: breaches -> auto escalation + notifications, at-risk flags, escalation level-ups;
-//                MyOperator call-log sync (calls, missed-call callbacks, recordings without webhooks)
+//                MyOperator call-log sync (calls, missed-call callbacks, recordings without webhooks); one AI call summary
 //   30 4 * * *   10:00 IST: daily MIS for yesterday; Mondays also weekly; 1st of the month also monthly
 import { asSystem, connect } from '../db';
 import type { Env } from '../env';
-import { misNarrative } from './ai';
+import { misNarrative, summariseBacklog } from './ai';
+import { aiEnv } from './ai-config';
 import { notifyLive } from './live';
 import { syncCallLogs } from './mo-sync';
 import { runAutodial } from './autodial';
@@ -26,6 +27,9 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
         if (r.dialled || r.failed) console.log('autodial', JSON.stringify({ dialled: r.dialled, failed: r.failed }));
       } catch (e) { console.log('autodial', (e as Error).message); }
       notifyLive(env, exec, [...new Set(changed)]);
+      // last, so it never delays the SLA scan: one recorded call without an AI summary (webhook missed it, synced call, retry)
+      try { const r = await summariseBacklog(env, sql, exec); if (r.failed) console.log('ai backlog', r.error); }
+      catch (e) { console.log('ai backlog', (e as Error).message); }
       return;
     }
     const today = new Date(Date.now() + 5.5 * 3600e3);
@@ -39,9 +43,10 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
       });
       for (const s of snaps) {
         let narrative: string | null = null;
-        if (env.GEMINI_API_KEY) {
+        const ai = await aiEnv(env, sql);
+        if (ai.GEMINI_API_KEY) {
           try {
-            narrative = await misNarrative(env, period, s.data);
+            narrative = await misNarrative(ai, period, s.data);
             await sql`update mis_snapshots set narrative = ${narrative} where id = ${s.id}`;
           } catch (e) { console.log('mis narrative', (e as Error).message); }
         }

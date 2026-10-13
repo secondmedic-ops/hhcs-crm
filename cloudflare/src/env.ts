@@ -39,6 +39,8 @@ export interface Env {
   // AI (Google AI Studio key) and MIS e-mail
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  /** Gemini API base URL (rehearsal points it at a local stand-in). */
+  GEMINI_API_URL?: string;
   AI_AUTO_PROCESS_CALLS?: string;
   RESEND_API_KEY?: string;
   MIS_RECIPIENTS?: string;

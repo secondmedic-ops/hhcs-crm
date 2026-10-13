@@ -100,7 +100,7 @@ async function processCall(callId) {
     ? 'Son called for his 72-year-old father: blood tests and an ECG at home in Andheri West tomorrow morning. Consent given; address and landmark read back. No red-flag symptoms.'
     : `${c.direction === 'inbound' ? 'Caller' : 'Agent called'} ${p?.full_name || 'the patient'} about ${c.case_id ? 'an open case' : 'a general query'}; details confirmed and next step agreed.`;
   await svc(`update calls set ai_summary = $2, ai_sentiment = 'neutral', ai_intent = $3, ai_extracted = $4, ai_flags = $5, ai_processed_at = now(),
-    transcript = $6 where id = $1`, [callId, summary, scripted ? 'new_booking' : 'other',
+    ai_status = 'done', ai_error = null, transcript = $6 where id = $1`, [callId, summary, scripted ? 'new_booking' : 'other',
     JSON.stringify(ex ? { ...ex, consent_given: true, language: 'Hindi + English', service_ids: ex.service_codes.map((k) => services.find((s) => s.code === k)?.id) } : { consent_given: true }),
     '{}', scripted ? `Agent: Good evening, thank you for calling Hinduja Home Care. This is Priya.\nCaller: Hi, my father is 72 and needs blood tests and an ECG at home in Andheri tomorrow morning.\nAgent: Certainly. This call is recorded for quality and your records, may we record and use these details to arrange the service?\nCaller: Yes, that's fine.\nAgent: May I have your father's name and the full address with a landmark and pincode?\nCaller: Raghunath Sharma, 14 Sai Krupa CHS, Link Road, near Shoppers Stop, Andheri West, 400058.\nAgent: Thank you. Is he having any chest pain or breathlessness right now?\nCaller: No, this is a routine check.\nAgent: I'll share the quote on WhatsApp shortly with your reference number.` : null]);
   const g = () => 3 + Math.round(Math.random() * 2);

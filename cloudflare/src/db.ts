@@ -127,7 +127,7 @@ export const SCHEMA: Record<string, string[]> = {
   calls: ['id', 'workspace_id', 'provider', 'session_id', 'provider_call_id', 'direction', 'customer_number', 'did_number', 'agent_id',
     'agent_name', 'department', 'status', 'started_at', 'answered_at', 'ended_at', 'ring_seconds', 'talk_seconds', 'recording_filename',
     'patient_id', 'case_id', 'disposition', 'notes', 'transcript', 'ai_summary', 'ai_sentiment', 'ai_intent', 'ai_extracted', 'ai_flags',
-    'ai_processed_at', 'click_to_call_ref', 'raw', 'callback_id'],
+    'ai_processed_at', 'click_to_call_ref', 'raw', 'callback_id', 'ai_status', 'ai_error', 'ai_attempts', 'ai_started_at'],
   callbacks: ['id', 'workspace_id', 'call_id', 'number', 'patient_id', 'reason', 'due_at', 'status', 'assigned_to', 'last_attempt_at', 'completed_at', 'completed_by',
     'attempts', 'next_attempt_at', 'auto_dialled'],
   interactions: ['id', 'workspace_id', 'case_id', 'patient_id', 'channel', 'direction', 'actor_id', 'actor_label', 'call_id', 'summary', 'body', 'evidence', 'template_id', 'meta', 'occurred_at'],

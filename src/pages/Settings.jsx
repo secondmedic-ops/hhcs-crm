@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo } from '../lib/api.js';
+import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { inr, dateTime, ago, ROLE_LABEL } from '../lib/fmt.js';
@@ -907,6 +907,55 @@ function MoUsers({ agents, disabled }) {
   );
 }
 
+/** AI call summaries: the Gemini key, model and auto switch (saved in the app, used at once), and how recorded calls stand. */
+function AiSummaries({ onSaved }) {
+  const s = useLoad(() => aiSettings(), [], ['calls']);
+  const [key, setKey] = useState('');
+  const [model, setModel] = useState(null);
+  const [test, setTest] = useState(null);
+  const [run, busy] = useAction();
+  const d = s.data;
+  const save = (body, msg) => run(async () => { await saveAiSettings(body); setKey(''); setModel(null); setTest(null); s.reload(); onSaved?.(); }, msg);
+  const runTest = () => run(async () => setTest(await testAi()));
+  const st = d?.stats || {};
+  return (
+    <Panel title="AI call summaries" sub="After each answered, recorded call, Gemini listens to the recording and writes a summary, intent, sentiment, red flags and a QA score onto the call and the patient's AI note."
+      actions={<Button size="sm" kind="ghost" icon="refresh" onClick={runTest} disabled={busy || !d?.key?.set}>Test key</Button>}>
+      <ErrorNote error={s.error} />
+      {s.loading ? <Skeleton lines={4} /> : d && (
+        <div className="col gap-12">
+          {d.demo && <div className="small muted">Demo mode: summaries are simulated in the browser. The key is entered on the live site.</div>}
+          <div className="row wrap gap-8">
+            {d.key.set ? <Badge kind="ok" dot>Key set ({d.key.value}, {d.key.source === 'app' ? 'saved here' : 'Worker secret'})</Badge> : <Badge kind="warn" dot>No Gemini key: summaries are off</Badge>}
+            {d.key.set && (d.auto ? <Badge kind="ok" dot>Automatic after each call</Badge> : <Badge kind="info" dot>On request only</Badge>)}
+            <Badge kind="outline">Model {d.model}</Badge>
+          </div>
+          {test && <div className="row gap-8">{okBadge(test)}<span className="small">{test.message}</span></div>}
+          <div className="grid g2" style={{ gap: 12 }}>
+            <Field label={d.key.set ? 'Replace the Gemini API key' : 'Gemini API key'} hint="Google AI Studio > Get API key, in a Google Cloud project with billing on">
+              <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="AIza…" disabled={d.demo} />
+            </Field>
+            <Field label="Model" hint="leave empty for the default">
+              <Input value={model ?? (d.model_source === 'app' ? d.model : '')} onChange={(e) => setModel(e.target.value)} placeholder="gemini-2.5-flash" disabled={d.demo} />
+            </Field>
+          </div>
+          <div className="row wrap gap-8">
+            <Button kind="primary" disabled={busy || d.demo || (!key.trim() && model == null)} onClick={() => save({ ...(key.trim() ? { api_key: key.trim() } : {}), ...(model != null ? { model: model.trim() } : {}) }, 'AI settings saved')}>Save</Button>
+            {d.key.set && <Check label="Summarise every recorded call automatically" checked={d.auto} disabled={busy || d.demo} onChange={(e) => save({ auto: e.target.checked }, e.target.checked ? 'Automatic summaries on' : 'Summaries only on request')} />}
+            {d.key.source === 'app' && <Button kind="ghost" disabled={busy} onClick={() => save({ api_key: '' }, 'Key removed')}>Remove saved key</Button>}
+          </div>
+          <div className="small">
+            Last 14 days of recorded calls: <strong>{st.done ?? 0}</strong> summarised · <strong>{st.waiting ?? 0}</strong> waiting · <strong className={st.failed ? 'danger-text' : ''}>{st.failed ?? 0}</strong> failed · {st.skipped ?? 0} too short.
+            {' '}Waiting calls are done one a minute, newest first; a failed call is retried up to 3 times.
+          </div>
+          {d.last_error && <div className="small danger-text">Last failure ({ago(d.last_error.ai_started_at)}): {d.last_error.ai_error}</div>}
+          <div className="tiny muted">Patient data: the recording is sent to Google for the summary and deleted from Google as soon as the summary is back. Use a key from a paid (billing-enabled) Google Cloud project: Google does not use paid-tier API data to improve its models, while free-tier keys allow that and must not be used for patient calls.</div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function TelephonyTab() {
   const { profile } = useAuth();
   const isAdmin = ['admin', 'supervisor'].includes(profile?.role);   // supervisors run the call centre: they connect MyOperator too
@@ -935,6 +984,7 @@ function TelephonyTab() {
       {isAdmin ? <MyOperatorConnection /> : (
         <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}
+      {isAdmin && <AiSummaries onSaved={h.reload} />}
       <Panel title="Mailbox">
         <div className="small">In Cloudflare <strong>Email Routing</strong>, route the HHCS support address to the CareDesk Worker (action: Send to a Worker). Each e-mail becomes a ticket on the patient timeline, matched by the case number in the subject or the sender address, and starts the 5-minute acknowledgement SLA.</div>
       </Panel>

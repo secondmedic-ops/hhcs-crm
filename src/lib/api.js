@@ -16,6 +16,11 @@ export const aiBrief = (caseId) => (isDemo ? demo(`/ai/cases/${caseId}/brief`, {
 export const aiCall = (callId) => (isDemo ? demo(`/ai/calls/${callId}`, {}) : server.aiCall(callId));
 export const aiCommand = (q) => (isDemo ? demo('/ai/command', { q }) : server.aiCommand(q));
 export const aiExtract = (text) => (isDemo ? demo('/ai/extract-enquiry', { text }) : server.aiExtract(text));
+// AI call summaries: on / off for the screens; key, model and the auto switch for admins and supervisors (Settings)
+export const aiStatus = () => (isDemo ? Promise.resolve({ enabled: true, auto: true, demo: true }) : server.aiStatus());
+export const aiSettings = () => (isDemo ? Promise.resolve({ demo: true, key: { set: false, source: null, value: null }, model: 'gemini-2.5-flash', model_source: 'default', auto: true, stats: { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: null }) : server.aiSettings());
+export const saveAiSettings = (body) => (isDemo ? Promise.reject(new Error('Demo mode: AI is simulated in the browser')) : server.saveAiSettings(body));
+export const testAi = () => (isDemo ? Promise.resolve({ ok: true, message: 'Demo mode: AI is simulated in the browser' }) : server.testAi());
 export const createUser = (u) => (isDemo ? demo('/admin/users', u) : server.createUser(u));
 export const webhookEvents = () => (isDemo ? demo('/admin/webhooks', {}) : server.webhookEvents());
 export const integrations = () => (isDemo ? demo('/health', {}) : server.integrations());

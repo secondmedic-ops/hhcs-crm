@@ -158,9 +158,10 @@ export async function processEvents(sql: Sql, env: Env, env0: Env, exec: Executi
       ch.forEach((x) => changed.add(x));
       await sql`update webhook_events set processed = true where event_id = ${eventId}`;
       applied++;
-      if (after?.aiCallId && env.GEMINI_API_KEY && env.AI_AUTO_PROCESS_CALLS !== 'false') {
-        const { processCall } = await import('./ai');
-        exec.waitUntil(processCall(env0, after.aiCallId, exec).catch((e) => console.log('ai call', (e as Error).message)));
+      // AI summary of the recording; it checks the key and the auto-summary switch itself (Settings or Worker secret)
+      if (after?.aiCallId) {
+        const { summariseIfEnabled } = await import('./ai');
+        exec.waitUntil(summariseIfEnabled(env0, after.aiCallId, exec));
       }
     } catch (e) {
       failed++;

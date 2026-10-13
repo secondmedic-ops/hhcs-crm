@@ -121,6 +121,10 @@
 | raw | jsonb | YES |
 | created_at | timestamp with time zone | NO |
 | callback_id | uuid | YES |
+| ai_status | text | YES |
+| ai_error | text | YES |
+| ai_attempts | integer | NO |
+| ai_started_at | timestamp with time zone | YES |
 
 ## case_counters
 | column | type | nullable |
@@ -808,6 +812,10 @@
 | case_no | text | YES |
 | qa_pct | numeric | YES |
 | line_label | text | YES |
+| ai_status | text | YES |
+| ai_error | text | YES |
+| ai_attempts | integer | YES |
+| ai_started_at | timestamp with time zone | YES |
 
 ## v_cases
 | column | type | nullable |

@@ -280,12 +280,31 @@
     },
     "/api/v1/ai/calls/{id}": {
       "post": {
-        "summary": "AI: transcript, summary, QA of a recorded call",
+        "summary": "AI: transcript, summary, QA of a recorded call (a call the user can see)",
         "x-access": [
           "supervisor",
           "coordinator",
           "agent",
-          "client_manager"
+          "client_manager",
+          "medical_desk"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/status": {
+      "get": {
+        "summary": "Whether AI call summaries are on",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk",
+          "client_manager",
+          "client_clinical"
         ],
         "security": [
           {
@@ -422,6 +441,46 @@
     "/api/v1/admin/myoperator/sync": {
       "post": {
         "summary": "Read new calls from the MyOperator call log now",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/ai": {
+      "get": {
+        "summary": "AI call summaries: key set, model, auto switch, last 14 days",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Save the Gemini key, model and auto-summary switch",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/ai/test": {
+      "post": {
+        "summary": "Test the Gemini key",
         "x-access": [
           "admin",
           "supervisor"

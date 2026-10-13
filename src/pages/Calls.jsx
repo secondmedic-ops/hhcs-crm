@@ -10,6 +10,7 @@ import {
   PageHead, Panel, Kpi, Segmented, Button, Badge, TableSkeleton, Skeleton, Empty, ErrorNote, AiTag, Drawer, Field, Input, Select, Textarea, Check, useAction,
 } from '../components/ui.jsx';
 import Icon from '../components/icons.jsx';
+import { SUMMARY_ROLES } from '../components/AiCallState.jsx';
 
 const RANGES = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', '7 days']];
 const rangeOf = (r) => ({ today: istDayRange(0), yesterday: istDayRange(-1), '7d': istDayRange(-6, 7) }[r]);
@@ -145,7 +146,7 @@ function CallDrawer({ id, onClose }) {
   };
   const analyse = async () => {
     setAnalysing(true);
-    await run(() => aiCall(id), 'AI analysis complete');
+    await run(() => aiCall(id), 'AI summary ready');
     setAnalysing(false);
     call.reload(); qa.reload();
   };
@@ -187,8 +188,11 @@ function CallDrawer({ id, onClose }) {
             </div>
             {analysing ? <Skeleton lines={4} /> : !c.ai_processed_at ? (
               <div className="ai-box">
-                <div className="small">This call has not been analysed yet.</div>
-                {c.status === 'completed' && can('agent', 'coordinator', 'supervisor') && <Button className="mt-8" size="sm" icon="ai" disabled={busy} onClick={analyse}>Run AI analysis</Button>}
+                <div className={`small${c.ai_status === 'failed' ? ' danger-text' : ''}`}>{!c.has_recording ? 'No recording, so there is nothing to summarise.'
+                  : c.ai_status === 'processing' ? 'Summarising now: Gemini is listening to the recording.'
+                    : c.ai_status === 'failed' ? `Summary failed: ${c.ai_error || 'unknown error'}`
+                      : c.ai_status === 'skipped' ? `Not summarised: ${c.ai_error || 'too short'}.` : 'Not summarised yet. It runs by itself within a few minutes of the call.'}</div>
+                {c.has_recording && c.ai_status !== 'processing' && can(...SUMMARY_ROLES) && <Button className="mt-8" size="sm" icon="ai" disabled={busy} onClick={analyse}>{c.ai_status === 'failed' ? 'Retry AI summary' : 'Run AI summary'}</Button>}
               </div>
             ) : (
               <div className="ai-box col gap-12">
