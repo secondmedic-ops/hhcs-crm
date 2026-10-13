@@ -7,7 +7,7 @@ import type { Ctx } from '../api/context';
 import { ApiError } from '../domain/errors';
 import { recordingUrl } from './myoperator';
 import { moEnv } from './myoperator-config';
-import { aiEnv, autoSummaries, AI_DEFAULT_MODEL } from './ai-config';
+import { aiEnv, aiPause, autoSummaries, setAiPause, AI_DEFAULT_MODEL } from './ai-config';
 import { notifyLive } from './live';
 
 type J = Record<string, any>;
@@ -16,10 +16,37 @@ const BASE = (env: Env) => (env.GEMINI_API_URL || 'https://generativelanguage.go
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const NOT_CONFIGURED = 'AI is not configured: add the Gemini API key in Settings > Telephony & integrations';
 
-/** Error text from a Gemini answer, without echoing request data. */
-async function why(res: Response) {
+/** Gemini refused for a reason about the key or the Google account, not about the call: quota, billing, invalid key,
+ *  overload. Automatic summaries pause for `retryAfterS` and the call keeps its attempts. */
+export class GeminiLimitError extends Error {
+  constructor(message: string, public retryAfterS: number) { super(message); }
+}
+
+/** A short, readable error from a Gemini answer (Google's quota text is long and its key detail sits at the end). */
+async function geminiError(res: Response, what: string): Promise<Error> {
   const t = await res.text().catch(() => '');
-  try { return JSON.parse(t).error?.message || `HTTP ${res.status}`; } catch { return `HTTP ${res.status} ${t.slice(0, 120)}`; }
+  let e: J = {};
+  try { e = JSON.parse(t).error || {}; } catch { e = {}; }
+  const msg = String(e.message || `HTTP ${res.status} ${t.slice(0, 120)}`);
+  const details: J[] = Array.isArray(e.details) ? e.details : [];
+  const delay = details.find((d) => /RetryInfo/.test(d['@type'] || ''))?.retryDelay;
+  const retryS = delay ? Math.ceil(parseFloat(String(delay))) || null : null;
+  if (res.status === 429 || e.status === 'RESOURCE_EXHAUSTED') {
+    const v = details.find((d) => /QuotaFailure/.test(d['@type'] || ''))?.violations?.[0] || {};
+    const metric = String(v.quotaId || v.quotaMetric || msg.match(/Quota exceeded for metric: ([^\s,]+)/)?.[1] || '');
+    const limit = v.quotaValue ?? msg.match(/limit: (\d+)/)?.[1];
+    const free = /free.?tier/i.test(metric + ' ' + msg);
+    const perMinute = /PerMinute|per_minute/i.test(metric);
+    const text = `Gemini quota exceeded${metric ? ` (${metric.replace(/^generativelanguage\.googleapis\.com\//, '')}${limit != null ? `, limit ${limit}` : ''})` : ''}. `
+      + (free ? 'The key is on Google\'s free tier: turn on billing for its Google Cloud project in Google AI Studio, or use a key from a billed project.'
+        : 'Wait for the quota to reset, or raise it in Google AI Studio.');
+    return new GeminiLimitError(text, retryS ?? (perMinute ? 60 : 30 * 60));
+  }
+  if (res.status === 401 || res.status === 403 || /API_KEY_INVALID|API key not valid|PERMISSION_DENIED/.test(t)) {
+    return new GeminiLimitError(`Gemini refused the key: ${msg.slice(0, 160)}`, 30 * 60);
+  }
+  if (res.status === 500 || res.status === 503) return new GeminiLimitError(`Gemini is unavailable right now (${msg.slice(0, 120)})`, retryS ?? 5 * 60);
+  return new Error(`${what}: ${msg.slice(0, 240)}`);
 }
 
 /** One Gemini call. The key goes in a header, never in the URL (URLs end up in logs). */
@@ -35,7 +62,7 @@ export async function gemini(env: Env, parts: J[], o: { json?: boolean; temperat
       generationConfig: { temperature: o.temperature ?? 0.2, ...(json ? { responseMimeType: 'application/json' } : {}) },
     }),
   });
-  if (!res.ok) throw new Error('Gemini: ' + (await why(res)));
+  if (!res.ok) throw await geminiError(res, 'Gemini');
   const j = (await res.json()) as J;
   const text = j.candidates?.[0]?.content?.parts?.map((p: J) => p.text).join('') || '';
   if (!text) throw new Error('Gemini returned no text' + (j.candidates?.[0]?.finishReason ? ` (${j.candidates[0].finishReason})` : ''));
@@ -53,9 +80,10 @@ async function uploadAudio(env: Env, buf: ArrayBuffer, mime: string, name: strin
     body: JSON.stringify({ file: { display_name: name } }),
   });
   const url = start.headers.get('x-goog-upload-url');
-  if (!start.ok || !url) throw new Error('Gemini upload: ' + (start.ok ? 'no upload address' : await why(start)));
+  if (!start.ok) throw await geminiError(start, 'Gemini upload');
+  if (!url) throw new Error('Gemini upload: no upload address');
   const up = await fetch(url, { method: 'POST', headers: { 'X-Goog-Upload-Offset': '0', 'X-Goog-Upload-Command': 'upload, finalize' }, body: buf });
-  if (!up.ok) throw new Error('Gemini upload: ' + (await why(up)));
+  if (!up.ok) throw await geminiError(up, 'Gemini upload');
   let f = ((await up.json()) as J).file as J;
   // audio is usually ACTIVE at once; wait up to ~20 s while Gemini still processes it
   for (let i = 0; f?.state === 'PROCESSING' && i < 10; i++) {
@@ -79,6 +107,9 @@ Services: home sample collection, portable X-ray, 12-lead ECG at home, and post-
 Never give clinical advice. Never invent prices; prices come only from the rate card. Be concise and factual.`;
 
 const SHORT_CALL_S = 10;     // shorter answered calls are not worth a summary
+// longer ones are left to a person: 32 audio tokens a second, so 2 hours is ~230,000 tokens (Google's free-tier limit is
+// 250,000 a minute; no request may carry more than 9.5 hours of audio). A very long call is usually a wrong duration.
+const LONG_CALL_S = 2 * 3600;
 const MAX_AUDIO = 60 * 1024 * 1024;
 
 // ---- 1. Call intelligence: transcript, summary, sentiment, enquiry extraction, QA score, red flags
@@ -160,8 +191,12 @@ qa_notes (one sentence of coaching for the agent).` },
       return out;
     } catch (e) {
       const msg = String((e as Error).message || e).slice(0, 300);
-      const failed = await asSystem(sql, (tx) => tx`update calls set ai_status = 'failed', ai_error = ${msg} where id = ${callId}`).catch(() => null);
+      // a quota / billing / key problem is not the call's fault: it keeps its attempt, and automatic summaries pause
+      const limit = e instanceof GeminiLimitError;
+      const failed = await asSystem(sql, (tx) => tx`update calls set ai_status = 'failed', ai_error = ${msg},
+        ai_attempts = case when ${limit} then greatest(ai_attempts - 1, 0) else ai_attempts end where id = ${callId}`).catch(() => null);
       failed?.changed.forEach((t) => changed.add(t));
+      if (limit) await setAiPause(sql, (e as GeminiLimitError).retryAfterS, msg).catch(() => {});
       throw e;
     }
   } finally {
@@ -206,9 +241,13 @@ export async function summariseIfEnabled(env0: Env, callId: string, exec: Execut
 export async function summariseBacklog(env0: Env, sql: Sql, exec: ExecutionContext): Promise<J> {
   const env = await aiEnv(env0, sql);
   if (!autoSummaries(env)) return { skipped: env.GEMINI_API_KEY ? 'Auto-summaries off' : 'No Gemini key' };
-  const short = await asSystem(sql, (tx) => tx`update calls set ai_status = 'skipped', ai_error = ${`Under ${SHORT_CALL_S} seconds of talk time`}
+  const pause = await aiPause(sql);
+  if (pause) return { skipped: 'Paused until ' + pause.paused_until };
+  const short = await asSystem(sql, (tx) => tx`update calls set ai_status = 'skipped',
+        ai_error = case when talk_seconds < ${SHORT_CALL_S} then ${`Under ${SHORT_CALL_S} seconds of talk time`}
+          else ${`Over ${LONG_CALL_S / 3600} hours of talk time: check the call length, then use Summarise now if it is right`} end
     where recording_filename is not null and ai_processed_at is null and ai_status is null
-      and talk_seconds is not null and talk_seconds < ${SHORT_CALL_S} and started_at > now() - interval '14 days'`);
+      and talk_seconds is not null and (talk_seconds < ${SHORT_CALL_S} or talk_seconds > ${LONG_CALL_S}) and started_at > now() - interval '14 days'`);
   if (short.changed.length) notifyLive(env0, exec, short.changed);
   const [next] = await sql`select id from calls
     where recording_filename is not null and ai_processed_at is null and started_at > now() - interval '14 days'

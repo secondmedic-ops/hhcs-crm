@@ -465,8 +465,21 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await call('sup', 'POST', '/api/v1/admin/ai', { model: 'bad model!' })).status === 400, 'odd model name refused');
   const badKey = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
   const badRow = await one(`select ai_status, ai_error, ai_attempts from calls where id = $1`, recCall);
-  check(badKey.status === 502 && badRow?.ai_status === 'failed' && /API key not valid/.test(badRow.ai_error || '') && badRow.ai_attempts === 1,
-    'wrong key: the call shows failed with the reason (kept for retry)', JSON.stringify({ body: badKey.body, badRow }));
+  check(badKey.status === 502 && badRow?.ai_status === 'failed' && /API key not valid/.test(badRow.ai_error || '') && badRow.ai_attempts === 0,
+    'wrong key: the call shows failed with the reason; the attempt is not counted against the call', JSON.stringify({ body: badKey.body, badRow }));
+  const pausedBad = (await call('sup', 'GET', '/api/v1/admin/ai')).body?.paused;
+  check(pausedBad && new Date(pausedBad.paused_until) > new Date(Date.now() + 20 * 60e3), 'wrong key: automatic summaries pause (30 minutes)', JSON.stringify(pausedBad));
+  // free-tier quota: a short message that says what to do, instead of Google's long text cut off before the metric
+  aiSet = await call('sup', 'POST', '/api/v1/admin/ai', { api_key: 'gm-quota' });
+  check(!aiSet.body?.paused, 'saving the AI settings lifts the pause', JSON.stringify(aiSet.body?.paused));
+  const quota = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
+  const quotaRow = await one(`select ai_status, ai_error, ai_attempts from calls where id = $1`, recCall);
+  const pausedQ = (await call('sup', 'GET', '/api/v1/admin/ai')).body?.paused;
+  check(quota.status === 502 && quotaRow?.ai_status === 'failed' && quotaRow.ai_attempts === 0
+    && quotaRow.ai_error.startsWith('Gemini quota exceeded (GenerateContentInputTokensPerModelPerMinute-FreeTier, limit 250000).') && /free tier: turn on billing/.test(quotaRow.ai_error),
+    'quota exceeded: clear reason (free tier, turn on billing) on the call', JSON.stringify({ body: quota.body, quotaRow }));
+  const qs = pausedQ ? (new Date(pausedQ.paused_until) - Date.now()) / 1000 : 0;
+  check(qs > 20 && qs < 40, 'quota exceeded: pause follows the retry delay Google gives (33 s)', JSON.stringify(pausedQ));
   aiSet = await call('sup', 'POST', '/api/v1/admin/ai', { api_key: 'gm-test', model: 'gemini-test' });
   const aiTest = await call('sup', 'POST', '/api/v1/admin/ai/test', {});
   check(aiTest.body?.ok === true, 'Test key: Gemini answers', JSON.stringify(aiTest.body));
@@ -474,7 +487,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const g0 = geminiCalls.length;
   const aiOk = await call('sup', 'POST', `/api/v1/ai/calls/${recCall}`, {});
   const aiRow = await one(`select ai_status, ai_summary, ai_error, ai_attempts, ai_extracted->>'next_action' na from calls where id = $1`, recCall);
-  check(aiOk.status === 200 && aiRow?.ai_status === 'done' && aiRow.ai_summary?.startsWith('Caller asked') && aiRow.na && !aiRow.ai_error && aiRow.ai_attempts === 2,
+  check(aiOk.status === 200 && aiRow?.ai_status === 'done' && aiRow.ai_summary?.startsWith('Caller asked') && aiRow.na && !aiRow.ai_error && aiRow.ai_attempts === 1,
     'recorded call summarised: summary, next action, status done', JSON.stringify({ body: aiOk.body, aiRow }));
   const used = geminiCalls.slice(g0);
   const gen = used.find((x) => x.path.includes(':generateContent'));
@@ -490,6 +503,8 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   // the every-minute sweep: a recorded call the webhook never summarised (e.g. brought in by the call-log sync), and a short one
   const [{ id: lateCall }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, status, started_at, ended_at, talk_seconds, recording_filename)
     values (${ws}, 'myoperator', 'inbound', '+919820012012', 'completed', now() - interval '3 minutes', now() - interval '2 minutes', 95, 'rec-late.mp3') returning id::text`;
+  const [{ id: longCall }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, status, started_at, ended_at, talk_seconds, recording_filename)
+    values (${ws}, 'myoperator', 'inbound', '+919820012014', 'completed', now() - interval '6 minutes', now() - interval '5 minutes', 43904, 'rec-long.mp3') returning id::text`;
   const [{ id: shortCall }] = await sql`insert into calls (workspace_id, provider, direction, customer_number, status, started_at, ended_at, talk_seconds, recording_filename)
     values (${ws}, 'myoperator', 'inbound', '+919820012013', 'completed', now() - interval '5 minutes', now() - interval '5 minutes', 4, 'rec-short.mp3') returning id::text`;
   const tick = await fetch(`${base}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent('* * * * *')}`);
@@ -502,6 +517,11 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const short = await one(`select ai_status, ai_error from calls where id = $1`, shortCall);
   check(late?.ai_status === 'done' && !!late.ai_summary, 'cron sweep summarises a recorded call the webhook missed', tickInfo + ' ' + JSON.stringify(late));
   check(short?.ai_status === 'skipped' && /talk time/.test(short.ai_error || ''), 'cron sweep skips calls under 10 seconds', JSON.stringify(short));
+  const long = await one(`select ai_status, ai_error from calls where id = $1`, longCall);
+  check(long?.ai_status === 'skipped' && /Over 2 hours/.test(long.ai_error || ''), 'cron sweep leaves a 12-hour "call" to a person (Gemini limits)', JSON.stringify(long));
+  const again = await call('sup', 'POST', '/api/v1/admin/ai', { retry_failed: true });
+  const reset = await one(`select ai_status, ai_attempts from calls where id = $1`, longCall);
+  check(again.status === 200 && reset?.ai_status === null && reset.ai_attempts === 0, 'Retry failed calls: puts failed / skipped calls back in the queue', JSON.stringify(reset));
   await call('sup', 'POST', '/api/v1/admin/ai', { auto: false });
   aist = await call('agent', 'GET', '/api/v1/ai/status');
   check(aist.body?.enabled === true && aist.body.auto === false, 'auto switch off: summaries on request only', JSON.stringify(aist.body));

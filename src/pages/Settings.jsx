@@ -931,6 +931,7 @@ function AiSummaries({ onSaved }) {
             <Badge kind="outline">Model {d.model}</Badge>
           </div>
           {test && <div className="row gap-8">{okBadge(test)}<span className="small">{test.message}</span></div>}
+          {d.paused && <div className="small danger-text">Automatic summaries paused until {dateTime(d.paused.paused_until)}: {d.paused.reason}</div>}
           <div className="grid g2" style={{ gap: 12 }}>
             <Field label={d.key.set ? 'Replace the Gemini API key' : 'Gemini API key'} hint="Google AI Studio > Get API key, in a Google Cloud project with billing on">
               <Input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="AIza…" disabled={d.demo} />
@@ -949,6 +950,8 @@ function AiSummaries({ onSaved }) {
             {' '}Waiting calls are done one a minute, newest first; a failed call is retried up to 3 times.
           </div>
           {d.last_error && <div className="small danger-text">Last failure ({ago(d.last_error.ai_started_at)}): {d.last_error.ai_error}</div>}
+          {d.key.set && (st.failed > 0 || d.paused) && <div><Button size="sm" icon="refresh" disabled={busy || d.demo} onClick={() => save({ retry_failed: true }, 'Failed calls queued again')}>Retry failed calls</Button>
+            <span className="tiny muted"> after fixing the key or billing: puts the last 14 days' failed calls back in the queue and lifts the pause.</span></div>}
           <div className="tiny muted">Patient data: the recording is sent to Google for the summary and deleted from Google as soon as the summary is back. Use a key from a paid (billing-enabled) Google Cloud project: Google does not use paid-tier API data to improve its models, while free-tier keys allow that and must not be used for patient calls.</div>
         </div>
       )}

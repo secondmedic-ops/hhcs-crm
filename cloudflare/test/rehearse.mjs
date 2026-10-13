@@ -83,6 +83,11 @@ const jwks = http.createServer(async (req, res) => {
     const g = { method: req.method, path, url: req.url, bytes: raw.length };
     geminiCalls.push(g);
     if (path.startsWith('/upload-session/')) return send(200, { file: { name: 'files/rh1', uri: `${SUPABASE}/gemini/v1beta/files/rh1`, mimeType: 'audio/mpeg', state: 'ACTIVE', sizeBytes: String(raw.length) } });
+    // Google's answer for a free-tier key over its quota (shape copied from a real 429)
+    if (key === 'gm-quota') return send(429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED',
+      message: 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 250000, model: gemini-2.5-flash',
+      details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count',
+        quotaId: 'GenerateContentInputTokensPerModelPerMinute-FreeTier', quotaValue: '250000' }] }, { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '33s' }] } });
     if (key !== 'gm-test') return send(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.' } });
     if (path.startsWith('/upload/v1beta/files')) { res.writeHead(200, { 'Content-Type': 'application/json', 'x-goog-upload-url': `${SUPABASE}/gemini/upload-session/1` }); return res.end('{}'); }
     if (req.method === 'DELETE') return send(200, {});

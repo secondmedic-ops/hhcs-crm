@@ -38,6 +38,26 @@ export async function aiEnv(env: Env, sql: Sql): Promise<Env> {
   return out as Env;
 }
 
+/** When Gemini refuses for a reason about the key or the Google account (quota, billing, invalid key, overload), automatic
+ *  summaries pause instead of failing call after call: { paused_until (ISO), reason }. Row 'ai_state'. */
+export async function aiPause(sql: Sql): Promise<{ paused_until: string; reason: string } | null> {
+  try {
+    const [row] = await sql`select settings from integration_settings where provider = 'ai_state'`;
+    const s = (row?.settings as J) || {};
+    return s.paused_until && new Date(s.paused_until).getTime() > Date.now() ? { paused_until: s.paused_until, reason: s.reason || '' } : null;
+  } catch { return null; }
+}
+
+export async function setAiPause(sql: Sql, seconds: number, reason: string) {
+  const until = new Date(Date.now() + Math.max(30, Math.min(seconds, 24 * 3600)) * 1000).toISOString();
+  await sql`insert into integration_settings (provider, settings, updated_at) values ('ai_state', ${sql.json({ paused_until: until, reason })}, now())
+    on conflict (provider) do update set settings = excluded.settings, updated_at = now()`;
+}
+
+export async function clearAiPause(sql: Sql) {
+  await sql`delete from integration_settings where provider = 'ai_state'`;
+}
+
 /** Summaries run by themselves after each recorded call (webhook + cron sweep). */
 export const autoSummaries = (env: Env) => !!env.GEMINI_API_KEY && env.AI_AUTO_PROCESS_CALLS !== 'false';
 

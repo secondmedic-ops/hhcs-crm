@@ -7,7 +7,7 @@ import type { Env } from '../env';
 import { MO_FIELDS, clearMoCache, describeMo, missingCallingSettings, moEnv, randomKey } from './myoperator-config';
 import { loadWhatsAppQr } from './myoperator';
 import { syncCallLogs, syncState } from './mo-sync';
-import { aiEnv, clearAiCache, describeAi } from './ai-config';
+import { aiEnv, aiPause, clearAiCache, clearAiPause, describeAi } from './ai-config';
 import { gemini } from './ai';
 
 type J = Record<string, any>;
@@ -240,10 +240,12 @@ export async function aiSettings(c: Ctx) {
     from calls where workspace_id = ${c.user.workspaceId}::uuid and recording_filename is not null and started_at > now() - interval '14 days'`;
   const [last] = await c.sql`select ai_error, ai_started_at from calls
     where workspace_id = ${c.user.workspaceId}::uuid and ai_status = 'failed' order by ai_started_at desc nulls last limit 1`;
-  return { ...(await describeAi(c.env, c.sql)), stats: stats ?? { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: last ?? null };
+  return { ...(await describeAi(c.env, c.sql)), stats: stats ?? { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: last ?? null, paused: await aiPause(c.sql) };
 }
 
-/** Save what was typed: api_key ('' removes the app key, the Worker secret applies again), model ('' = default), auto. */
+/** Save what was typed: api_key ('' removes the app key, the Worker secret applies again), model ('' = default), auto.
+ *  Any save lifts a pause. retry_failed: true also puts the last 14 days' failed calls back in the queue with fresh attempts
+ *  (after billing was turned on, for example). */
 export async function saveAiSettings(c: Ctx, b: J) {
   const input: J = {};
   for (const k of ['api_key', 'model'] as const) {
@@ -258,7 +260,11 @@ export async function saveAiSettings(c: Ctx, b: J) {
     if (typeof b.auto !== 'boolean') throw new ApiError(400, 'auto must be true or false');
     input.auto = b.auto ? 'on' : 'off';
   }
+  const retry = b?.retry_failed === true;
   const { changed } = await asSystem(c.sql, async (tx) => {
+    if (retry) await tx`update calls set ai_status = null, ai_attempts = 0, ai_error = null
+      where workspace_id = ${c.user.workspaceId}::uuid and recording_filename is not null and ai_processed_at is null
+        and ai_status in ('failed', 'skipped') and started_at > now() - interval '14 days'`;
     const [row] = await tx`select settings from integration_settings where provider = 'ai' for update`;
     const next: J = { ...((row?.settings as J) || {}) };
     for (const [k, v] of Object.entries(input)) { if (v) next[k] = v; else delete next[k]; }
@@ -266,11 +272,12 @@ export async function saveAiSettings(c: Ctx, b: J) {
       values ('ai', ${tx.json(next)}, now(), ${c.user.id}::uuid)
       on conflict (provider) do update set settings = excluded.settings, updated_at = now(), updated_by = excluded.updated_by`;
     await tx`insert into access_log (workspace_id, user_id, action, entity, meta)
-      values (${c.user.workspaceId}::uuid, ${c.user.id}::uuid, 'settings_changed', 'ai', ${tx.json({ fields: Object.keys(input) })})`;
+      values (${c.user.workspaceId}::uuid, ${c.user.id}::uuid, 'settings_changed', 'ai', ${tx.json({ fields: Object.keys(input), retry_failed: retry })})`;
     return null;
   });
   c.changed.push(...changed);
   clearAiCache();
+  await clearAiPause(c.sql);
   return aiSettings(c);
 }
 
