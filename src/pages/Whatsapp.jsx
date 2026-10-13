@@ -222,37 +222,36 @@ export default function Whatsapp() {
       <PageHead
         title="WhatsApp chats"
         sub={`Two-way WhatsApp inbox · ${isConnected ? connLabel : 'Not linked yet'} · ${waitingCount} awaiting reply · 5-minute SLA acknowledgement`}
-        right={
-          <div className="row gap-8 wrap">
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search patient, Case ID, locality, message…" aria-label="Search conversations" />
-            <Segmented
-              value={filter}
-              onChange={setFilter}
-              options={[
-                ['all', `All (${chats.length})`],
-                ['needs_reply', `Awaiting reply (${waitingCount})`],
-                ['open', 'Open case'],
-                ['mine', 'My queue'],
-              ]}
-            />
-            {isOps && (
-              <Button onClick={() => setNewChatModal(true)}>
-                <Icon name="plus" /> New chat
-              </Button>
-            )}
-            {isOps && (
-              <Button kind={isConnected ? undefined : 'primary'} onClick={() => setQrModal(true)}>
-                <span className="dot" style={{ color: isConnected ? 'var(--ok)' : 'var(--warn)' }} /> {connLabel}
-              </Button>
-            )}
-            {isOps && isConnected && (
-              <Button kind="danger" onClick={() => setConfirmLogout(true)} disabled={logoutBusy}>
-                <Icon name="x" /> Disconnect WhatsApp
-              </Button>
-            )}
-          </div>
-        }
-      />
+      >
+        <div className="row gap-8 wrap">
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search patient, Case ID, locality, message…" aria-label="Search conversations" />
+          <Segmented
+            value={filter}
+            onChange={setFilter}
+            options={[
+              ['all', `All (${chats.length})`],
+              ['needs_reply', `Awaiting reply (${waitingCount})`],
+              ['open', 'Open case'],
+              ['mine', 'My queue'],
+            ]}
+          />
+          {isOps && (
+            <Button onClick={() => setNewChatModal(true)}>
+              <Icon name="plus" /> New chat
+            </Button>
+          )}
+          {isOps && (
+            <Button kind={isConnected ? undefined : 'primary'} onClick={() => setQrModal(true)}>
+              <span className="dot" style={{ color: isConnected ? 'var(--ok)' : 'var(--warn)' }} /> {connLabel}
+            </Button>
+          )}
+          {isOps && isConnected && (
+            <Button kind="danger" onClick={() => setConfirmLogout(true)} disabled={logoutBusy}>
+              <Icon name="x" /> Disconnect WhatsApp
+            </Button>
+          )}
+        </div>
+      </PageHead>
 
       {confirmLogout && (
         <Modal
