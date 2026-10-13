@@ -57,8 +57,8 @@ export async function dial(c: Ctx, body: J) {
     } else if (body.callback_id) {
       const [cb] = await tx`update callbacks set status = 'in_progress', assigned_to = ${c.user.id}, last_attempt_at = now(),
           attempts = attempts + 1, next_attempt_at = null, auto_dialled = false
-        where id = ${body.callback_id} and workspace_id = ${ws} and status in ('pending','in_progress') returning number, patient_id`;
-      if (!cb) return null;
+        where id = ${body.callback_id} and workspace_id = ${ws} and status = 'pending' returning number, patient_id`;
+      if (!cb) throw new ApiError(409, 'Callback is already being dialled or is no longer pending');
       number = cb.number; patientId = cb.patient_id;
     } else if (patientId) {
       const [p] = await tx`select mobile from patients where id = ${patientId} and workspace_id = ${ws}`;
@@ -87,8 +87,7 @@ export async function dial(c: Ctx, body: J) {
         raw = coalesce(raw, '{}'::jsonb) || ${tx.json({ dial_outcome: unconfirmed ? 'unconfirmed' : 'rejected' })}
         where id = ${result.callId} and status = 'ringing' and session_id = ${ref} returning id`;
       if (!unconfirmed && updated.length && body.callback_id) {
-        await tx`update callbacks set status = 'pending' where id = ${body.callback_id} and workspace_id = ${ws}
-          and status = 'in_progress' and assigned_to = ${c.user.id}`;
+        await tx`select callback_retry(${body.callback_id}::uuid, 'MyOperator rejected the dial')`;
       }
     });
     c.changed.push(...failure.changed);

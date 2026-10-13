@@ -405,6 +405,9 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   check(cron?.ok && obdCalls.length === before + 1 && autoObd?.body?.user_id === 'mo-77' && autoObd.body.number === '+919930055501'
     && autoRow?.status === 'in_progress' && autoRow.auto_dialled && autoRow.a === U.agent,
     'cron auto-dials the callback through the Available agent (agent-first bridge)', JSON.stringify({ cron: cron?.status, n: obdCalls.length - before, autoRow, body: autoObd?.body }));
+  const duplicateAutoCall = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: queued.id });
+  check(duplicateAutoCall.status === 409 && obdCalls.length === before + 1,
+    'an in-progress auto-dial callback cannot be dialled again', JSON.stringify(duplicateAutoCall.body));
   const pend0 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
   const bA = { session_id: 'sess-auto-out', direction: 'outbound', customer_identifier: '+919930055501' };
   await hook({ ...bA, event_id: 'a2', event_type: 'call.initiated', payload: { client_ref_id: autoObd?.body?.reference_id } }, newKey);
@@ -412,6 +415,14 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, webhoo
   const pend1 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
   check(pend0 === 1 && pend1 === 0 && (await one(`select status from callbacks where id = $1`, queued?.id ?? null))?.status === 'done',
     'patient connects -> Callbacks pending 1 -> 0 on the dashboard', JSON.stringify({ pend0, pend1 }));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'bad' } });
+  const [{ id: retryCb }] = await sql`insert into callbacks (workspace_id, number, reason, due_at)
+    values (${ws}, '+919930055502', 'missed', now() + interval '10 minutes') returning id::text`;
+  const rejectedManualCallback = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: retryCb });
+  const retryState = await one(`select status, attempts, next_attempt_at > now() as scheduled from callbacks where id = $1`, retryCb);
+  check(rejectedManualCallback.status === 502 && retryState?.status === 'pending' && retryState.attempts === 1 && retryState.scheduled,
+    'rejected manual dial keeps the auto-retry scheduled', JSON.stringify({ response: rejectedManualCallback.body, retryState }));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
   await rpc('sup', 'set_autodial', { p_enabled: false, p_buffer_minutes: 30, p_max_attempts: 3 });
 
   return { total, failed };

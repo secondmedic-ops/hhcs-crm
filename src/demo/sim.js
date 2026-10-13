@@ -239,7 +239,7 @@ export async function demoApi(path, body = {}, method) {
       const k = await one(`select id from cases where patient_id = $1 and stage not in ('closed','cancelled') order by created_at desc limit 1`, [patientId]);
       caseId = k?.id || null;
     } else if (!caseId && !patientId && body.mobile) {
-      const pid = await rpc('upsert_patient', { p_workspace: a.workspace_id, p_mobile: body.mobile, p_name: body.patient_name || body.mobile });
+      const pid = await rpc('upsert_patient', { p: { workspace_id: a.workspace_id, mobile: body.mobile, full_name: body.patient_name || body.mobile } });
       patientId = pid;
       const k = await one(`select id from cases where patient_id = $1 and stage not in ('closed','cancelled') order by created_at desc limit 1`, [patientId]);
       caseId = k?.id || null;

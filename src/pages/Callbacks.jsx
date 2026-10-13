@@ -118,7 +118,7 @@ export default function Callbacks() {
                   {canAct && tab === 'pending' && (
                     <td className="nowrap right">
                       <div className="row" style={{ justifyContent: 'flex-end' }}>
-                        <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call back</Button>
+                        {cb.status === 'pending' && <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call back</Button>}
                         <Button size="xs" icon="check" disabled={busy} onClick={() => markDone(cb)}>Mark done</Button>
                         <Button size="xs" disabled={busy} onClick={() => setUnreach(cb)}>Unreachable</Button>
                       </div>
