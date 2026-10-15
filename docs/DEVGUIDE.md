@@ -48,7 +48,7 @@ await rpc('advance_case', { p_case: id, p_note: null });   // throws Error(messa
 | set_report_status | p_case, p_status (pending/released/delivered/na) | |
 | capture_feedback | p_case, p_rating, p_text | |
 | record_consent | p_patient, p_kind ('verbal'/'digital'), p_call | |
-| callback_update | p_id, p_status (in_progress/done/unreachable), p_note | |
+| callback_update | p_id, p_status (pending/in_progress/unreachable); Done requires callback_close(p_id,p_outcome,p_note), p_note | |
 | request_rate_change | p_service, p_new_price, p_reason | → approval |
 | submit_template | p_template | → approval |
 | log_access | p_action ('view_case','view_patient','export','play_recording'), p_entity, p_entity_id, p_meta | call on case/patient open and every export |

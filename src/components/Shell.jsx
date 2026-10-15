@@ -111,10 +111,10 @@ function StaffSessionBanner() {
 // Available / Away for auto-dialled callbacks: the dialer rings only agents who are Available, linked to MyOperator
 // and not on a call. Shown to the roles that take callbacks.
 function Availability() {
-  const { profile, can, reload } = useAuth();
+  const { profile, reload } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  if (!can('agent', 'coordinator', 'supervisor')) return null;
+  if (!profile.active || !['agent', 'coordinator', 'supervisor'].includes(profile.role)) return null;
   const on = !!profile.available;
   const toggle = async () => {
     setBusy(true);
@@ -122,12 +122,12 @@ function Availability() {
       const r = await rpc('set_my_availability', { p_available: !on });
       await reload();
       if (r?.available && !r.linked) toast.error('You are Available, but your login is not linked to MyOperator yet, so no calls can be routed to you.');
-      else toast(r?.available ? 'Available: auto-dialled callbacks will ring your phone' : 'Away: no auto-dialled callbacks');
+      else toast(r?.available ? 'Available in CRM: eligible for automatic callbacks when linked, free and auto-dial is on' : 'Away: no auto-dialled callbacks');
     } catch (e) { toast.error(e.message); } finally { setBusy(false); }
   };
   return (
     <Button size="sm" kind={on ? 'primary' : undefined} disabled={busy} onClick={toggle} aria-pressed={on}
-      title={on ? 'You receive auto-dialled callbacks. Click to go Away.' : 'Click to receive auto-dialled callbacks'}>
+      title={on ? 'Available in CRM. Automatic callbacks require an active eligible role, MyOperator link, no active call and auto-dial on. Vendor availability is separate. Click to go Away.' : 'Click to receive auto-dialled callbacks'}>
       <span className="dot" style={{ color: on ? 'var(--ok)' : 'var(--faint)' }} />{on ? 'Available' : 'Away'}
     </Button>
   );

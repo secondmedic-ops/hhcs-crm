@@ -777,16 +777,17 @@ function AutodialPanel() {
         <div className="col gap-12">
           <Check label="Auto-dial callbacks" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
           <div className="form-grid">
-            <Field label="Call back within" hint="the buffer: the callback is due at the end of it">
+            <Field label="Callback/retry window" hint="30, 45 or 60 minutes from callback creation, including late-arriving call logs">
               <Segmented options={[[30, '30 min'], [45, '45 min'], [60, '60 min']]} value={Number(f.buffer)} onChange={(v) => setF({ ...f, buffer: v })} />
             </Field>
-            <Field label="Attempts" hint={`spread across the buffer, about ${gap} min apart`}>
+            <Field label="Maximum attempts" hint={`retry eligibility is spaced about ${gap} min apart, within the deadline`}>
               <Select value={f.attempts} onChange={(e) => setF({ ...f, attempts: e.target.value })} options={[1, 2, 3, 4, 5].map((n) => [n, String(n)])} />
             </Field>
           </div>
           <div className="small muted">
-            {d.agents_available} of {d.agents_linked} linked agents Available now · {d.queue_waiting} waiting · {d.queue_dialling} dialling.
-            {' '}A callback is closed as done the moment the patient connects. If the patient is not reached by the end of the buffer, it is marked Unreachable and the supervisor is alerted. Call back, Mark done and Unreachable stay available as manual overrides.
+            {d.calling_configured === false && <div className="warn-text">Calling configuration is incomplete. The auto-dialer leaves callbacks pending without creating calls.</div>}
+            {d.agents_available} of {d.agents_linked} linked agents marked Available in CRM · {d.queue_waiting} waiting · {d.queue_dialling} dialling · {d.queue_awaiting_outcome} need an outcome.
+            {' '}The first attempt is eligible immediately and starts on a scheduler run when an eligible agent is free. The scheduler checks once per minute; connection within the window is not guaranteed. The linked agent phone rings first, then MyOperator connects the customer (the MyOperator campaign must use Agent first). Customer connection marks Reached and moves the callback to Needs outcome. Record a closing outcome to mark Done. Expired items retain the existing Unreachable status with the actual reason, including no eligible agent. CRM Available does not verify MyOperator live availability; a busy or rejected dial is handled as a failed attempt.
           </div>
           <div><Button size="sm" kind="primary" disabled={busy} onClick={save}>Save</Button></div>
         </div>

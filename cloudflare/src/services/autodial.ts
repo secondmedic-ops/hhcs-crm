@@ -3,8 +3,8 @@
 //      available, MyOperator-linked agent who has waited longest, and writes the outbound call row.
 //   2. For each pair, MyOperator agent-first click-to-call: the agent's phone rings, then the patient is bridged in.
 //   3. A rejected dial goes straight back to the queue (callback_retry); an unconfirmed one waits for its webhook
-//      or the 5-minute recovery, and is never dialled twice by us.
-// Settings (Settings > Telephony > Auto-dialer): on/off, buffer 30 / 45 / 60 min, attempts.
+//      or call-log recovery, and is never dialled twice by us.
+// Settings (Settings > Telephony > Auto-dialer): on/off, retry window 30 / 45 / 60 min, attempts.
 import { asSystem, type Sql } from '../db';
 import type { Env } from '../env';
 import { ApiError } from '../domain/errors';
@@ -32,14 +32,19 @@ export async function runAutodial(env: Env, sql: Sql): Promise<{ dialled: number
       dialled++;
     } catch (e) {
       const unconfirmed = e instanceof ApiError && e.status === 504;
-      if (unconfirmed) { dialled++; continue; }  // the phone may be ringing: the webhook or the 5-minute recovery settles it
+      if (unconfirmed) {
+        const r = await asSystem(sql, (tx) => tx`update calls set raw = coalesce(raw, '{}'::jsonb) || '{"dial_outcome":"unconfirmed"}'::jsonb
+          where id = ${k.call_id} and status = 'ringing'`);
+        r.changed.forEach((t) => changed.add(t));
+        dialled++; continue;
+      }  // the phone may be ringing: the webhook or call-log recovery settles it
       failed++;
       const { changed: c2 } = await asSystem(sql, async (tx) => {
         // a webhook may already have moved this call on; only a call still ringing is marked failed
-        await tx`update calls set status = 'failed', ended_at = now(),
+        const updated = await tx`update calls set status = 'failed', ended_at = now(),
             raw = coalesce(raw, '{}'::jsonb) || ${tx.json({ dial_outcome: 'rejected', auto: true })}
-          where id = ${k.call_id} and status = 'ringing'`;
-        await tx`select callback_retry(${k.callback_id}::uuid, 'MyOperator rejected the dial')`;
+          where id = ${k.call_id} and status = 'ringing' returning id`;
+        if (updated.length) await tx`select callback_retry(${k.callback_id}::uuid, 'MyOperator rejected the dial')`;
       });
       c2.forEach((t) => changed.add(t));
       console.log('autodial rejected', k.callback_id, (e as Error).message);

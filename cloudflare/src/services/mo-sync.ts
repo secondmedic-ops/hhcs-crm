@@ -72,7 +72,8 @@ export function normalizeLog(o: J): J | null {
   const hasAgent = agentName || agentId || agentPhone || agentEmail;
   return {
     _ai: id, _cl: customer, _st: st, _et: et ?? (st && talk != null ? st + talk : null),
-    _ev: outbound ? 2 : 1, _su: connected ? 1 : 2, _ss: connected ? talk : 0, _ty: 1,
+    _ev: outbound ? 2 : 1, _su: connected ? 1 : 2, _dr: connected ? talk : 0, _ss: connected ? talk : 0, _ty: 1,
+    _cri: pickStr(o, ['client_ref_id', 'reference_id', 'click_to_call_ref']),
     _did: pickStr(o, ['did', 'did_number', 'virtual_number', 'display_number', 'company_number', 'called_number']),
     _fn: pickStr(o, ['recording', 'recording_url', 'filename', 'file_name', 'recording_file', '_fn']),
     _dn: pickStr(o, ['department', 'department_name', 'dept_name', 'group_name']),
@@ -182,7 +183,7 @@ export async function syncCallLogs(env0: Env, sql: Sql, exec: ExecutionContext, 
     const calls = all.filter((o) => Number(o._ty || 1) !== 2);     // 2 = SMS log
     const r = await processEvents(sql, env, env0, exec, calls.map((o) => afterCallEvent(o, 'myoperator_sync')));
     // calls started from CareDesk that MyOperator never logged (the agent did not place it): close them after 3 hours
-    await sql`update calls set status = 'failed', notes = coalesce(notes, 'No MyOperator call found within 3 hours')
+    await sql`update calls set status = 'failed', ended_at = now(), notes = coalesce(notes, 'Provider outcome unconfirmed after 3-hour call-log recovery; connection not verified')
       where direction = 'outbound' and status = 'ringing' and click_to_call_ref is not null and started_at < now() - interval '3 hours'`;
     if (r.changed.size) notifyLive(env0, exec, [...r.changed]);
     Object.assign(state, { last_to: now, last_ok_at: state.last_run_at, last_error: null, last_seen: calls.length, last_new: r.stored,

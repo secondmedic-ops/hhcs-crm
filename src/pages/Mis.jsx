@@ -133,7 +133,7 @@ export default function Mis() {
                 <Row k="Missed + abandoned" v={pct(c.abandon_pct, 1)} />
                 <Row k="Callbacks raised" v={num(cb.raised)} />
                 <Row k="Patient reached" v={num(cb.reached)} />
-                <Row k="Reached within SLA (10 min)" v={`${num(cb.within_sla)}${cb.raised ? ` · ${pct(ratio(cb.within_sla, cb.raised), 0)}` : ''}`} />
+                <Row k="Reached within callback deadline" v={`${num(cb.within_sla)}${cb.raised ? ` · ${pct(ratio(cb.within_sla, cb.raised), 0)}` : ''}`} />
                 <Row k="Closed with outcome" v={num(cb.done)} />
                 <Row k="Reached, outcome not recorded" v={num(cb.awaiting_outcome)} />
                 <Row k="Unreachable" v={num(cb.unreachable)} />

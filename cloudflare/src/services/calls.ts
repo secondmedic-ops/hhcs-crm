@@ -43,11 +43,15 @@ export async function dial(c: Ctx, body: J) {
   // Read the link fresh: the login cache lives 60 s per Worker instance, so a just-linked agent would be refused
   // and a just-unlinked one could still dial with the old MyOperator id.
   const [link] = await c.sql`select myoperator_user_id from profiles where id = ${c.user.id}::uuid and active`;
-  const myoperatorUserId: string | null = link?.myoperator_user_id ?? null;
+  const myoperatorUserId: string | null = link?.myoperator_user_id?.trim() || null;
   if (!myoperatorUserId) throw new ApiError(409, 'Your CRM login is not linked to a MyOperator agent. Ask your administrator to link it in Settings > Telephony.');
 
   const ref = 'crm-' + crypto.randomUUID();
   const { result, changed } = await asSystem(c.sql, async (tx) => {
+    const [agent] = await tx`select id from profiles where id = ${c.user.id}::uuid and workspace_id = ${ws}::uuid and active for update`;
+    if (!agent) throw new ApiError(409, 'Your agent account is inactive');
+    const [active] = await tx`select id from calls where agent_id = ${c.user.id}::uuid and status in ('ringing','answered') limit 1`;
+    if (active) throw new ApiError(409, 'You already have an active or unconfirmed call. Wait for its outcome before dialling again.');
     let number: string | null = null, patientId: string | null = body.patient_id || null, caseId: string | null = body.case_id || null;
     if (caseId) {
       const [k] = await tx`select c.patient_id, c.caller_mobile, p.mobile from cases c join patients p on p.id = c.patient_id

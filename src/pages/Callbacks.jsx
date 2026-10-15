@@ -10,7 +10,7 @@ import { dial } from '../lib/api.js';
 import { num, pct, ago, time, istDayRange } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, Modal, Field, Select, Textarea, useAction, useToast } from '../components/ui.jsx';
 
-const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled,reached_at,outcome,outcome_note';
+const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled,reached_at,outcome,outcome_note,notes';
 const REASON = { missed: ['Missed', 'danger'], abandoned: ['Abandoned', 'warn'], requested: ['Requested', 'info'], followup: ['Follow-up', ''] };
 const OUTCOMES = [['resolved', 'Resolved'], ['follow_up', 'Follow-up needed'], ['wrong_number', 'Wrong number'], ['not_needed', 'No longer needed']];
 const OUTCOME = Object.fromEntries(OUTCOMES);
@@ -70,20 +70,21 @@ export default function Callbacks() {
   return (
     <>
       <PageHead title="Callback queue" sub={ad?.enabled
-        ? `Auto-dialer on · each caller is called back within ${ad.buffer_minutes} minutes, up to ${ad.max_attempts} attempts · numbers are masked for agents`
-        : 'Missed and abandoned calls are queued automatically · call back within 10 minutes · numbers are masked for agents'} />
+        ? `Auto-dialer on · ${ad.buffer_minutes}-minute retry window from queue creation, up to ${ad.max_attempts} attempts · numbers are masked for agents`
+        : 'Missed and abandoned calls are queued automatically · use each callback’s displayed deadline · numbers are masked for agents'} />
       <ErrorNote error={error} />
+      {ad?.enabled && ad.calling_configured === false && <div className="small warn-text mb-12">Calling configuration is incomplete. Callbacks remain pending without an attempt. Ask an administrator to check Settings &gt; Telephony &amp; integrations.</div>}
       {ad?.enabled && ad.agents_available === 0 && data?.pending.length > 0 && (
         <div className="small warn-text mb-12">No agent is marked Available, so the auto-dialer is waiting. Switch to Available in the top bar to take callbacks.</div>
       )}
 
       <div className="kpis mb-16">
         <Kpi label="Pending" value={data && num(data.pending.length)} detail={data && `${data.pending.filter((x) => x.status === 'in_progress').length} being dialled`} tone={data?.pending.length ? 'warn' : 'ok'} onClick={() => setTab('pending')} />
-        <Kpi label="Overdue" value={data && num(overdue)} detail="past the 10-minute target" tone={overdue ? 'danger' : 'ok'} onClick={() => setTab('pending')} />
+        <Kpi label="Overdue" value={data && num(overdue)} detail="past each callback’s deadline" tone={overdue ? 'danger' : 'ok'} onClick={() => setTab('pending')} />
         <Kpi label="Needs outcome" value={data && num(data.outcome.length)} detail="patient reached, outcome not recorded" tone={data?.outcome.length ? 'warn' : 'ok'} onClick={() => setTab('outcome')} />
         <Kpi label="Reached within SLA today" value={data && pct(metPct)} detail={data && `${met} of ${data.reached.length} reached on time`} tone={metPct != null && metPct < 90 ? 'warn' : 'ok'} onClick={() => setTab('done')} />
-        <Kpi label="Avg time to callback" value={data && (avgMin == null ? '–' : `${avgMin.toFixed(1)} min`)} detail="raised to patient reached, today" tone={avgMin != null && avgMin > 10 ? 'warn' : ''} />
-        <Kpi label="Unreachable today" value={data && num(data.today.filter((x) => x.status === 'unreachable').length)} detail="after attempts, with reason" onClick={() => setTab('unreachable')} />
+        <Kpi label="Avg time to callback" value={data && (avgMin == null ? '–' : `${avgMin.toFixed(1)} min`)} detail="raised to patient reached, today"  />
+        <Kpi label="Unreachable today" value={data && num(data.today.filter((x) => x.status === 'unreachable').length)} detail="closed by policy or manually, see reason" onClick={() => setTab('unreachable')} />
       </div>
 
       <Panel tight>
@@ -126,9 +127,10 @@ export default function Callbacks() {
                             <div className="tiny muted">{cb.reached_at ? `Reached ${time(cb.reached_at)} · ${onTime(cb) ? 'on time' : 'late'}` : 'Closed without a call'}</div>
                             {cb.outcome_note && <div className="tiny muted truncate" style={{ maxWidth: 220 }} title={cb.outcome_note}>{cb.outcome_note}</div>}
                           </>}
+                    {cb.notes && <div className="tiny muted" style={{ maxWidth: 280, whiteSpace: 'normal' }}>{cb.notes}</div>}
                     {cb.status === 'in_progress' && <> <Badge kind="info">{cb.auto_dialled ? `Auto-dialling${cb.assignee_name ? ' · ' + cb.assignee_name : ''}` : 'Dialling'}</Badge></>}
                     {cb.status === 'pending' && cb.next_attempt_at && (
-                      <div className="tiny muted">{new Date(cb.next_attempt_at) <= now ? 'Auto-dial: waiting for a free agent' : `Auto-dial at ${time(cb.next_attempt_at)}`}</div>
+                      <div className="tiny muted">{ad?.calling_configured === false ? 'Waiting for calling configuration' : !ad?.enabled ? 'Automatic calling is off' : new Date(cb.next_attempt_at) <= now ? 'Eligible: waiting for scheduler and a free agent' : `Next eligible ${time(cb.next_attempt_at)}`}</div>
                     )}
                   </td>
                   <td className="num">{cb.attempts}</td>

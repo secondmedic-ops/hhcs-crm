@@ -72,7 +72,7 @@ export default function Dashboard() {
             <Panel title="SLA compliance" sub="Draft matrix · targets for joint finalisation">
               {k ? <div className="col gap-12">
                 {k.sla_by_policy.filter((s) => s.met + s.breached + s.running > 0).slice(0, 7).map((s) => (
-                  <Meter key={s.key} label={<span>{s.label} <span className="faint">≤ {s.target_minutes >= 120 ? `${s.target_minutes / 60} h` : `${s.target_minutes} min`}</span></span>}
+                  <Meter key={s.key} label={<span>{s.label} <span className="faint">{s.key === 'missed_callback' ? 'per callback deadline' : `≤ ${s.target_minutes >= 120 ? `${s.target_minutes / 60} h` : `${s.target_minutes} min`}`}</span></span>}
                     value={s.met + s.breached ? (100 * s.met) / (s.met + s.breached) : null} target={90} />
                 ))}
                 {!k.sla_by_policy.some((s) => s.met + s.breached + s.running) && <Empty title="No SLA events in this period" />}

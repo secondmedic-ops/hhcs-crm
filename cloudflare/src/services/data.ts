@@ -8,6 +8,7 @@ import { allows, type Role } from '../api/auth';
 import { ApiError } from '../domain/errors';
 import { buildQuery, QueryError, shape, type QuerySpec, ident, toParam } from '../domain/query';
 import { asUser, readAsUser, type Tx } from '../db';
+import { missingCallingSettings, moEnv } from './myoperator-config';
 
 const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
 const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
@@ -150,7 +151,12 @@ export async function batch(c: Ctx, body: { ops?: BatchOp[] }) {
       if (op.spec && op.spec.op && op.spec.op !== 'select') throw new ApiError(400, 'Only reads can be batched');
     }
   }
-  const run = (tx: Tx, op: BatchOp) => (op.kind === 'rpc' ? runRpc(tx, op.fn!, op.args ?? {}).then((data) => ({ data, count: null, error: null })) : runSelect(tx, op.spec!));
+  const callingConfigured = ops.some(op => op.kind === 'rpc' && op.fn === 'autodial_settings')
+    ? missingCallingSettings(await moEnv(c.env, c.sql)).length === 0 : undefined;
+  const run = (tx: Tx, op: BatchOp) => (op.kind === 'rpc' ? runRpc(tx, op.fn!, op.args ?? {}).then((data) => ({
+    data: op.fn === 'autodial_settings' ? { ...data, calling_configured: callingConfigured } : data,
+    count: null, error: null,
+  })) : runSelect(tx, op.spec!));
   try {
     const results = await readAsUser(c.sql, c.user.id, async (tx) => {
       const out = [];
@@ -185,7 +191,11 @@ export async function write(c: Ctx, table: string, spec: QuerySpec) {
 
 export async function rpc(c: Ctx, fn: string, args: Record<string, unknown>) {
   if (!allowed(RPC[fn], c.user.role)) throw deny(`"${fn}"`);
-  if (READ_RPC.has(fn)) return { body: { data: await readAsUser(c.sql, c.user.id, (tx) => runRpc(tx, fn, args ?? {})).catch(wrap) }, changed: [] as string[] };
+  if (READ_RPC.has(fn)) {
+    const result = await readAsUser(c.sql, c.user.id, (tx) => runRpc(tx, fn, args ?? {})).catch(wrap);
+    if (fn === 'autodial_settings') result.calling_configured = missingCallingSettings(await moEnv(c.env, c.sql)).length === 0;
+    return { body: { data: result }, changed: [] as string[] };
+  }
   const { result, changed } = await asUser(c.sql, c.user.id, (tx) => runRpc(tx, fn, args ?? {})).catch(wrap);
   return { body: { data: result }, changed };
 }

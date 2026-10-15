@@ -57,7 +57,11 @@ async function matchAgent(tx: Tx, ws: string, legs: J[], payload: J, phones: unk
   return p ?? null;
 }
 
-const legsAnswered = (legs: J[]) => legs.some((l) => /answer|connect|complete/i.test(l.dial_status || l.status || '') || Number(l.talk_duration || 0) > 0);
+const customerLegs = (legs: J[], number: string | null) => legs.filter((l) =>
+  /customer|client/i.test(String(l.type || l.leg_type || '')) ||
+  (!!number && normMobile(l.phone_number || l.number) === number));
+
+const legsAnswered = (legs: J[]) => legs.some((l) => /^(answer|answered|connected|completed|success)$/i.test(l.dial_status || l.status || '') || !!l.answered_at || Number(l.talk_duration || 0) > 0);
 
 /** Basic auth (user:password@ in the URL, or MyOperator's "Credentials"): the password is the key. */
 function basicPassword(req: Request): string | null {
@@ -180,14 +184,17 @@ export function afterCallEvent(o: J, source = 'myoperator'): J {
 /** The CRM call for a provider session: by session id, else by our click-to-call reference, else a new one. */
 async function findOrCreateCall(tx: Tx, a: { ws: string; session: string; refId?: unknown; customer: string | null; direction: string;
   did: string | null; startedAt: string | null; providerCallId?: string | null; first: J; adoptRecent?: boolean }): Promise<J> {
-  let [call] = await tx`select * from calls where provider = 'myoperator' and session_id = ${a.session} limit 1`;
+  await tx`select pg_advisory_xact_lock(hashtextextended(${a.ws + ':' + a.session}, 0))`;
+  let [call] = await tx`select * from calls where provider = 'myoperator' and workspace_id = ${a.ws}::uuid
+    and (session_id = ${a.session} or (${a.providerCallId ?? null}::text is not null and provider_call_id = ${a.providerCallId ?? null})) limit 1 for update`;
   if (!call && a.refId) {
-    [call] = await tx`update calls set session_id = ${a.session} where click_to_call_ref = ${String(a.refId)} returning *`;
+    [call] = await tx`update calls set session_id = ${a.session} where workspace_id = ${a.ws}::uuid and click_to_call_ref = ${String(a.refId)} returning *`;
   }
   if (!call && a.adoptRecent && a.customer) {
     // the in-call webhook may have opened this call under another id: take over a live call from the same number
     [call] = await tx`update calls set session_id = ${a.session} where id = (select id from calls where provider = 'myoperator'
-      and workspace_id = ${a.ws}::uuid and customer_number = ${a.customer} and status in ('ringing','answered')
+      and workspace_id = ${a.ws}::uuid and direction = ${a.direction} and click_to_call_ref is null
+      and customer_number = ${a.customer} and status in ('ringing','answered')
       and started_at > now() - interval '3 hours' order by started_at desc limit 1) returning *`;
   }
   if (!call) {
@@ -262,7 +269,7 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
 
   const legs: J[] = Array.isArray(o._ld) ? o._ld : [];
   const agents: J[] = legs.flatMap((l) => (Array.isArray(l._rr) ? l._rr : l._rr ? [l._rr] : []));
-  const answeredLeg = legs.find((l) => /answer|connect/i.test(String(l._ds || l._ac || '')));
+  const answeredLeg = legs.find((l) => /^(answer|answered|connected)$/i.test(String(l._ds || l._ac || '')));
   const pick = answeredLeg ? (Array.isArray(answeredLeg._rr) ? answeredLeg._rr : [answeredLeg._rr]).filter(Boolean) : agents;
   const agent = await matchAgent(tx, ws, pick.map((a: J) => ({ user_id: a._id, agent: { email: a._em, id: a._id } })), {}, pick.map((a: J) => a._nr || a._ct));
 
@@ -273,7 +280,9 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
     talk_seconds: connected ? afterCallTalkSeconds(o) : 0,
     raw: tx.json({ ...(call.raw || {}), end: o }),
   };
-  if (connected && !call.answered_at) patch.answered_at = call.started_at;
+  if (!connected && direction === 'outbound') patch.raw = tx.json({ ...(call.raw || {}), end: o,
+    callback_failure_reason: answeredLeg ? 'Customer did not connect after the agent answered'
+      : 'Agent unavailable or call not connected; customer reachability not verified' });
   if (o._fn) patch.recording_filename = String(o._fn);
   if (o._dn) patch.department = String(o._dn);
   if (agent && !call.agent_id) { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
@@ -295,9 +304,12 @@ async function onInCall(tx: Tx, env: Env, o: J) {
   const agent = await matchAgent(tx, ws, [], {}, users);
   const patch: J = {};
   if (agent && call.agent_id !== agent.id && call.status !== 'completed') { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
-  if (Number(o.call_state) === 1 && call.status === 'ringing') { patch.status = 'answered'; patch.answered_at = new Date().toISOString(); }
+  if (Number(o.call_state) === 1 && call.status === 'ringing') {
+    patch.status = 'answered';
+    if (call.direction === 'inbound') patch.answered_at = new Date().toISOString();
+  }
   if (Object.keys(patch).length) [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
-  if (patch.status === 'answered') await onConnected(tx, call);
+  if (patch.status === 'answered' && call.direction === 'inbound') await onConnected(tx, call);
 }
 
 /** The patient is on the line: the callback dialled by this call is reached now, so "Callbacks pending" drops live.
@@ -325,19 +337,27 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
 
   switch (ev.event_type) {
     case 'call.answered': {
+      if (!['ringing','answered'].includes(call.status)) break; // delayed answer must not reopen a finished call
       const leg = legs.find((l) => l.answered_at) || legs[0] || {};
       patch.status = 'answered';
-      patch.answered_at = toIso(leg.answered_at || ev.timestamp) || new Date().toISOString();
+      if (call.direction === 'inbound' || legsAnswered(customerLegs(legs, call.customer_number))) {
+        patch.answered_at = toIso(leg.answered_at || ev.timestamp) || new Date().toISOString();
+      }
       patch.ring_seconds = int(leg.ring_duration);
       break;
     }
     case 'call.end': {
-      const answered = call.status === 'answered' || legsAnswered(legs) || /answer|complete|connect/i.test(p.status || '');
+      if (!['ringing','answered'].includes(call.status)) break; // a delayed duplicate must not undo a terminal event
+      const customer = customerLegs(legs, call.customer_number);
+      const answered = call.direction === 'outbound'
+        ? (call.raw?.customer_connected === true || legsAnswered(customer))
+        : call.status === 'answered' || legsAnswered(legs) || /^(answer|answered|completed|connected)$/i.test(p.status || '');
       const abandoned = /abandon|hangup_in_ivr|ivr/i.test(`${p.status} ${p.category}`);
-      patch.status = answered ? 'completed' : direction === 'outbound' ? 'failed' : abandoned ? 'abandoned' : 'missed';
+      patch.status = answered ? 'completed' : call.direction === 'outbound' ? 'failed' : abandoned ? 'abandoned' : 'missed';
       patch.ended_at = toIso(p.ended_at || ev.timestamp) || new Date().toISOString();
-      const talk = legs.reduce((s, l) => s + Number(l.talk_duration || 0), 0);
-      patch.talk_seconds = int(talk || (answered ? p.duration : 0));
+      const talkLegs = call.direction === 'outbound' ? customer : legs;
+      const talk = talkLegs.filter((l) => l.talk_duration != null).map((l) => Number(l.talk_duration));
+      patch.talk_seconds = answered ? (talk.length ? (call.direction === 'outbound' ? Math.max(...talk) : talk.reduce((sum,n) => sum+n,0)) : int(p.talk_duration)) : 0;
       if (patch.ring_seconds == null && call.ring_seconds == null) {
         const ring = legs.map((l) => Number(l.ring_duration || 0)).filter(Boolean);
         if (ring.length) patch.ring_seconds = Math.min(...ring);
@@ -345,6 +365,10 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
       if (p.recording_filename) patch.recording_filename = String(p.recording_filename);
       patch.provider_call_id = p.id ? String(p.id) : call.provider_call_id;
       patch.raw = { ...(call.raw || {}), end: ev };
+      if (!answered && call.direction === 'outbound') patch.raw.callback_failure_reason =
+        call.status === 'answered' || legsAnswered(legs)
+          ? 'Customer did not connect after the agent answered'
+          : 'Agent unavailable or call not connected; customer reachability not verified';
       break;
     }
     case 'call.summary': {
@@ -366,7 +390,11 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
     if (patch.raw) patch.raw = tx.json(patch.raw);
     [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
   }
-  if (ev.event_type === 'call.answered') await onConnected(tx, call);
+  if (ev.event_type === 'call.answered' && call.status === 'answered' &&
+      (call.direction === 'inbound' || legsAnswered(customerLegs(legs, call.customer_number)))) {
+    [call] = await tx`update calls set raw = coalesce(raw, '{}'::jsonb) || '{"customer_connected":true}'::jsonb where id = ${call.id} returning *`;
+    await onConnected(tx, call);
+  }
   if (ev.event_type === 'call.end') return afterCallEnded(tx, call);
   return null;
 }
@@ -374,6 +402,9 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
 async function afterCallEnded(tx: Tx, call: J): Promise<{ aiCallId?: string }> {
   // missed / abandoned inbound -> callback queue with the SLA timer (trigger starts it)
   if (['missed', 'abandoned'].includes(call.status) && call.direction === 'inbound' && call.customer_number) {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${call.workspace_id + ':' + call.customer_number}, 0))`;
+    const [origin] = await tx`select id from callbacks where workspace_id = ${call.workspace_id} and call_id = ${call.id} limit 1`;
+    if (origin) return {};
     const [pol] = await tx`select target_minutes from sla_policies where workspace_id = ${call.workspace_id} and key = 'missed_callback'`;
     const [pending] = await tx`select id from callbacks where workspace_id = ${call.workspace_id} and number = ${call.customer_number}
       and status in ('pending','in_progress') limit 1`;

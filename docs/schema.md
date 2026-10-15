@@ -952,6 +952,7 @@
 | reached_call_id | uuid | YES |
 | outcome | text | YES |
 | outcome_note | text | YES |
+| notes | text | YES |
 
 ## v_calls
 | column | type | nullable |

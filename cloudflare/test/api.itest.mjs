@@ -156,6 +156,10 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(line.body?.results?.[0]?.data?.line_label === 'Hinduja helpline', 'call tagged with its line (Hinduja helpline)', JSON.stringify(line.body));
   check((await call('agent', 'POST', '/api/v1/calls/dial', { number: '9999999999' })).status === 400, 'agent cannot dial a typed number');
   const beforeMissing = await one(`select count(*)::int n from calls`);
+  check((await rpc('agent','autodial_settings',{})).body?.data?.calling_configured === false,
+    'queue settings report missing calling configuration without exposing credentials');
+  check((await batch('agent',[{kind:'rpc',fn:'autodial_settings',args:{}}])).body?.results?.[0]?.data?.calling_configured === false,
+    'batched screen reads also report calling readiness');
   const missingDial = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: cb.id });
   check(missingDial.status === 503 && /Public IVR ID/.test(missingDial.body?.message || '')
     && (await one(`select count(*)::int n from calls`)).n === beforeMissing.n
@@ -167,7 +171,10 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
     'unlinked agent cannot start a call', JSON.stringify(unlinkedDial.body));
   check((await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid, callback_id: cb.id })).status === 400,
     'ambiguous call target rejected');
-  const dial = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: cb.id });
+  const concurrentDials = await Promise.all([1,2].map(() => call('agent', 'POST', '/api/v1/calls/dial', { callback_id: cb.id })));
+  const dial = concurrentDials.find(r => r.status === 200) || concurrentDials[0];
+  check(concurrentDials.filter(r => r.status === 200).length === 1 && concurrentDials.some(r => r.status === 409),
+    'concurrent manual claims create exactly one callback attempt');
   check(dial.status === 200 && dial.body?.ok && dial.body.mode === 'api' && !dial.body.number && !dial.body.provider,
     'CRM click-to-call accepted without exposing the number or provider response', JSON.stringify(dial.body));
   const obd = obdCalls[obdCalls.length - 1];
@@ -175,7 +182,14 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
     && obd?.headers['x-api-key'] === 'obd-key' && obd?.headers['secret-key'] === 'st', 'OBD request: peer-to-peer agent id, number, keys', JSON.stringify(obd?.body));
   const b3 = { session_id: 'sess-out-1', direction: 'outbound', customer_identifier: '+919930011223' };
   await hook({ ...b3, event_id: 'o1', event_type: 'call.initiated', payload: { client_ref_id: obd?.body?.reference_id } });
-  await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ answered_at: t0 + 5, ring_duration: 5 }] } });
+  await hook({ ...b3, event_id: 'agent-only', event_type: 'call.answered', payload: { legs: [{ type: 'agent', dial_status: 'ANSWER', answered_at: t0 + 3 }] } });
+  check((await one(`select status from callbacks where id=$1`, cb.id)).status === 'in_progress', 'agent answer alone does not mark the customer reached');
+  const busyManual = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(busyManual.status === 409, 'manual calling cannot reserve an agent already on a callback');
+  await hook({myoperator:{_ai:'unrelated-same-number',_cl:b3.customer_identifier,_ev:2,_su:1,_st:t0,_et:t0+120,_dr:120}});
+  check((await one(`select status from callbacks where id=$1`,cb.id)).status === 'in_progress',
+    'uncorrelated same-number call log cannot adopt and reach a reserved callback');
+  await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ type: 'customer', phone_number: b3.customer_identifier, dial_status: 'ANSWER', answered_at: t0 + 5, ring_duration: 5 }] } });
   const live = await one(`select cb.status, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, cb.id, dial.body?.call_id);
   check(live?.status === 'reached' && live.cid === cb.id, 'patient connected -> callback reached at once, before the call ends (dashboard pending drops live)', JSON.stringify(live));
   await hook({ ...b3, event_id: 'o3', event_type: 'call.end', timestamp: t0 + 100, payload: { legs: [{ talk_duration: 95 }] } });
@@ -185,6 +199,15 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const closeCb = await rpc('agent', 'callback_close', { p_id: cb.id, p_outcome: 'resolved', p_note: 'Shared the report timeline' });
   check(closeCb.status === 200 && (await one(`select status, outcome from callbacks where id = $1`, cb.id))?.outcome === 'resolved',
     'agent closes the callback with an outcome', JSON.stringify(closeCb.body));
+  const noAnswerCb = await one(`insert into callbacks(workspace_id,number,due_at) values ($1,'+919800001234',now()+interval '10 minutes') returning id`,ws);
+  const noAnswerDial = await call('agent','POST','/api/v1/calls/dial',{callback_id:noAnswerCb.id});
+  const noAnswerEvent = {session_id:'customer-no-answer',direction:'outbound',customer_identifier:'+919800001234'};
+  await hook({...noAnswerEvent,event_id:'na1',event_type:'call.initiated',payload:{client_ref_id:obdCalls.at(-1).body.reference_id}});
+  await hook({...noAnswerEvent,event_id:'na2',event_type:'call.answered',payload:{legs:[{type:'agent',dial_status:'ANSWER',answered_at:t0}]}});
+  await hook({...noAnswerEvent,event_id:'na3',event_type:'call.end',payload:{legs:[{type:'agent',dial_status:'ANSWER',talk_duration:25},{type:'customer',dial_status:'NOANSWER',talk_duration:0}]}});
+  const noAnswerState = await one(`select status,notes,reached_at from callbacks where id=$1`,noAnswerCb.id);
+  check(noAnswerDial.status===200 && noAnswerState.status==='pending' && !noAnswerState.reached_at && /Customer did not connect/.test(noAnswerState.notes),
+    'agent answers but customer NOANSWER never marks Reached and records the actual failure');
   check((await rpc('client', 'callback_close', { p_id: cb.id, p_outcome: 'resolved' })).status === 403,
     'Hinduja manager cannot close callbacks');
   await hook({ event_id: 'w1', event_type: 'message.received', customer_identifier: '+919811122233', system_identifier: '+918049368621',
@@ -275,6 +298,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
     'old app setting ignored: API calls only, no number reveals', JSON.stringify(back.body));
   const configured = await call('admin', 'GET', '/api/v1/admin/myoperator');
   check(!configured.body.fields.some(f => f.key === 'dial_mode'), 'extension dial mode removed from settings');
+  await sql`update calls set status='completed',ended_at=now() where id=${back.body.call_id}`;
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'unknown' } });
   const attempts = obdCalls.length;
   const unknownCall = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
@@ -282,6 +306,16 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(unknownCall.status === 504 && obdCalls.length === attempts + 1 && unknownRow?.status === 'ringing'
     && unknownRow.raw?.dial_outcome === 'unconfirmed', 'uncertain provider result does not redial or falsely mark the call failed', JSON.stringify(unknownCall.body));
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });
+
+  const miss = { session_id: 'dedupe-call', event_type: 'call.end', direction: 'inbound', customer_identifier: '9876500999', payload: { status: 'abandoned' } };
+  await Promise.all(['d1','d2'].map(event_id => hook({ ...miss, event_id }, newKey)));
+  const dupe = await one(`select count(*)::int n from callbacks where number='+919876500999'`);
+  check(dupe.n === 1, 'concurrent missed/abandoned events create one callback');
+  await rpc('agent','callback_close',{p_id:(await one(`select id from callbacks where number='+919876500999'`)).id,p_outcome:'not_needed'});
+  await hook({ ...miss, event_id:'d3' },newKey);
+  check((await one(`select count(*)::int n from callbacks where number='+919876500999'`)).n===1,'late repeat of a closed missed call does not recreate its callback');
+  await hook({ ...miss, session_id:'dedupe-later-call', event_id:'d4' },newKey);
+  check((await one(`select count(*)::int n from callbacks where number='+919876500999'`)).n===2,'new missed call after closure creates a new follow-up');
 
   // ---- 6c. call-log sync (no webhooks needed)
   check((await call('agent', 'POST', '/api/v1/admin/myoperator/sync', {})).status === 403, 'call-log sync: agents kept out');
@@ -462,13 +496,14 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const pend0 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
   const bA = { session_id: 'sess-auto-out', direction: 'outbound', customer_identifier: '+919930055501' };
   await hook({ ...bA, event_id: 'a2', event_type: 'call.initiated', payload: { client_ref_id: autoObd?.body?.reference_id } }, newKey);
-  await hook({ ...bA, event_id: 'a3', event_type: 'call.answered', timestamp: Math.floor(Date.now() / 1000), payload: { legs: [{ answered_at: Math.floor(Date.now() / 1000), ring_duration: 4 }] } }, newKey);
+  await hook({ ...bA, event_id: 'a3', event_type: 'call.answered', timestamp: Math.floor(Date.now() / 1000), payload: { legs: [{ type: 'customer', dial_status: 'ANSWER', answered_at: Math.floor(Date.now() / 1000), ring_duration: 4 }] } }, newKey);
   const pend1 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
   check(pend0 === 1 && pend1 === 0 && (await one(`select status from callbacks where id = $1`, queued?.id ?? null))?.status === 'reached',
     'patient connects -> Callbacks pending 1 -> 0 on the dashboard (reached, outcome open)', JSON.stringify({ pend0, pend1 }));
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'bad' } });
   const [{ id: retryCb }] = await sql`insert into callbacks (workspace_id, number, reason, due_at)
     values (${ws}, '+919930055502', 'missed', now() + interval '10 minutes') returning id::text`;
+  await hook({ ...bA, event_id: 'a4', event_type: 'call.end', payload: { legs: [{ type: 'customer', dial_status: 'ANSWER', talk_duration: 40 }] } }, newKey);
   const rejectedManualCallback = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: retryCb });
   const retryState = await one(`select status, attempts, next_attempt_at > now() as scheduled from callbacks where id = $1`, retryCb);
   check(rejectedManualCallback.status === 502 && retryState?.status === 'pending' && retryState.attempts === 1 && retryState.scheduled,
