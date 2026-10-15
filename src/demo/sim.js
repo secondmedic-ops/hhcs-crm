@@ -25,6 +25,7 @@ export async function simulateInboundCall(script) {
 
 export async function answerCall(callId) {
   await svc(`update calls set status = 'answered', answered_at = now(), ring_seconds = greatest(1, extract(epoch from now() - started_at)::int) where id = $1`, [callId]);
+  await svc(`select callback_connected($1::uuid)`, [callId]);   // the callback this call dials is reached
 }
 
 const DEMO_SCRIPT = {
@@ -48,9 +49,7 @@ export async function endCall(callId) {
       c.recording_filename ? `Recording ${Math.floor(c.talk_seconds / 60)}:${String(c.talk_seconds % 60).padStart(2, '0')}` : null, c.id, c.started_at]);
   }
   if (c.status === 'completed') setTimeout(() => processCall(callId).catch(() => {}), 1600);
-  if (c.status === 'completed' && c.direction === 'outbound') {
-    await svc(`update callbacks set status = 'done', completed_at = now(), completed_by = $2 where number = $1 and status in ('pending','in_progress')`, [c.customer_number, c.agent_id]);
-  }
+  if (c.direction === 'outbound' && c.callback_id) await svc(`select callback_call_ended($1::uuid)`, [c.id]);
   return c;
 }
 
@@ -242,8 +241,8 @@ export async function demoApi(path, body = {}, method) {
     if (caseId) { const r = await one(`select c.patient_id, p.mobile from cases c join patients p on p.id = c.patient_id where c.id = $1`, [caseId]); patientId = r.patient_id; number = r.mobile; }
     else if (body.callback_id) { const r = await one(`update callbacks set status = 'in_progress', assigned_to = $2, last_attempt_at = now(), attempts = attempts + 1 where id = $1 returning number, patient_id`, [body.callback_id, agent.id]); number = r.number; patientId = r.patient_id; }
     else if (patientId) number = (await one('select mobile from patients where id = $1', [patientId])).mobile;
-    const c = await one(`insert into calls (workspace_id, provider, session_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, click_to_call_ref)
-      values ($1,'myoperator',$2,'outbound',$3,$4,$5,'ringing',$6,$7,$2) returning id`, [agent.workspace_id, 'crm-' + crypto.randomUUID(), number, agent.id, agent.full_name, patientId, caseId]);
+    const c = await one(`insert into calls (workspace_id, provider, session_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, click_to_call_ref, callback_id)
+      values ($1,'myoperator',$2,'outbound',$3,$4,$5,'ringing',$6,$7,$2,$8) returning id`, [agent.workspace_id, 'crm-' + crypto.randomUUID(), number, agent.id, agent.full_name, patientId, caseId, body.callback_id || null]);
     setTimeout(() => answerCall(c.id).catch(() => {}), 2600);
     return { ok: true, call_id: c.id, provider: { status: 'success', demo: true } };
   }

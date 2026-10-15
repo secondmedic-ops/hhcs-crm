@@ -1375,6 +1375,12 @@
       "supervisor",
       "medical_desk"
     ],
+    "callback_close": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
     "set_my_availability": [
       "agent",
       "coordinator",

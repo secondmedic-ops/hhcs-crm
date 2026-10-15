@@ -379,7 +379,8 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
         const due = min(at, 10);
         const done = at < min(now, -12) ? min(at, between(3, r() < 0.15 ? 18 : 9)) : null;
         const cb = { id: uuid(r), workspace_id: ws, call_id: id, number: p.mobile, patient_id: p.id, reason: aband ? 'abandoned' : 'missed', due_at: due,
-          status: done ? 'done' : 'pending', assigned_to: done ? ag.id : null, attempts: done ? 1 : 0, last_attempt_at: done, completed_at: done, completed_by: done ? ag.id : null, created_at: at };
+          status: done ? 'done' : 'pending', assigned_to: done ? ag.id : null, attempts: done ? 1 : 0, last_attempt_at: done, completed_at: done, completed_by: done ? ag.id : null, created_at: at,
+          reached_at: done, outcome: done ? ['resolved', 'resolved', 'follow_up', 'not_needed'][callbacks.length % 4] : null };
         callbacks.push(cb);
         timers.push({ id: uuid(r), workspace_id: ws, policy_key: 'missed_callback', case_id: null, complaint_id: null, callback_id: cb.id, started_at: at, due_at: due,
           met_at: done, breached_at: (done && done > due) || (!done && due < now) ? due : null, status: done ? (done > due ? 'breached' : 'met') : due < now ? 'breached' : 'running' });

@@ -300,7 +300,8 @@ async function onInCall(tx: Tx, env: Env, o: J) {
   if (patch.status === 'answered') await onConnected(tx, call);
 }
 
-/** The patient is on the line: an outbound callback is done now, so "Callbacks pending" drops live, not at call end. */
+/** The patient is on the line: the callback dialled by this call is reached now, so "Callbacks pending" drops live.
+ *  The agent closes it with an outcome later (callback_close). */
 async function onConnected(tx: Tx, call: J) {
   if (call.direction === 'outbound') await tx`select callback_connected(${call.id}::uuid)`;
 }
@@ -382,12 +383,9 @@ async function afterCallEnded(tx: Tx, call: J): Promise<{ aiCallId?: string }> {
         values (${call.workspace_id}, ${call.id}, ${call.customer_number}, ${call.patient_id}, ${call.status === 'abandoned' ? 'abandoned' : 'missed'}, ${due})`;
     }
   }
-  // a successful outbound call to a pending callback number completes it (if the answered event did not already)
-  if (call.direction === 'outbound' && call.status === 'completed' && call.customer_number) await onConnected(tx, call);
-  // a callback attempt that did not reach the patient: back to the queue for the next attempt, or unreachable
-  if (call.direction === 'outbound' && call.status !== 'completed' && call.callback_id) {
-    await tx`select callback_retry(${call.callback_id}::uuid, ${'call ' + call.status})`;
-  }
+  // the callback's own call ended: reached stays reached (or becomes so if the answered event never came); a call that
+  // did not complete or a drop-off under 20 s goes back to the queue for the next attempt, or unreachable
+  if (call.direction === 'outbound' && call.callback_id) await tx`select callback_call_ended(${call.id}::uuid)`;
   if (call.patient_id || call.case_id) {
     const summary = `${call.direction === 'inbound' ? 'Inbound' : 'Outbound'} call ${call.status}` +
       (call.ring_seconds != null && call.status === 'completed' ? ` · answered in ${call.ring_seconds} s` : '');

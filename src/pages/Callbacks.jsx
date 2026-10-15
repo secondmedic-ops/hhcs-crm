@@ -1,5 +1,6 @@
 // Callback queue (slide 11): every missed or abandoned call is queued. With the auto-dialer on (Settings > Telephony),
 // CareDesk rings a free, Available agent and bridges the patient in; the buttons stay as manual overrides.
+// A callback is reached when its own call connects (leaves the queue, SLA met) and closed when the agent records an outcome.
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
@@ -7,10 +8,13 @@ import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { dial } from '../lib/api.js';
 import { num, pct, ago, time, istDayRange } from '../lib/fmt.js';
-import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, useAction, useToast } from '../components/ui.jsx';
+import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, Modal, Field, Select, Textarea, useAction, useToast } from '../components/ui.jsx';
 
-const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled';
+const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled,reached_at,outcome,outcome_note';
 const REASON = { missed: ['Missed', 'danger'], abandoned: ['Abandoned', 'warn'], requested: ['Requested', 'info'], followup: ['Follow-up', ''] };
+const OUTCOMES = [['resolved', 'Resolved'], ['follow_up', 'Follow-up needed'], ['wrong_number', 'Wrong number'], ['not_needed', 'No longer needed']];
+const OUTCOME = Object.fromEntries(OUTCOMES);
+const EMPTY = { pending: 'No callbacks waiting', outcome: 'Every reached callback has an outcome', done: 'No callbacks closed today', unreachable: 'No unreachable callbacks' };
 
 export default function Callbacks() {
   const nav = useNavigate();
@@ -19,29 +23,37 @@ export default function Callbacks() {
   const canAct = can('agent', 'coordinator', 'supervisor');
   const [tab, setTab] = useState('pending');
   const [unreach, setUnreach] = useState(null);
+  const [closing, setClosing] = useState(null);
   const [run, busy] = useAction();
   const toast = useToast();
 
   const { data, loading, error } = useLoad(async () => {
     const [from] = istDayRange(0);
-    const [pending, today, unreachable] = await Promise.all([
+    const [pending, outcome, today, reached, unreachable] = await Promise.all([
       q(db.from('v_callbacks').select(COLS).in('status', ['pending', 'in_progress']).order('due_at', { ascending: true }).limit(200)),
+      q(db.from('v_callbacks').select(COLS).eq('status', 'reached').order('reached_at', { ascending: true }).limit(200)),
       q(db.from('v_callbacks').select(COLS).in('status', ['done', 'unreachable']).gte('completed_at', from).order('completed_at', { ascending: false }).limit(300)),
+      q(db.from('v_callbacks').select('id,created_at,due_at,reached_at').gte('reached_at', from).limit(300)),
       q(db.from('v_callbacks').select(COLS).eq('status', 'unreachable').order('completed_at', { ascending: false }).limit(100)),
     ]);
-    return { pending, done: today.filter((x) => x.status === 'done'), today, unreachable };
+    return { pending, outcome, done: today.filter((x) => x.status === 'done'), today, reached, unreachable };
   }, [], ['callbacks', 'calls']);
   const auto = useLoad(() => rpc('autodial_settings', {}).catch(() => null), [], ['workspaces', 'profiles', 'callbacks']);
   const ad = auto.data;
 
+  // SLA and speed are measured to the moment the patient was reached, not to when the outcome was recorded
   const overdue = data?.pending.filter((x) => new Date(x.due_at) < now).length;
-  const met = data?.done.filter((x) => new Date(x.completed_at) <= new Date(x.due_at)).length;
-  const metPct = data?.done.length ? (100 * met) / data.done.length : null;
-  const avgMin = data?.done.length ? data.done.reduce((a, x) => a + (new Date(x.completed_at) - new Date(x.created_at)), 0) / data.done.length / 60000 : null;
+  const met = data?.reached.filter((x) => new Date(x.reached_at) <= new Date(x.due_at)).length;
+  const metPct = data?.reached.length ? (100 * met) / data.reached.length : null;
+  const avgMin = data?.reached.length ? data.reached.reduce((a, x) => a + (new Date(x.reached_at) - new Date(x.created_at)), 0) / data.reached.length / 60000 : null;
   const rows = data ? data[tab] : null;
+  const onTime = (cb) => new Date(cb.reached_at) <= new Date(cb.due_at);
 
   const callBack = (cb) => run(async () => { await dial({ callback_id: cb.id }); toast.ok('Dialling via MyOperator. Pick up on your phone.'); });
-  const markDone = (cb) => run(() => rpc('callback_update', { p_id: cb.id, p_status: 'done', p_note: null }), 'Callback marked done');
+  const closeWith = ({ outcome, note }) => run(async () => {
+    await rpc('callback_close', { p_id: closing.id, p_outcome: outcome, p_note: note || null });
+    setClosing(null);
+  }, 'Callback closed');
   const markUnreachable = (reason) => run(async () => {
     const cb = unreach;
     await rpc('callback_update', { p_id: cb.id, p_status: 'unreachable', p_note: reason });
@@ -68,8 +80,9 @@ export default function Callbacks() {
       <div className="kpis mb-16">
         <Kpi label="Pending" value={data && num(data.pending.length)} detail={data && `${data.pending.filter((x) => x.status === 'in_progress').length} being dialled`} tone={data?.pending.length ? 'warn' : 'ok'} onClick={() => setTab('pending')} />
         <Kpi label="Overdue" value={data && num(overdue)} detail="past the 10-minute target" tone={overdue ? 'danger' : 'ok'} onClick={() => setTab('pending')} />
-        <Kpi label="Met within SLA today" value={data && pct(metPct)} detail={data && `${met} of ${data.done.length} done on time`} tone={metPct != null && metPct < 90 ? 'warn' : 'ok'} onClick={() => setTab('done')} />
-        <Kpi label="Avg time to callback" value={data && (avgMin == null ? '–' : `${avgMin.toFixed(1)} min`)} detail="raised to done, today" tone={avgMin != null && avgMin > 10 ? 'warn' : ''} />
+        <Kpi label="Needs outcome" value={data && num(data.outcome.length)} detail="patient reached, outcome not recorded" tone={data?.outcome.length ? 'warn' : 'ok'} onClick={() => setTab('outcome')} />
+        <Kpi label="Reached within SLA today" value={data && pct(metPct)} detail={data && `${met} of ${data.reached.length} reached on time`} tone={metPct != null && metPct < 90 ? 'warn' : 'ok'} onClick={() => setTab('done')} />
+        <Kpi label="Avg time to callback" value={data && (avgMin == null ? '–' : `${avgMin.toFixed(1)} min`)} detail="raised to patient reached, today" tone={avgMin != null && avgMin > 10 ? 'warn' : ''} />
         <Kpi label="Unreachable today" value={data && num(data.today.filter((x) => x.status === 'unreachable').length)} detail="after attempts, with reason" onClick={() => setTab('unreachable')} />
       </div>
 
@@ -77,23 +90,24 @@ export default function Callbacks() {
         <div className="panel-body" style={{ paddingBottom: 0 }}>
           <Tabs value={tab} onChange={setTab} tabs={[
             ['pending', 'Pending', data?.pending.length],
-            ['done', 'Done today', data?.done.length],
+            ['outcome', 'Needs outcome', data?.outcome.length],
+            ['done', 'Closed today', data?.done.length],
             ['unreachable', 'Unreachable', data?.unreachable.length],
           ]} />
         </div>
         {loading ? <TableSkeleton rows={6} cols={8} /> : !rows?.length ? (
-          <Empty title={tab === 'pending' ? 'No callbacks waiting' : tab === 'done' ? 'No callbacks completed today' : 'No unreachable callbacks'}>
-            {tab === 'pending' ? 'Missed and abandoned inbound calls appear here the moment they end.' : null}
+          <Empty title={EMPTY[tab]}>
+            {tab === 'pending' ? 'Missed and abandoned inbound calls appear here the moment they end.'
+              : tab === 'outcome' ? 'A callback lands here when its call connects, until the agent records what happened.' : null}
           </Empty>
         ) : (
           <div className="table-wrap"><table className="t">
             <thead><tr>
               <th>Number</th><th>Patient</th><th>Reason</th><th>Raised</th>
-              <th>{tab === 'pending' ? 'Due' : 'Outcome'}</th><th className="num">Attempts</th><th>Assignee</th><th>Case</th>
-              {canAct && tab === 'pending' && <th />}
+              <th>{tab === 'pending' ? 'Due' : tab === 'outcome' ? 'Reached' : 'Outcome'}</th><th className="num">Attempts</th><th>Assignee</th><th>Case</th>
+              {canAct && (tab === 'pending' || tab === 'outcome') && <th />}
             </tr></thead>
             <tbody>{rows.map((cb) => {
-              const late = cb.completed_at && new Date(cb.completed_at) > new Date(cb.due_at);
               const [rl, rk] = REASON[cb.reason] || [cb.reason, ''];
               return (
                 <tr key={cb.id}>
@@ -106,7 +120,12 @@ export default function Callbacks() {
                   <td className="nowrap">
                     {tab === 'pending' ? <Countdown due={cb.due_at} compact />
                       : cb.status === 'unreachable' ? <Badge kind="warn">Unreachable · {time(cb.completed_at)}</Badge>
-                        : <Badge kind={late ? 'danger' : 'ok'}>{late ? 'Late' : 'On time'} · {time(cb.completed_at)}</Badge>}
+                        : tab === 'outcome' ? <Badge kind={onTime(cb) ? 'ok' : 'danger'}>{onTime(cb) ? 'On time' : 'Late'} · {time(cb.reached_at)}</Badge>
+                          : <>
+                            <Badge kind={cb.outcome === 'follow_up' ? 'warn' : ''}>{OUTCOME[cb.outcome] || 'Closed'}</Badge>
+                            <div className="tiny muted">{cb.reached_at ? `Reached ${time(cb.reached_at)} · ${onTime(cb) ? 'on time' : 'late'}` : 'Closed without a call'}</div>
+                            {cb.outcome_note && <div className="tiny muted truncate" style={{ maxWidth: 220 }} title={cb.outcome_note}>{cb.outcome_note}</div>}
+                          </>}
                     {cb.status === 'in_progress' && <> <Badge kind="info">{cb.auto_dialled ? `Auto-dialling${cb.assignee_name ? ' · ' + cb.assignee_name : ''}` : 'Dialling'}</Badge></>}
                     {cb.status === 'pending' && cb.next_attempt_at && (
                       <div className="tiny muted">{new Date(cb.next_attempt_at) <= now ? 'Auto-dial: waiting for a free agent' : `Auto-dial at ${time(cb.next_attempt_at)}`}</div>
@@ -115,12 +134,12 @@ export default function Callbacks() {
                   <td className="num">{cb.attempts}</td>
                   <td className="small">{cb.assignee_name || <span className="faint">–</span>}</td>
                   <td>{cb.open_case_id ? <a className="small" href={`/cases/${cb.open_case_id}`} onClick={(e) => { e.preventDefault(); nav(`/cases/${cb.open_case_id}`); }}>Open case</a> : <span className="faint">–</span>}</td>
-                  {canAct && tab === 'pending' && (
+                  {canAct && (tab === 'pending' || tab === 'outcome') && (
                     <td className="nowrap right">
                       <div className="row" style={{ justifyContent: 'flex-end' }}>
                         {cb.status === 'pending' && <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call back</Button>}
-                        <Button size="xs" icon="check" disabled={busy} onClick={() => markDone(cb)}>Mark done</Button>
-                        <Button size="xs" disabled={busy} onClick={() => setUnreach(cb)}>Unreachable</Button>
+                        <Button size="xs" icon="check" kind={tab === 'outcome' ? 'primary' : undefined} disabled={busy} onClick={() => setClosing(cb)}>Record outcome</Button>
+                        {tab === 'pending' && <Button size="xs" disabled={busy} onClick={() => setUnreach(cb)}>Unreachable</Button>}
                       </div>
                     </td>
                   )}
@@ -141,6 +160,31 @@ export default function Callbacks() {
           </div>
         </Confirm>
       )}
+      {closing && <OutcomeModal cb={closing} busy={busy} onClose={() => setClosing(null)} onSave={closeWith} />}
     </>
+  );
+}
+
+function OutcomeModal({ cb, busy, onClose, onSave }) {
+  const [outcome, setOutcome] = useState(cb.status === 'reached' ? 'resolved' : '');
+  const [note, setNote] = useState('');
+  const needNote = outcome === 'follow_up';
+  return (
+    <Modal title="Record callback outcome" onClose={onClose} footer={<>
+      <Button onClick={onClose}>Cancel</Button>
+      <Button kind="primary" disabled={busy || !outcome || (needNote && !note.trim())} onClick={() => onSave({ outcome, note: note.trim() })}>Close callback</Button>
+    </>}>
+      <div className="small">
+        <span className="mono">{cb.number}</span>{cb.patient_name ? ` · ${cb.patient_name}` : ''}
+        {cb.reached_at ? ` · reached at ${time(cb.reached_at)}` : ' · not reached by a CareDesk call'}.
+        The outcome goes on the patient timeline.
+      </div>
+      <Field label="Outcome" className="mt-12">
+        <Select value={outcome} onChange={(e) => setOutcome(e.target.value)} placeholder="Choose" options={OUTCOMES} />
+      </Field>
+      <Field label={needNote ? 'What follow-up is needed' : 'Note'} hint={needNote ? null : 'optional'} className="mt-12">
+        <Textarea value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+    </Modal>
   );
 }

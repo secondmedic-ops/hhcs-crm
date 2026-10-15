@@ -213,7 +213,7 @@ old1?.stage === 'closed' && old1.branch === 'Khar' && old1.d === '2026-08-01' &&
 const [old2] = await as('agent', `select stage, case_no from v_cases where external_ref = 'OLD-1002'`);
 old2?.stage === 'enquiry' && /^HHC-/.test(old2.case_no) ? ok('open imported case visible to agents with a new Case ID') : fail(JSON.stringify(old2));
 
-console.log('\nScenario: callback auto-dialer (30 / 45 / 60 min buffer, agent availability, done on connect)');
+console.log('\nScenario: callback auto-dialer (30 / 45 / 60 min buffer, agent availability, reached on connect, closed with an outcome)');
 async function system(sql, params = []) {
   await db.exec('reset role');
   await db.query(`select set_config('request.jwt.claim.role', 'service_role', false), set_config('request.jwt.claim.sub', '', false)`);
@@ -251,7 +251,8 @@ await db.query(`update calls set status = 'failed', ended_at = now() where id = 
 const [{ r: retry1 }] = await system(`select callback_retry($1::uuid, 'call failed') r`, [cbA]);
 const [cbRetry] = (await db.query(`select status, round(extract(epoch from next_attempt_at - last_attempt_at) / 60)::int gap from callbacks where id = $1`, [cbA])).rows;
 retry1 === 'pending' && cbRetry.gap === 10 ? ok('no answer -> next attempt in 10 min') : fail(JSON.stringify({ retry1, cbRetry }));
-// second callback is now dialled to the free agent; the patient picks up -> done at once, pending count drops
+// second callback is now dialled to the free agent; the patient picks up -> reached at once (SLA met, pending count
+// drops), but it stays open until the agent records an outcome
 let [{ c: claim3 }] = await system(`select autodial_claim() c`);
 const cbB = claim3[0]?.callback_id;
 claim3.length === 1 ? ok('agent free again -> next due callback dialled') : fail(JSON.stringify(claim3));
@@ -259,9 +260,11 @@ const [kBefore] = await as('sup', `select (dashboard_kpis(now() - interval '1 da
 await db.query(`update calls set status = 'answered', answered_at = now() where id = $1`, [claim3[0].call_id]);
 const [{ n: closedN }] = await system(`select callback_connected($1::uuid) n`, [claim3[0].call_id]);
 const [kAfter] = await as('sup', `select (dashboard_kpis(now() - interval '1 day', now() + interval '1 day')->>'callbacks_pending')::int n`);
-const [cbDone] = (await db.query(`select status, completed_by from callbacks where id = $1`, [cbB])).rows;
-closedN === 1 && cbDone.status === 'done' && cbDone.completed_by === users.agent && kAfter.n === kBefore.n - 1
-  ? ok(`patient connected -> callback done immediately, Callbacks pending ${kBefore.n} -> ${kAfter.n}`) : fail(JSON.stringify({ closedN, cbDone, kBefore, kAfter }));
+const [cbReached] = (await db.query(`select status, assigned_to, reached_call_id::text, completed_at from callbacks where id = $1`, [cbB])).rows;
+const [slaB] = (await db.query(`select status from sla_timers where callback_id = $1 and policy_key = 'missed_callback'`, [cbB])).rows;
+closedN === 1 && cbReached.status === 'reached' && cbReached.reached_call_id === claim3[0].call_id && cbReached.completed_at === null
+  && cbReached.assigned_to === users.agent && slaB?.status === 'met' && kAfter.n === kBefore.n - 1
+  ? ok(`patient connected -> callback reached, SLA met, Callbacks pending ${kBefore.n} -> ${kAfter.n}, outcome still open`) : fail(JSON.stringify({ closedN, cbReached, slaB, kBefore, kAfter }));
 await db.query(`update calls set started_at = now() - interval '31 minutes' where id = $1`, [claim3[0].call_id]);
 const [{ id: cbD }] = (await db.query(`insert into callbacks(workspace_id, number, reason, due_at)
   values ($1, '+919811100004', 'missed', now()) returning id`, [ws])).rows;
@@ -271,6 +274,42 @@ await db.query(`update calls set status = 'completed', ended_at = now() where id
 let [{ c: claimReleased }] = await system(`select autodial_claim() c`);
 claimReleased.length === 1 && claimReleased[0].callback_id === cbD
   ? ok('completed call releases the agent for the next callback') : fail('agent stayed busy after call completion ' + JSON.stringify(claimReleased));
+// a real conversation: the end of the call keeps it reached; closing needs an outcome from the agent
+await db.query(`update calls set talk_seconds = 95 where id = $1`, [claim3[0].call_id]);
+const [{ r: endB }] = await system(`select callback_call_ended($1::uuid) r`, [claim3[0].call_id]);
+endB === 'reached' ? ok('95 s conversation -> callback stays reached until the outcome') : fail(endB);
+await expectError('agent', `select callback_call_ended($1::uuid)`, [claim3[0].call_id], 'permission denied');
+await expectError('agent', `select callback_update($1::uuid, 'done')`, [cbB], 'Record an outcome');
+await expectError('agent', `select callback_update($1::uuid, 'unreachable', 'x')`, [cbB], 'no longer in the queue');
+await expectError('agent', `select callback_close($1::uuid, 'follow_up', ' ')`, [cbB], 'follow-up');
+await expectError('agent', `select callback_close($1::uuid, 'done')`, [cbB], 'Choose an outcome');
+const [{ r: closedB }] = await as('agent', `select callback_close($1::uuid, 'resolved', 'Report timeline shared') r`, [cbB]);
+const [cbClosed] = (await db.query(`select status, outcome, outcome_note, completed_by, completed_at is not null c from callbacks where id = $1`, [cbB])).rows;
+closedB.status === 'done' && cbClosed.outcome === 'resolved' && cbClosed.outcome_note === 'Report timeline shared' && cbClosed.completed_by === users.agent && cbClosed.c
+  ? ok('agent records the outcome -> callback closed (done) with the note') : fail(JSON.stringify({ closedB, cbClosed }));
+await expectError('agent', `select callback_close($1::uuid, 'resolved')`, [cbB], 'already closed');
+// a drop-off: connected, then under 20 s of talk -> back to the queue, SLA reopened
+const dropCall = claimReleased[0]?.call_id;
+await db.query(`update calls set status = 'answered', answered_at = now() where id = $1`, [dropCall]);
+await system(`select callback_connected($1::uuid)`, [dropCall]);
+await db.query(`update calls set status = 'completed', ended_at = now(), talk_seconds = 6 where id = $1`, [dropCall]);
+const [{ r: endD }] = await system(`select callback_call_ended($1::uuid) r`, [dropCall]);
+const [cbDrop] = (await db.query(`select status, reached_at, notes, next_attempt_at is not null n from callbacks where id = $1`, [cbD])).rows;
+const [slaD] = (await db.query(`select status, met_at from sla_timers where callback_id = $1 and policy_key = 'missed_callback'`, [cbD])).rows;
+endD === 'pending' && cbDrop.status === 'pending' && cbDrop.reached_at === null && cbDrop.n && slaD.met_at === null && slaD.status === 'running'
+  ? ok('6 s drop-off -> back to the queue for the next attempt, SLA running again') : fail(JSON.stringify({ endD, cbDrop, slaD }));
+// another outbound call to the same number (not dialled from the queue) no longer touches the callback
+const [{ id: otherCall }] = (await db.query(`insert into calls (workspace_id, direction, customer_number, agent_id, status, answered_at, session_id)
+  values ($1, 'outbound', '+919811100004', $2, 'answered', now(), 'test-unrelated-1') returning id`, [ws, users.agent])).rows;
+const [{ n: otherN }] = await system(`select callback_connected($1::uuid) n`, [otherCall]);
+await db.query(`update calls set status = 'completed', ended_at = now(), talk_seconds = 120 where id = $1`, [otherCall]);
+const [{ r: otherEnd }] = await system(`select callback_call_ended($1::uuid) r`, [otherCall]);
+const [cbStill] = (await db.query(`select status from callbacks where id = $1`, [cbD])).rows;
+otherN === 0 && otherEnd === 'none' && cbStill.status === 'pending'
+  ? ok('unrelated outbound call to the same number leaves the callback pending') : fail(JSON.stringify({ otherN, otherEnd, cbStill }));
+const [{ m: misCb }] = await as('sup', `select mis_report(current_date - 1, current_date + 1)->'callbacks' m`);
+misCb.reached >= 1 && misCb.done >= 1 && misCb.outcomes?.resolved >= 1 && misCb.awaiting_outcome != null && misCb.unreachable != null
+  ? ok('MIS splits reached, closed with outcome and the outcome counts') : fail(JSON.stringify(misCb));
 // attempts run out -> unreachable with the reason
 await db.query(`update callbacks set status = 'in_progress', attempts = 3, last_attempt_at = now() where id = $1`, [cbA]);
 const [{ r: retry2 }] = await system(`select callback_retry($1::uuid, 'call failed') r`, [cbA]);

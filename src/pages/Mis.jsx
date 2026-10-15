@@ -132,9 +132,12 @@ export default function Mis() {
                 <Row k="Answered within 30 s" v={pct(c.answer_within_30s_pct, 1)} />
                 <Row k="Missed + abandoned" v={pct(c.abandon_pct, 1)} />
                 <Row k="Callbacks raised" v={num(cb.raised)} />
-                <Row k="Callbacks done" v={num(cb.done)} />
-                <Row k="Done within SLA (10 min)" v={`${num(cb.within_sla)}${cb.raised ? ` · ${pct(ratio(cb.within_sla, cb.raised), 0)}` : ''}`} />
-                <Row k="Average callback time" v={mins(cb.avg_minutes)} />
+                <Row k="Patient reached" v={num(cb.reached)} />
+                <Row k="Reached within SLA (10 min)" v={`${num(cb.within_sla)}${cb.raised ? ` · ${pct(ratio(cb.within_sla, cb.raised), 0)}` : ''}`} />
+                <Row k="Closed with outcome" v={num(cb.done)} />
+                <Row k="Reached, outcome not recorded" v={num(cb.awaiting_outcome)} />
+                <Row k="Unreachable" v={num(cb.unreachable)} />
+                <Row k="Average time to reach" v={mins(cb.avg_minutes)} />
               </tbody></table> : <TableSkeleton rows={8} cols={2} />}
             </Panel>
             <Panel title="Funnel & conversion" sub="Cases opened in the period">
@@ -336,7 +339,11 @@ function writeWorkbook(r, { from, to, mode, workspace }) {
     S1('Report', 'Workspace', workspace?.name || ''), S1('Report', 'Period', `${mode} ${from} to ${to}`), S1('Report', 'Generated (IST)', dateTime(new Date())),
     S1('Contact centre', 'Calls', c.total), S1('Contact centre', 'Answered', c.answered), S1('Contact centre', 'Missed', c.missed), S1('Contact centre', 'Abandoned', c.abandoned),
     S1('Contact centre', 'Answered within 30 s %', c.answer_within_30s_pct), S1('Contact centre', 'Missed + abandoned %', c.abandon_pct),
-    S1('Callbacks', 'Raised', cb.raised), S1('Callbacks', 'Done', cb.done), S1('Callbacks', 'Done within SLA', cb.within_sla), S1('Callbacks', 'Average minutes', cb.avg_minutes),
+    S1('Callbacks', 'Raised', cb.raised), S1('Callbacks', 'Reached', cb.reached), S1('Callbacks', 'Reached within SLA', cb.within_sla),
+    S1('Callbacks', 'Closed with outcome', cb.done), S1('Callbacks', 'Awaiting outcome', cb.awaiting_outcome), S1('Callbacks', 'Unreachable', cb.unreachable),
+    S1('Callbacks', 'Outcome: resolved', cb.outcomes?.resolved), S1('Callbacks', 'Outcome: follow-up needed', cb.outcomes?.follow_up),
+    S1('Callbacks', 'Outcome: wrong number', cb.outcomes?.wrong_number), S1('Callbacks', 'Outcome: no longer needed', cb.outcomes?.not_needed),
+    S1('Callbacks', 'Average minutes to reach', cb.avg_minutes),
     S1('Funnel', 'Enquiries', f.enquiries), S1('Funnel', 'Quotes', f.quotes), S1('Funnel', 'Bookings', f.bookings), S1('Funnel', 'Completions', f.completions),
     S1('Funnel', 'Closed', f.closed), S1('Funnel', 'Cancelled', f.cancelled), S1('Funnel', 'Conversion %', f.conversion_pct),
     S1('TAT', 'Quote minutes', r.tat.quote_min), S1('TAT', 'Booking minutes', r.tat.booking_min),

@@ -177,11 +177,16 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await hook({ ...b3, event_id: 'o1', event_type: 'call.initiated', payload: { client_ref_id: obd?.body?.reference_id } });
   await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ answered_at: t0 + 5, ring_duration: 5 }] } });
   const live = await one(`select cb.status, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, cb.id, dial.body?.call_id);
-  check(live?.status === 'done' && live.cid === cb.id, 'patient connected -> callback done at once, before the call ends (dashboard pending drops live)', JSON.stringify(live));
+  check(live?.status === 'reached' && live.cid === cb.id, 'patient connected -> callback reached at once, before the call ends (dashboard pending drops live)', JSON.stringify(live));
   await hook({ ...b3, event_id: 'o3', event_type: 'call.end', timestamp: t0 + 100, payload: { legs: [{ talk_duration: 95 }] } });
   const out = await one(`select session_id, status from calls where id = $1`, dial.body?.call_id);
   check(out?.session_id === 'sess-out-1' && out?.status === 'completed', 'webhook matched to the CRM call by reference', JSON.stringify(out));
-  check((await one(`select status from callbacks where id = $1`, cb.id))?.status === 'done', 'answered call-back closes the queue item');
+  check((await one(`select status from callbacks where id = $1`, cb.id))?.status === 'reached', '95 s call-back keeps the item reached until the agent records an outcome');
+  const closeCb = await rpc('agent', 'callback_close', { p_id: cb.id, p_outcome: 'resolved', p_note: 'Shared the report timeline' });
+  check(closeCb.status === 200 && (await one(`select status, outcome from callbacks where id = $1`, cb.id))?.outcome === 'resolved',
+    'agent closes the callback with an outcome', JSON.stringify(closeCb.body));
+  check((await rpc('client', 'callback_close', { p_id: cb.id, p_outcome: 'resolved' })).status === 403,
+    'Hinduja manager cannot close callbacks');
   await hook({ event_id: 'w1', event_type: 'message.received', customer_identifier: '+919811122233', system_identifier: '+918049368621',
     payload: { id: 'wamid_in_1', conversation: { customer_name: 'Meera Joshi' }, data: { context: { body: 'Need ECG at home tomorrow in Khar' } } } });
   const wa = await one(`select c.id::text as case_id, c.patient_id::text as patient_id, c.source_channel, c.case_no from cases c join patients p on p.id = c.patient_id where p.mobile = '+919811122233'`);
@@ -442,8 +447,8 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await hook({ ...bA, event_id: 'a2', event_type: 'call.initiated', payload: { client_ref_id: autoObd?.body?.reference_id } }, newKey);
   await hook({ ...bA, event_id: 'a3', event_type: 'call.answered', timestamp: Math.floor(Date.now() / 1000), payload: { legs: [{ answered_at: Math.floor(Date.now() / 1000), ring_duration: 4 }] } }, newKey);
   const pend1 = (await rpc('sup', 'dashboard_kpis', { p_from: new Date(Date.now() - 864e5).toISOString(), p_to: new Date(Date.now() + 864e5).toISOString() })).body?.data?.callbacks_pending;
-  check(pend0 === 1 && pend1 === 0 && (await one(`select status from callbacks where id = $1`, queued?.id ?? null))?.status === 'done',
-    'patient connects -> Callbacks pending 1 -> 0 on the dashboard', JSON.stringify({ pend0, pend1 }));
+  check(pend0 === 1 && pend1 === 0 && (await one(`select status from callbacks where id = $1`, queued?.id ?? null))?.status === 'reached',
+    'patient connects -> Callbacks pending 1 -> 0 on the dashboard (reached, outcome open)', JSON.stringify({ pend0, pend1 }));
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'bad' } });
   const [{ id: retryCb }] = await sql`insert into callbacks (workspace_id, number, reason, due_at)
     values (${ws}, '+919930055502', 'missed', now() + interval '10 minutes') returning id::text`;

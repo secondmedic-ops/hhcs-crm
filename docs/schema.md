@@ -108,6 +108,10 @@
 | created_at | timestamp with time zone | NO |
 | next_attempt_at | timestamp with time zone | YES |
 | auto_dialled | boolean | NO |
+| reached_at | timestamp with time zone | YES |
+| reached_call_id | uuid | YES |
+| outcome | text | YES |
+| outcome_note | text | YES |
 
 ## calls
 | column | type | nullable |
@@ -942,6 +946,10 @@
 | open_case_id | uuid | YES |
 | next_attempt_at | timestamp with time zone | YES |
 | auto_dialled | boolean | YES |
+| reached_at | timestamp with time zone | YES |
+| reached_call_id | uuid | YES |
+| outcome | text | YES |
+| outcome_note | text | YES |
 
 ## v_calls
 | column | type | nullable |
