@@ -25,10 +25,14 @@ const walk = (d) => !existsSync(d) ? [] : readdirSync(d).flatMap((f) => {
 const code = [...walk("cloudflare/src"), ...walk("src")]
   .filter((f) => /\.(java|ts|tsx|js|jsx)$/.test(f) && !/generated[\\/]api-schema\.ts$/.test(f));
 
+const migrationVersions = new Set();
 for (const f of existsSync(dir) ? readdirSync(dir) : []) {
   const p = join(dir, f).replace(/\\/g, "/");
   const sql = readFileSync(p, "utf8");
   if (!/^\d{14}_[a-z0-9_]+\.sql$/.test(f)) errors.push(`${f}: name must be YYYYMMDDHHMMSS_snake_name.sql`);
+  const version = f.slice(0, 14);
+  if (migrationVersions.has(version)) errors.push(`${f}: duplicate migration version ${version}`);
+  migrationVersions.add(version);
   if (!sql.trim()) errors.push(`${f}: empty file`);
   const drops = [...sql.matchAll(/drop\s+column\s+(?:if\s+exists\s+)?"?(\w+)"?|rename\s+column\s+"?(\w+)"?/gi)].map((m) => m[1] || m[2]);
   const destructive = drops.length || /drop\s+table/i.test(sql);
