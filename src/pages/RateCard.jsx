@@ -230,12 +230,13 @@ function EndRate({ r, label, onClose }) {
 // ------------------------------------------------------------------ import
 const FIELDS = [
   ['service_code', 'Service Code', ['servicecode', 'code']],
-  ['service_name', 'Service Name', ['servicename', 'service', 'name']],
+  ['service_name', 'Service Name', ['servicename', 'service', 'name', 'serviceequipmentdiagnostics', 'serviceequipment', 'item']],
   ['provider_code', 'Provider Code', ['providercode', 'provider', 'suppliercode', 'supplier']],
   ['category', 'Category', ['category']],
   ['unit', 'Unit', ['unit', 'uom']],
   ['b2b', 'B2B Rate', ['b2brate', 'b2b', 'buyingrate']],
-  ['b2c', 'B2C Rate', ['b2crate', 'b2c', 'sellingrate']],
+  // never "BMM B2C / Listed Tariff": that is a provider's own customer price, not ours
+  ['b2c', 'B2C Rate', ['b2crate', 'b2c', 'sellingrate', 'proposedhindujapatientprice', 'hindujapatientprice', 'patientprice']],
   ['effective_from', 'Effective From', ['effectivefrom', 'effectivedate']],
 ];
 const CAT_IN = { lab: 'lab', 'sample collection': 'lab', 'blood test': 'lab', 'blood tests': 'lab', xray: 'xray', 'x-ray': 'xray', 'portable x-ray': 'xray',
@@ -244,7 +245,29 @@ const CAT_IN = { lab: 'lab', 'sample collection': 'lab', 'blood test': 'lab', 'b
   equipment: 'equipment', icu: 'icu', 'icu setup': 'icu', consumables: 'consumables', other: 'other' };
 const normHead = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const pad = (n) => String(n).padStart(2, '0');
-const suggestCode = (name) => String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+// rate-card codes: letters and digits joined by hyphens, at most 30, cut at a word where it can be
+const codeWords = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function fitCode(s, n) {
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n + 1).lastIndexOf('-');
+  return (cut >= n / 2 ? s.slice(0, cut) : s.slice(0, n)).replace(/-+$/, '');
+}
+/** Code for a name; with a unit (the same name sold in several units) the unit's first words stay on the end. */
+function suggestCode(name, unit) {
+  if (!unit) return fitCode(codeWords(name), 30);
+  const u = fitCode(codeWords(unit), 10);
+  return `${fitCode(codeWords(name), 29 - u.length)}-${u}`;
+}
+const unitWords = (u) => String(u || '').trim().replace(/^per\s+/i, '');
+/** A starting category for a new service, from its name. Shown for review; the person confirming decides. */
+function guessCategory(name) {
+  const n = String(name || '').toLowerCase();
+  const rules = [[/telemonitor|holter|abpm/, 'homecare'], [/x[- ]?ray/, 'xray'], [/\becg\b/, 'ecg'], [/physio/, 'physio'],
+    [/nurs|dressing|picc/, 'nursing'], [/attendant|caretaker|care taker|elder/, 'eldercare'], [/ambulance/, 'other'], [/doctor/, 'homecare'],
+    [/\bbeds?\b/, 'beds'], [/oxygen|concentrator|cylinder|airvo|hfnc|monitor|ventilator|bipap|cpap|stellar|lumis|pump|suction|mattress|wheelchair|walker|commode/, 'equipment'],
+    [/blood|\blab\b|sample/, 'lab']];
+  return (rules.find(([re]) => re.test(n)) || [])[1] || '';
+}
 
 /** Cell text as the sheet shows it: numbers unformatted, date cells as YYYY-MM-DD, spreadsheet errors as #N/A etc. */
 function cellText(c) {
@@ -289,6 +312,7 @@ function ImportRates() {
   const [stale, setStale] = useState(false);
   const [filter, setFilter] = useState('all');
   const [fixing, setFixing] = useState(null);
+  const [reviewing, setReviewing] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [done, setDone] = useState(null);
   const svcs = useLoad(() => q(db.from('services').select('id,code,name,category,unit,price,tax_basis,active').order('code')), [], ['services']);
@@ -333,15 +357,13 @@ function ImportRates() {
   const rowsOut = check?.rows || [];
   const shown = rowsOut.filter((r) => filter === 'all' || (filter === 'errors' ? r.errors.length : filter === 'warnings' ? r.warnings.length
     : ['new', 'changed'].includes(r.buy?.status) || ['new', 'changed'].includes(r.sell?.status)));
-  const unknownCodes = rowsOut.filter((r) => r.errors.some((e) => e.startsWith('Unknown service code')));
-  const bulkable = unknownCodes.filter((r) => { const o = sentBy[Number(r.row)]; return o && o.service_name && CAT_IN[String(o.category || '').trim().toLowerCase()] && o.unit; });
-  const confirmNew = () => {
+  // rows whose service is not on the rate card (unknown code, or a sheet without codes) and not resolved yet
+  const unknownCodes = rowsOut.filter((r) => !r.service_id && !resolve[Number(r.row)]?.new_service
+    && r.errors.some((e) => e.startsWith('Unknown service code') || e.startsWith('No service code')));
+  const confirmNew = (defs) => {
     const next = { ...resolve };
-    for (const r of bulkable) {
-      const o = sentBy[Number(r.row)];
-      next[o.row] = { ...(next[o.row] || {}), new_service: { code: String(o.service_code).trim().toUpperCase(), name: o.service_name, category: CAT_IN[String(o.category).trim().toLowerCase()], unit: o.unit } };
-    }
-    setResolve(next); touch();
+    for (const [row, ns] of Object.entries(defs)) next[row] = { ...(next[row] || {}), new_service: ns };
+    setResolve(next); setReviewing(false); touch();
   };
   const s = check?.summary;
   const changes = s ? s.buy_new + s.buy_changed + s.sell_new + s.sell_changed : 0;
@@ -436,9 +458,8 @@ function ImportRates() {
             {check.file_errors?.length > 0 && <div className="small danger-text mt-8">{check.file_errors.join(' · ')}</div>}
             {unknownCodes.length > 0 && (
               <div className="cd-banner warn mt-12"><div className="grow small">
-                <strong>{unknownCodes.length} row(s) have a service code that is not on the rate card.</strong> Choose the existing service on each row, or confirm them as new services.
-                {bulkable.length < unknownCodes.length && ` ${unknownCodes.length - bulkable.length} need a name, category and unit first.`}
-              </div>{bulkable.length > 0 && <Button size="sm" onClick={confirmNew}>Confirm {bulkable.length} as new services</Button>}</div>
+                <strong>{unknownCodes.length} row(s) are not on the rate card.</strong> Review them as new services in one list (code, name, unit, category), or use Resolve on a row to choose an existing service sold in the same unit.
+              </div><Button size="sm" onClick={() => setReviewing(true)}>Review {unknownCodes.length} as new services</Button></div>
             )}
             <div className="row mt-12"><Segmented value={filter} onChange={setFilter} options={[['changes', 'Changes'], ['errors', `Errors (${s.error_rows})`], ['warnings', `Warnings (${s.warning_rows})`], ['all', 'All rows']]} /></div>
           </div>
@@ -491,6 +512,8 @@ function ImportRates() {
         ) : <Empty title="No imports yet" />}
       </Panel>
 
+      {reviewing && <NewServices rows={unknownCodes.map((r) => sentBy[Number(r.row)]).filter(Boolean)} existing={svcs.data || []}
+        onClose={() => setReviewing(false)} onSave={confirmNew} />}
       {fixing && <ResolveRow r={fixing} current={resolve[Number(fixing.row)]} row={sentBy[Number(fixing.row)]} services={svcs.data || []} providers={(provs.data || []).filter((p) => p.active)}
         onClose={() => setFixing(null)} onSave={(v) => { setResolve({ ...resolve, [Number(fixing.row)]: v }); setFixing(null); touch(); }} />}
       {confirm && (
@@ -504,6 +527,70 @@ function ImportRates() {
         </Modal>
       )}
     </div>
+  );
+}
+
+/** Every not-yet-known service of the sheet in one list: one line per service (rows of the same code, or the same name and
+ *  unit, share it). Codes and categories are suggestions to review; nothing is added until the import is submitted. */
+function NewServices({ rows, existing, onClose, onSave }) {
+  const [list, setList] = useState(() => {
+    const taken = new Set(existing.map((s) => String(s.code).toUpperCase()));
+    const unitsOf = {};
+    for (const o of rows) { const k = String(o.service_name || '').trim().toLowerCase(); (unitsOf[k] = unitsOf[k] || new Set()).add(unitWords(o.unit).toLowerCase()); }
+    const groups = new Map();
+    for (const o of rows) {
+      const fileCode = String(o.service_code || '').trim().toUpperCase();
+      const name = String(o.service_name || '').trim();
+      const key = fileCode || `${name.toLowerCase()}|${unitWords(o.unit).toLowerCase()}`;
+      if (!groups.has(key)) {
+        const fileCat = CAT_IN[String(o.category || '').trim().toLowerCase()];
+        let code = fileCode;
+        if (!code) {
+          const base = suggestCode(name, (unitsOf[name.toLowerCase()]?.size || 0) > 1 ? unitWords(o.unit) : null);
+          code = base; for (let i = 2; taken.has(code); i++) code = `${base.slice(0, 27).replace(/-+$/, '')}-${i}`;
+        }
+        taken.add(code);
+        groups.set(key, { key, rows: [], code, suggested: !fileCode, name, unit: String(o.unit || '').trim(), category: fileCat || guessCategory(name), guessed: !fileCat });
+      }
+      groups.get(key).rows.push(o.row);
+    }
+    return [...groups.values()];
+  });
+  const onCard = new Set(existing.map((s) => String(s.code).toUpperCase()));
+  const count = {}; list.forEach((g) => { count[g.code] = (count[g.code] || 0) + 1; });
+  const problem = (g) => (!/^[A-Z0-9][A-Z0-9-]{1,29}$/.test(g.code) ? '2-30 letters, digits or hyphens'
+    : count[g.code] > 1 ? 'used twice in this list' : onCard.has(g.code) ? 'already on the rate card: use Resolve on the row instead'
+    : !g.name ? 'needs a name' : !g.unit ? 'needs a unit' : !g.category ? 'choose a category' : null);
+  const bad = list.filter(problem).length;
+  const set = (key, k, v) => setList(list.map((g) => (g.key === key ? { ...g, [k]: v, ...(k === 'category' ? { guessed: false } : {}) } : g)));
+  const save = () => {
+    const defs = {};
+    for (const g of list) for (const row of g.rows) defs[row] = { code: g.code, name: g.name, category: g.category, unit: g.unit };
+    onSave(defs);
+  };
+  return (
+    <Modal wide title={`Review ${list.length} new service${list.length === 1 ? '' : 's'}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={bad > 0} onClick={save}>Use these {list.length} services</Button></>}>
+      <div className="small muted mb-8">Check each code and category. The category decides which provider a case is routed to (X-ray, ECG and lab to SecondMedic; nursing, physiotherapy, beds, equipment, elder care and other home care to Book My Medicare). Units are kept as written and never converted. The services are added only when you submit the import, off the quotable card until Hinduja approves their price.</div>
+      {bad > 0 && <div className="small danger-text mb-8">{bad} line(s) need attention.</div>}
+      <div className="table-wrap"><table className="t compact">
+        <thead><tr><th>File rows</th><th>Service</th><th>Unit</th><th>Code</th><th>Category</th></tr></thead>
+        <tbody>{list.map((g) => {
+          const p = problem(g);
+          return (
+            <tr key={g.key}>
+              <td className="mono small">{g.rows.join(', ')}</td>
+              <td className="small">{g.name || <span className="danger-text">no name</span>}</td>
+              <td className="small nowrap">{g.unit || <span className="danger-text">no unit</span>}</td>
+              <td><Input className="mono sm" style={{ width: 210 }} value={g.code} aria-label={`Code for ${g.name}`} onChange={(e) => set(g.key, 'code', e.target.value.toUpperCase().trim())} />
+                {p && <div className="tiny danger-text">{p}</div>}</td>
+              <td><Select className="sm" value={g.category} aria-label={`Category for ${g.name}`} onChange={(e) => set(g.key, 'category', e.target.value)} placeholder="Choose" options={Object.entries(CAT)} />
+                {g.guessed && g.category && <div className="tiny faint">suggested from the name</div>}</td>
+            </tr>
+          );
+        })}</tbody>
+      </table></div>
+    </Modal>
   );
 }
 
