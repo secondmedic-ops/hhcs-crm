@@ -2,6 +2,7 @@
 // Covers: login required (missing / forged / expired / wrong-audience tokens), role rules per endpoint, Row Level
 // Security through the API, the case workflow, MyOperator webhooks + click-to-call, and live updates.
 import { staffSessionTests } from './staff-session.itest.mjs';
+import { rateApiTests } from './rates.itest.mjs';
 const WS = 'HHC';
 const U = {
   agent: 'b0000000-0000-4000-8000-000000000001', agent2: 'b0000000-0000-4000-8000-000000000002',
@@ -621,6 +622,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(admNote?.actor_label === 'COORD user - Administrator (ADMINISTRATOR user)', 'administrator workspace actions read "Staff - Administrator (Name)"', JSON.stringify(admNote));
   await call('administrator', 'POST', '/api/v1/staff-sessions/end', {}, admH);
   await staffSessionTests({ call, sql, check, U, ws });
+  await rateApiTests({ call, sql, check, U, ws });
   return { total, failed };
 }
 

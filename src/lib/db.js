@@ -70,8 +70,8 @@ export async function initDb(onStep) {
     emitChange('*');
     return rows;
   };
-  // the production Worker runs sla_scan() every minute; the demo does the same in the browser
-  const scan = () => db.service('select sla_scan()').catch(() => {});
+  // the production Worker runs sla_scan() and activates approved prices whose date has come every minute; the demo does the same
+  const scan = () => db.service('select sla_scan(), activate_due_prices()').catch(() => {});
   scan(); setInterval(scan, 60000);
   return db;
 }

@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { inr, num, pct, dur, date, dateLong, dateTime, istDateStr } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Segmented, Button, Badge, Input, TableSkeleton, Skeleton, Empty, ErrorNote, AiTag, useAction } from '../components/ui.jsx';
 import { Bars, HBars, Funnel, Line, Meter } from '../components/charts.jsx';
+import MarginReport from '../components/MarginReport.jsx';
 
 // ---- IST calendar helpers on 'YYYY-MM-DD' strings
 const D = (s) => new Date(s + 'T00:00:00Z');
@@ -39,6 +40,10 @@ const ratio = (a, b) => (b ? (100 * a) / b : null);
 export default function Mis() {
   const { workspace, can } = useAuth();
   const canExport = can('supervisor', 'client_manager', 'client_clinical');
+  // MIS > Margins: SecondMedic commercial staff only (margin_report() refuses everyone else)
+  const canMargins = can('supervisor', 'coordinator');
+  const [view, setView] = useState('pack');
+  const margins = canMargins && view === 'margins';
   const [mode, setModeRaw] = useState('daily');
   const [anchor, setAnchor] = useState(defaultAnchor('daily'));
   const [custom, setCustom] = useState([istDateStr(-7), istDateStr(-1)]);
@@ -48,8 +53,8 @@ export default function Mis() {
   const step = (n) => setAnchor(mode === 'daily' ? add(anchor, n) : mode === 'weekly' ? add(anchor, 7 * n) : shiftMonth(anchor, n));
   const today = istDateStr(0);
 
-  const rep = useLoad(() => rpc('mis_report', { p_from: from, p_to: to }), [from, to]);
-  const trans = useLoad(() => rpc('transition_metrics', { p_from: `${from}T00:00:00+05:30`, p_to: `${add(to, 1)}T00:00:00+05:30` }), [from, to]);
+  const rep = useLoad(() => (margins ? null : rpc('mis_report', { p_from: from, p_to: to })), [from, to, margins]);
+  const trans = useLoad(() => (margins ? null : rpc('transition_metrics', { p_from: `${from}T00:00:00+05:30`, p_to: `${add(to, 1)}T00:00:00+05:30` })), [from, to, margins]);
   const snap = useLoad(() => (mode === 'custom' ? Promise.resolve(null)
     : q(db.from('mis_snapshots').select('id,narrative,generated_at,period_end').eq('period', mode).eq('period_start', from).maybeSingle())), [mode, from]);
   const r = rep.data;
@@ -79,9 +84,10 @@ export default function Mis() {
       </div>
 
       <PageHead title="MIS reports" sub={<>{workspace?.name} · {periodText} · IST</>}>
+        {canMargins && <Segmented options={[['pack', 'MIS pack'], ['margins', 'Margins']]} value={view} onChange={setView} />}
         <Segmented options={MODES} value={mode} onChange={setMode} />
-        {canExport && <Button icon="download" onClick={exportXlsx} disabled={!r || busy} className="no-print">Excel</Button>}
-        {canExport && <Button icon="print" onClick={exportPdf} disabled={!r || busy} className="no-print">PDF</Button>}
+        {canExport && !margins && <Button icon="download" onClick={exportXlsx} disabled={!r || busy} className="no-print">Excel</Button>}
+        {canExport && !margins && <Button icon="print" onClick={exportPdf} disabled={!r || busy} className="no-print">PDF</Button>}
       </PageHead>
 
       <div className="row wrap mb-12 no-print mis-period">
@@ -98,9 +104,10 @@ export default function Mis() {
           <Input type="date" value={custom[1]} max={today} onChange={(e) => e.target.value && setCustom([custom[0], e.target.value])} style={{ width: 160 }} aria-label="To" />
           <span className="small muted">{Math.round((D(to) - D(from)) / 86400e3) + 1} days</span>
         </>}
-        {!canExport && <span className="small faint">Exports are available to the supervisor and Hinduja users.</span>}
+        {!canExport && !margins && <span className="small faint">Exports are available to the supervisor and Hinduja users.</span>}
       </div>
 
+      {margins ? <MarginReport from={from} to={to} periodId={periodId} /> : <>
       <ErrorNote error={rep.error} />
 
       <div className="kpis mis-kpis">
@@ -261,6 +268,7 @@ export default function Mis() {
           </Panel>
         </div>
       </div>
+      </>}
     </>
   );
 }

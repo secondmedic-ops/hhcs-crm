@@ -311,6 +311,19 @@ val.validation_status === 'done' && val.items === 12 ? ok('nurse records dischar
 (await refs(pd.case_id)).every((r) => r.status === 'cancelled') ? ok('items added, still no partner lead before sign-off') : fail(JSON.stringify(await refs(pd.case_id)));
 const [{ n: provAssess }] = await as('bmm', `select count(*)::int n from discharge_assessments`);
 provAssess === 0 ? ok('partner cannot read clinical validation records') : fail('provider sees assessments');
+
+// Home assessment visit (Hindu-certified nurse at patient's home, without treating doctor)
+const pdHome = await mk({ patient: { full_name: 'Home Patient', mobile: '9811100019', address: 'Khar W', pincode: '400052' }, branch: 'Mahim' });
+await as('agent', `select set_intake($1, $2::jsonb)`, [pdHome.case_id, JSON.stringify({ care_type: 'post_discharge', intake_disposition: 'requirement_captured', spoke_with: 'patient', expected_discharge_on: '2026-10-21' })]);
+await as('coord', `select schedule_validation($1, $2, now() + interval '2 hours', 'home_visit')`, [pdHome.case_id, users.field]);
+const [hCase] = (await db.query(`select assessment_type from cases where id = $1`, [pdHome.case_id])).rows;
+const [hAssess] = (await db.query(`select assessment_type from discharge_assessments where case_id = $1 and status = 'scheduled'`, [pdHome.case_id])).rows;
+hCase.assessment_type === 'home_visit' && hAssess.assessment_type === 'home_visit' ? ok('home assessment scheduled on case & assessment') : fail(JSON.stringify({ hCase, hAssess }));
+await expectError('field', `select record_validation($1, $2::jsonb)`, [pdHome.case_id, JSON.stringify({ readiness: 'ready', met_family: false })], 'Meet the family');
+const [{ r: valHome }] = await as('field', `select record_validation($1, $2::jsonb) r`, [pdHome.case_id, JSON.stringify({ readiness: 'ready', met_family: true, home_setup_notes: 'Ground floor, clean power socket with earthing' })]);
+valHome.validation_status === 'done' ? ok('home assessment records discharge ready with family met and no treating doctor') : fail(JSON.stringify(valHome));
+await db.query(`delete from cases where id = $1`, [pdHome.case_id]);
+
 await as('coord', `select advance_case($1, null)`, [pd.case_id]); ok('enquiry → pricing after validation');
 const itemId = async (code) => (await db.query(`select id from case_items where case_id = $1 and service_code = $2`, [pd.case_id, code])).rows[0].id;
 await expectError('coord', `select set_item_scope($1, false, null)`, [await itemId('OXY-CONC')], 'reason');

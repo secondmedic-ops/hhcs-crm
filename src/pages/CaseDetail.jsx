@@ -13,6 +13,7 @@ import Icon, { channelIcon } from '../components/icons.jsx';
 import { useCalls, LiveCallBar } from '../components/CallCenter.jsx';
 import { LeadActions, RefBadge } from './Leads.jsx';
 import { TransitionPanel } from './Transition.jsx';
+import CaseMargins from '../components/CaseMargins.jsx';
 import {
   Panel, Button, Badge, StageBadge, SlaBadge, PriorityBadge, Countdown, AiTag, Tabs, Modal, Field, Input, Select, Textarea,
   Segmented, Confirm, Empty, TableSkeleton, Skeleton, ErrorNote, useToast, useAction,
@@ -26,7 +27,7 @@ const ASG_KIND = { assigned: 'info', en_route: 'warn', checked_in: 'accent', com
 const ASG_LABEL = { assigned: 'Assigned', en_route: 'En route', checked_in: 'Checked in', completed: 'Completed', cancelled: 'Cancelled', reassigned: 'Reassigned' };
 const TASK_LABEL = { phlebotomy: 'Phlebotomy', xray: 'Portable X-ray', ecg: 'ECG', visit: 'Visit' };
 const CAT_TASK = { lab: 'phlebotomy', ecg: 'ecg', xray: 'xray' };
-const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Home care', equipment: 'Equipment', icu: 'ICU setup', other: 'Other' };
+const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
 const HOPS = [
   ['collected_at', 'Collected'], ['handover_at', 'Handover'], ['dispatched_at', 'Dispatched'], ['transport_temp_c', 'Temp'],
   ['received_at', 'Received at lab'], ['accessioned_at', 'Accessioned'], ['report_released_at', 'Report released'], ['delivered_at', 'Delivered'],
@@ -67,7 +68,7 @@ export default function CaseDetail() {
   const escs = L(() => q(db.from('v_escalations').select('*').eq('case_id', id).order('raised_at', { ascending: false })));
   const cmps = L(() => q(db.from('v_complaints').select('*').eq('case_id', id).order('opened_at', { ascending: false })));
   const refs = L(() => q(db.from('v_referrals').select('id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,service_names,services_requested,patient_name,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,preferred_slot,created_at').eq('case_id', id).order('created_at')));
-  const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours,unit').is('active', true).order('category').order('price')), []);
+  const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours,unit,version').is('active', true).order('category').order('price')), []);
   const templates = useLoad(() => q(db.from('templates').select('id,kind,code,title,body,status,version').eq('status', 'approved').order('code')), []);
   const people = useLoad(() => q(db.from('profiles').select('id,full_name,role,skills,on_duty,agent_code,zone_id').in('role', ['coordinator', 'field_staff']).is('active', true).order('full_name')), []);
 
@@ -174,6 +175,7 @@ export default function CaseDetail() {
           {!can('provider') && <GateCard c={c} gates={gates} canAct={canAct} />}
           {!can('provider') && <TransitionPanel c={c} services={services.data || []} people={people.data || []} items={items.data || []} canAct={canAct && open} can={can} profile={profile} />}
           <ServicesQuote c={c} items={items} services={services.data || []} templates={tpl} approvals={appr.data || []} canAct={canAct} band={workspace?.discount_band_pct} />
+          {can('supervisor', 'coordinator') && (items.data || []).length > 0 && <CaseMargins c={c} />}
           {phase >= 2 && <Booking c={c} coordinators={(people.data || []).filter((p) => p.role === 'coordinator')} templates={tpl} canAct={canAct} me={profile} />}
           {phase >= 2 && <FieldPanel c={c} items={items.data || []} asg={asg} staff={(people.data || []).filter((p) => p.role === 'field_staff')} canDispatch={canDispatch && open} />}
           {(phase >= 3 || (samples.data || []).length > 0) && <LabPanel c={c} samples={samples} canAct={canAct && open} />}
@@ -492,6 +494,11 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
   const avail = services.filter((s) => !used.has(s.id));
   const disc = approvals.filter((a) => a.kind === 'discount');
   const lastDisc = disc[0];
+  const current = Object.fromEntries(services.map((s) => [s.id, s]));
+  // the quote keeps the prices it was made with; a draft can take today's rate card on purpose
+  const behind = rows.filter((r) => !r.excluded && (r.priced_at == null || (current[r.service_id] && current[r.service_id].version !== r.price_version)));
+  const canRefresh = editable && c.quote_status !== 'sent' && !c.signoff_at && behind.length > 0;
+  const [refresh, setRefresh] = useState(false);
   const [qk, ql] = QUOTE_KIND[c.quote_status] || ['', c.quote_status];
   const pctNum = Number(pct || 0);
   const overBand = band != null && pctNum > Number(band);
@@ -520,7 +527,7 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
                     <div className="tiny muted mono">{r.service_code}<span className="cd-show-sm"> · {CAT_LABEL[r.category] || r.category}</span></div>
                     {r.excluded && <div className="tiny">Dropped{r.exclude_category ? ` (${(DROP_CATS.find((x) => x[0] === r.exclude_category) || [])[1] || r.exclude_category})` : ''}: {r.exclude_reason}</div>}</td>
                   <td className="small cd-hide-sm">{CAT_LABEL[r.category] || r.category}</td>
-                  <td className="num">{Number(r.unit_price) > 0 ? inr(r.unit_price) : <span className="warn-text tiny">Not priced</span>}</td>
+                  <td className="num">{Number(r.unit_price) > 0 ? inr(r.unit_price) : <span className="warn-text tiny">Not priced</span>}{r.unit && <div className="tiny muted nowrap">per {r.unit}{r.price_version ? ` · v${r.price_version}` : ''}</div>}</td>
                   <td className="num">{r.qty}</td>
                   <td className="num">{r.excluded ? <span className="tiny">dropped</span> : inr(r.line_total)}</td>
                   {editable && <td className="right nowrap">{r.recommended
@@ -551,6 +558,18 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
           </div>
         )}
 
+        {canRefresh && (
+          <div className="cd-banner warn"><Icon name="alert" size={14} />
+            <div className="grow small">The rate card changed after {behind.length === 1 ? 'one line was' : `${behind.length} lines were`} priced. This draft keeps its prices until you refresh it.</div>
+            <Button size="sm" disabled={busy} onClick={() => setRefresh(true)}>Refresh prices</Button>
+          </div>
+        )}
+        {refresh && (
+          <Confirm title="Refresh prices from the rate card?" confirmLabel="Refresh" busy={busy} onClose={() => setRefresh(false)}
+            onConfirm={() => run(async () => { const r = await rpc('refresh_case_prices', { p_case: c.id }); setRefresh(false); return r; }, 'Prices refreshed from the current rate card')}>
+            <div className="small">Every line takes today's approved selling price (and the chosen provider's buying rate). The total may change; the change is written on the timeline.</div>
+          </Confirm>
+        )}
         {drop && (
           <DropItem item={drop} signedOff={!!c.signoff_at} busy={busy} onClose={() => setDrop(null)}
             onDrop={async (category, reason) => { await run(() => rpc('set_item_scope', { p_item: drop.id, p_included: false, p_reason: reason, p_qty: null, p_category: category }), 'Item dropped from the plan'); setDrop(null); }} />

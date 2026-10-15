@@ -22,6 +22,7 @@ const SPOKE = [['patient', 'Patient'], ['decision_maker', 'Family decision-maker
 const SPOKE_LABEL = Object.fromEntries(SPOKE);
 const VAL = { not_required: ['', 'Not required'], pending: ['warn', 'Validation pending'], scheduled: ['info', 'Visit scheduled'], done: ['ok', 'Discharge ready'], not_ready: ['danger', 'Not ready for discharge'] };
 const READY = [['ready', 'Ready for discharge'], ['not_ready', 'Not ready'], ['deferred', 'Discharge deferred']];
+export const VISIT_LOCATIONS = [['hospital_bedside', 'Hospital Bedside'], ['home_visit', 'Home Visit']];
 const MODES = [['in_person', 'In person'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['phone', 'Phone (recorded call)']];
 const DASH = '–';
 export const JOURNEY = [['intake_logged', 'Intake logged'], ['onsite_assessed', 'Onsite assessed'], ['commercial_approved', 'Commercial approved'],
@@ -132,16 +133,20 @@ function IntakeForm({ c, onDone }) {
 }
 
 function AssessmentView({ a }) {
-  const met = [a.met_doctor && 'doctor', a.met_ward_staff && 'ward staff', a.met_family && 'family'].filter(Boolean);
+  const isHome = a.assessment_type === 'home_visit';
+  const met = isHome
+    ? [a.met_family && 'family / patient'].filter(Boolean)
+    : [a.met_doctor && 'doctor', a.met_ward_staff && 'ward staff', a.met_family && 'family'].filter(Boolean);
   return (
     <dl className="kv">
+      <dt>Location</dt><dd>{isHome ? 'Home visit' : 'Hospital bedside'}</dd>
       <dt>Nurse</dt><dd>{a.nurse_name || DASH}</dd>
       <dt>{a.status === 'done' ? 'Visited' : 'Scheduled'}</dt><dd>{dateTime(a.status === 'done' ? a.visited_at : a.scheduled_at)}{a.status === 'scheduled' ? <>{' '}<Badge kind="info">Scheduled</Badge></> : null}</dd>
       {a.status === 'done' && <>
-        <dt>Met</dt><dd>{met.length ? met.join(', ') : <span className="danger-text">nobody recorded</span>}{a.doctor_name ? ` · ${a.doctor_name}` : ''}</dd>
+        <dt>{isHome ? 'Handover' : 'Met'}</dt><dd>{met.length ? met.join(', ') : <span className="danger-text">nobody recorded</span>}{(!isHome && a.doctor_name) ? ` · ${a.doctor_name}` : ''}</dd>
         <dt>Readiness</dt><dd>{(READY.find((r) => r[0] === a.readiness) || [])[1] || DASH}{a.revised_discharge_on ? ` · discharge ${date(a.revised_discharge_on)}` : ''}</dd>
         {a.home_setup_notes && <><dt>Home setup</dt><dd className="small">{a.home_setup_notes}</dd></>}
-        {a.doctor_recommendations && <><dt>Doctor recommends</dt><dd className="small">{a.doctor_recommendations}</dd></>}
+        {!isHome && a.doctor_recommendations && <><dt>Doctor recommends</dt><dd className="small">{a.doctor_recommendations}</dd></>}
         {a.clinical_summary && <><dt>Clinical summary</dt><dd className="small">{a.clinical_summary}</dd></>}
       </>}
     </dl>
@@ -150,14 +155,20 @@ function AssessmentView({ a }) {
 
 function ScheduleForm({ c, people, current, onDone }) {
   const nurses = people.filter((p) => ['coordinator', 'field_staff'].includes(p.role));
+  const [type, setType] = useState(current?.assessment_type || c.assessment_type || 'hospital_bedside');
   const [nurse, setNurse] = useState(current?.status === 'scheduled' ? current.nurse_id : '');
   const [when, setWhen] = useState(() => { const d = new Date(Date.now() + 2 * 3600e3); d.setMinutes(0, 0, 0); return toLocalInput(d.toISOString()); });
   const [run, busy] = useAction();
-  const go = () => run(async () => { await rpc('schedule_validation', { p_case: c.id, p_nurse: nurse, p_when: fromLocalInput(when) }); onDone(); }, 'Hospital visit scheduled · nurse notified');
+  const isHome = type === 'home_visit';
+  const go = () => run(async () => {
+    await rpc('schedule_validation', { p_case: c.id, p_nurse: nurse, p_when: fromLocalInput(when), p_type: type });
+    onDone();
+  }, `${isHome ? 'Home visit' : 'Hospital visit'} scheduled · nurse notified`);
   return (
     <div className="row wrap gap-8" style={{ alignItems: 'flex-end' }}>
+      <Field label="Visit Location"><Select value={type} onChange={(e) => setType(e.target.value)} options={VISIT_LOCATIONS} /></Field>
       <Field label="Care coordinator (nurse)"><Select value={nurse} onChange={(e) => setNurse(e.target.value)} placeholder="Choose" options={nurses.map((p) => [p.id, p.full_name])} /></Field>
-      <Field label="Visit at Hinduja (IST)"><Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></Field>
+      <Field label={isHome ? 'Visit at home (IST)' : 'Visit at Hinduja (IST)'}><Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></Field>
       <Button disabled={!nurse || !when || busy} onClick={go}>{current?.status === 'scheduled' ? 'Reschedule' : 'Schedule visit'}</Button>
     </div>
   );
@@ -165,8 +176,18 @@ function ScheduleForm({ c, people, current, onDone }) {
 
 function ValidationModal({ c, services, items, onClose, onDone }) {
   const prior = (items || []).filter((i) => i.recommended).map((i) => ({ service_id: i.service_id, qty: String(i.qty) }));
-  const [f, setF] = useState({ met_doctor: false, doctor_name: c.treating_doctor || '', met_ward_staff: false, met_family: false,
-    readiness: 'ready', revised_discharge_on: '', home_setup_notes: '', clinical_summary: '', doctor_recommendations: '' });
+  const [f, setF] = useState({
+    assessment_type: c.assessment_type || 'hospital_bedside',
+    met_doctor: false,
+    doctor_name: c.treating_doctor || '',
+    met_ward_staff: false,
+    met_family: false,
+    readiness: 'ready',
+    revised_discharge_on: '',
+    home_setup_notes: '',
+    clinical_summary: '',
+    doctor_recommendations: '',
+  });
   const [list, setList] = useState(prior.length ? prior : [{ service_id: '', qty: '' }]);
   const [run, busy] = useAction();
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e }));
@@ -174,29 +195,52 @@ function ValidationModal({ c, services, items, onClose, onDone }) {
   const rows = list.filter((r) => r.service_id && Number(r.qty) >= 1);
   const est = rows.reduce((sum, r) => sum + Number(svc[r.service_id]?.price || 0) * Number(r.qty), 0);
   const unpriced = rows.filter((r) => Number(svc[r.service_id]?.price || 0) === 0).length;
+  const isHome = f.assessment_type === 'home_visit';
   const ready = f.readiness === 'ready';
-  const ok = !ready || (f.met_doctor && f.met_family);
+  const ok = !ready || (isHome ? f.met_family : (f.met_doctor && f.met_family));
   const save = () => run(async () => {
-    await rpc('record_validation', { p_case: c.id, p: { ...f, revised_discharge_on: f.revised_discharge_on || null,
-      items: rows.map((r) => ({ service_id: r.service_id, qty: Number(r.qty) })) } });
+    await rpc('record_validation', {
+      p_case: c.id,
+      p: {
+        ...f,
+        revised_discharge_on: f.revised_discharge_on || null,
+        items: rows.map((r) => ({ service_id: r.service_id, qty: Number(r.qty) })),
+      },
+    });
     onDone();
-  }, 'Validation recorded');
+  }, `${isHome ? 'Home assessment' : 'Validation'} recorded`);
   return (
-    <Modal wide title={`Hospital validation · ${c.case_no}`} onClose={onClose}
+    <Modal wide title={`${isHome ? 'Home assessment' : 'Hospital validation'} · ${c.case_no}`} onClose={onClose}
       footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!ok || busy} onClick={save}>Save validation</Button></>}>
       <div className="grid g2" style={{ gap: 16 }}>
         <div className="col gap-12">
-          <div className="section-title">Who you met</div>
-          <Check label="Treating doctor" checked={f.met_doctor} onChange={set('met_doctor')} />
-          <Field label="Doctor's name"><Input value={f.doctor_name} onChange={set('doctor_name')} /></Field>
-          <Check label="Ward staff" checked={f.met_ward_staff} onChange={set('met_ward_staff')} />
-          <Check label="Family / decision-maker" checked={f.met_family} onChange={set('met_family')} />
+          <Field label="Visit Location"><Select value={f.assessment_type} onChange={set('assessment_type')} options={VISIT_LOCATIONS} /></Field>
+          {isHome ? (
+            <>
+              <div className="section-title">Home Environment Check & Family Handover</div>
+              <Check label="Family / patient met & handover conducted" checked={f.met_family} onChange={set('met_family')} />
+            </>
+          ) : (
+            <>
+              <div className="section-title">Who you met</div>
+              <Check label="Treating doctor" checked={f.met_doctor} onChange={set('met_doctor')} />
+              <Field label="Doctor's name"><Input value={f.doctor_name} onChange={set('doctor_name')} /></Field>
+              <Check label="Ward staff" checked={f.met_ward_staff} onChange={set('met_ward_staff')} />
+              <Check label="Family / decision-maker" checked={f.met_family} onChange={set('met_family')} />
+            </>
+          )}
           <Field label="Discharge readiness"><Select value={f.readiness} onChange={set('readiness')} options={READY} /></Field>
-          {ready && !ok && <div className="tiny warn-text">Meet the treating doctor and the family before confirming readiness.</div>}
+          {ready && !ok && (
+            <div className="tiny warn-text">
+              {isHome ? 'Meet the family before confirming readiness.' : 'Meet the treating doctor and the family before confirming readiness.'}
+            </div>
+          )}
           <Field label="Revised discharge date" hint="if it changed"><Input type="date" value={f.revised_discharge_on} onChange={set('revised_discharge_on')} /></Field>
-          <Field label="Home setup"><Textarea rows={2} value={f.home_setup_notes} onChange={set('home_setup_notes')} placeholder="Floor, lift, room size, power backup, space for an ICU bed" /></Field>
-          <Field label="Doctor's recommendations" hint="as validated with the treating doctor">
-            <Textarea rows={3} value={f.doctor_recommendations} onChange={set('doctor_recommendations')} placeholder="HF oxygen 30 L/min, 2-hourly turning, KFT twice a week, chest X-ray day 5" /></Field>
+          <Field label="Home setup"><Textarea rows={2} value={f.home_setup_notes} onChange={set('home_setup_notes')} placeholder={isHome ? "Room clearance, earthing, 15A sockets, power backup, caregiver training notes" : "Floor, lift, room size, power backup, space for an ICU bed"} /></Field>
+          {!isHome && (
+            <Field label="Doctor's recommendations" hint="as validated with the treating doctor">
+              <Textarea rows={3} value={f.doctor_recommendations} onChange={set('doctor_recommendations')} placeholder="HF oxygen 30 L/min, 2-hourly turning, KFT twice a week, chest X-ray day 5" /></Field>
+          )}
           <Field label="Clinical summary"><Textarea rows={3} value={f.clinical_summary} onChange={set('clinical_summary')} placeholder="Diagnosis, support needed at home" /></Field>
         </div>
         <div className="col gap-8">

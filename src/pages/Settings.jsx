@@ -1,4 +1,4 @@
-// Settings: profile & MFA, workspace policy, rate card, templates, SLAs, escalation matrix, zones, users,
+// Settings: profile & MFA, workspace policy, rate card (selling, buying, import: RateCard.jsx), templates, SLAs, escalation matrix, zones, users,
 // telephony & integrations, and the data-exit export. Each tab is shown only to the roles that can use it.
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -7,13 +7,14 @@ import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
 import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { homeFor, roleAllows, useAuth } from '../lib/auth.jsx';
-import { inr, dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
+import { dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
 import {
   PageHead, Panel, Tabs, Badge, Button, Modal, Drawer, Field, Input, Select, Textarea, Check, Segmented, Kpi,
   TableSkeleton, Skeleton, Empty, ErrorNote, useAction, useToast,
 } from '../components/ui.jsx';
 import Icon from '../components/icons.jsx';
 import { STAFF_ROLES } from '../components/StaffWorkspace.jsx';
+import { RatesTab } from './RateCard.jsx';
 
 const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'administrator'];
 const TABS = [
@@ -30,7 +31,6 @@ const TABS = [
   ['import', 'Import from old CRM', ['supervisor', 'client_manager']],
   ['data', 'Data & exit', ['client_manager']],
 ];
-const CAT = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home care', other: 'Other' };
 const KIND = { script: 'Call script', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email' };
 const T_STATUS = { approved: 'ok', pending: 'warn', draft: 'info', retired: '' };
 const ESC_TYPE = { clinical: 'Clinical', emergency: 'Emergency', delay: 'Field delay', complaint: 'Complaint', privacy: 'Privacy / data' };
@@ -236,82 +236,6 @@ function WorkspaceTab() {
         </ul>
       </Panel>
     </div>
-  );
-}
-
-// ------------------------------------------------------------------ rate card
-function RatesTab() {
-  const { can } = useAuth();
-  const editor = can('supervisor', 'admin');
-  const [cat, setCat] = useState('');
-  const [req, setReq] = useState(null);
-  const svc = useLoad(() => q(db.from('services').select('*').order('category').order('code')), [], ['services']);
-  const pend = useLoad(() => (can('supervisor', 'coordinator', 'client_manager', 'admin')
-    ? q(db.from('v_approvals').select('id,title,payload,status,requested_at,requested_by_name,decided_at,decision_note').eq('kind', 'rate_change').order('requested_at', { ascending: false }).limit(10))
-    : Promise.resolve([])), [], ['approvals']);
-  const rows = (svc.data || []).filter((s) => !cat || s.category === cat);
-  return (
-    <div className="grid g-main-side">
-      <Panel tight title={<Segmented value={cat} onChange={setCat} options={[['', 'All'], ['lab', 'Lab'], ['xray', 'X-ray'], ['ecg', 'ECG'], ['visit', 'Visit']]} />}
-        actions={<span className="small muted">{rows.length} services</span>}>
-        <ErrorNote error={svc.error} />
-        {svc.loading ? <TableSkeleton rows={10} cols={7} /> : rows.length ? (
-          <div className="table-wrap"><table className="t">
-            <thead><tr><th>Code</th><th>Service</th><th>Category</th><th className="num">Price</th><th className="num">TAT</th><th className="num">Ver.</th><th>Approved</th>{editor && <th />}</tr></thead>
-            <tbody>{rows.map((s) => (
-              <tr key={s.id} className={s.active ? '' : 'muted'}>
-                <td className="mono small">{s.code}</td>
-                <td>{s.name}{!s.active && <> <Badge>inactive</Badge></>}{s.description && <div className="tiny muted">{s.description}</div>}</td>
-                <td className="small">{CAT[s.category] || s.category}</td>
-                <td className="num">{inr(s.price)}</td>
-                <td className="num">{s.tat_hours ? `${s.tat_hours} h` : '–'}</td>
-                <td className="num">v{s.version}</td>
-                <td className="nowrap small">{s.approved_at ? dateTime(s.approved_at) : <Badge kind="warn">Not approved</Badge>}</td>
-                {editor && <td className="right"><Button size="xs" onClick={() => setReq(s)}>Request change</Button></td>}
-              </tr>
-            ))}</tbody>
-          </table></div>
-        ) : <Empty title="No services in this category" />}
-      </Panel>
-      <div className="col gap-12">
-        <Panel title="Locked rate card">
-          <div className="small">Prices change only after Hinduja approval; there is no free-text price field anywhere in the CRM. Quotes copy the price from this card at the moment a service is added, and the version number moves up with each approved change.</div>
-          {editor && <div className="tiny faint mt-8">Use Request change on a row. Hinduja management approves or rejects it in Approvals.</div>}
-        </Panel>
-        <Panel title="Rate change requests" tight>
-          {pend.loading ? <div className="panel-body"><Skeleton lines={3} /></div> : pend.data?.length ? pend.data.map((a) => (
-            <div key={a.id} className="list-row" style={{ alignItems: 'flex-start' }}>
-              <div className="grow">
-                <div className="small">{a.title}</div>
-                <div className="tiny muted">{a.requested_by_name || '–'} · {ago(a.requested_at)}{a.payload?.reason ? ` · ${a.payload.reason}` : ''}</div>
-              </div>
-              <Badge kind={a.status === 'approved' ? 'ok' : a.status === 'pending' ? 'warn' : a.status === 'rejected' ? 'danger' : ''}>{a.status}</Badge>
-            </div>
-          )) : <Empty title="No rate change requests" />}
-        </Panel>
-      </div>
-      {req && <RateChange s={req} onClose={() => setReq(null)} onDone={() => { setReq(null); pend.reload(); }} />}
-    </div>
-  );
-}
-
-function RateChange({ s, onClose, onDone }) {
-  const [price, setPrice] = useState(String(s.price));
-  const [reason, setReason] = useState('');
-  const [run, busy] = useAction();
-  const n = Number(price);
-  const ok = price !== '' && n >= 0 && n !== Number(s.price) && reason.trim().length >= 5;
-  const send = () => run(async () => { await rpc('request_rate_change', { p_service: s.id, p_new_price: n, p_reason: reason.trim() }); onDone(); }, 'Sent to Hinduja management for approval');
-  return (
-    <Modal title={`Request price change · ${s.code}`} onClose={onClose} footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" onClick={send} disabled={!ok || busy}>Send for approval</Button></>}>
-      <div className="small mb-12">{s.name} · current price <span className="mono strong">{inr(s.price)}</span> · v{s.version}</div>
-      <div className="form-grid">
-        <Field label="Proposed price (₹)"><Input type="number" min="0" step="1" className="mono" value={price} onChange={(e) => setPrice(e.target.value)} autoFocus /></Field>
-        <Field label="Change"><Input disabled className="mono" value={price === '' ? '–' : `${n >= s.price ? '+' : ''}${inr(n - s.price)} (${s.price ? (((n - s.price) / s.price) * 100).toFixed(1) : '–'}%)`} /></Field>
-        <Field label="Reason" className="span2" hint="seen by the approver"><Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Lab partner revised reagent cost from 1 November" /></Field>
-      </div>
-      <div className="tiny faint mt-8">The price stays unchanged until Hinduja approves. Open quotes keep the price they were created with.</div>
-    </Modal>
   );
 }
 

@@ -1,5 +1,5 @@
 // Scheduled jobs (wrangler.jsonc triggers)
-//   * * * * *    SLA scan: breaches -> auto escalation + notifications, at-risk flags, escalation level-ups;
+//   * * * * *    SLA scan: breaches -> auto escalation + notifications, at-risk flags, escalation level-ups; scheduled selling prices;
 //                MyOperator call-log sync (calls, missed-call callbacks, recordings without webhooks); one AI call summary
 //   30 4 * * *   10:00 IST: daily MIS for yesterday; Mondays also weekly; 1st of the month also monthly
 import { asSystem, connect } from '../db';
@@ -20,6 +20,9 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
       try { const r = await syncCallLogs(env, sql, exec); if (r.ok === false) console.log('myoperator sync', r.error); }
       catch (e) { console.log('myoperator sync', (e as Error).message); }
       const { changed } = await asSystem(sql, (tx) => tx`select sla_scan()`);
+      // approved selling prices whose effective date has come (Settings > Rate card > Import rates)
+      try { const r = await asSystem(sql, (tx) => tx`select activate_due_prices()`); changed.push(...r.changed); }
+      catch (e) { console.log('price activation', (e as Error).message); }
       // callback auto-dialer after the sync, so a missed call it just brought in can be dialled this minute
       try {
         const r = await runAutodial(env, sql);

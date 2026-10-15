@@ -56,7 +56,7 @@ class Query {
   then(res, rej) { return this.c.exec(this.spec).then(res, rej); }
 }
 
-const READ_ONLY_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings']);
+const READ_ONLY_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings', 'rate_import_check', 'case_margins', 'margin_report']);
 
 // ---------------------------------------------------------------- production / local test: through the Worker
 export function createApiClient() {
@@ -148,7 +148,9 @@ export function createDemoClient(pg, session) {
       try {
         const keys = Object.keys(args);
         const sql = `select ${ident(fn)}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')}) as r`;
-        const rows = await run(sql, keys.map((k) => toParam(args[k])));
+        // as the Worker: a list of objects (import rows) is one jsonb argument; plain lists stay Postgres arrays
+        const param = (v) => (Array.isArray(v) && v.some((x) => x !== null && typeof x === 'object') ? JSON.stringify(v) : toParam(v));
+        const rows = await run(sql, keys.map((k) => param(args[k])));
         if (!READ_ONLY_RPC.has(fn) && fn !== 'log_access') emitChange('*');
         return { data: rows[0]?.r ?? null, error: null };
       } catch (e) {

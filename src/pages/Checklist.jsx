@@ -133,9 +133,9 @@ export default function Checklist() {
   const [days, setDays] = useState('');
   const d = Number(days) >= 1 && Number(days) <= 365 ? Math.round(Number(days)) : null;
   const allowed = can(...CHECKLIST_ROLES);
-  const c = useLoad(() => (allowed && caseId ? q(db.from('v_cases').select('id,case_no,patient_name,patient_age,patient_gender,patient_locality,branch,hospital_name,hospital_ward,hospital_room,treating_doctor,expected_discharge_on,decision_maker_name,decision_maker_relation,decision_maker_mobile_display,coordinator_name,plan_days')
+  const c = useLoad(() => (allowed && caseId ? q(db.from('v_cases').select('id,case_no,patient_name,patient_age,patient_gender,patient_locality,branch,hospital_name,hospital_ward,hospital_room,treating_doctor,expected_discharge_on,decision_maker_name,decision_maker_relation,decision_maker_mobile_display,coordinator_name,plan_days,assessment_type')
     .eq('id', caseId).maybeSingle()) : null), [caseId, allowed], ['cases']);
-  const visit = useLoad(() => (allowed && caseId ? q(db.from('v_assessments').select('nurse_name,status,scheduled_at,visited_at,doctor_name')
+  const visit = useLoad(() => (allowed && caseId ? q(db.from('v_assessments').select('nurse_name,status,scheduled_at,visited_at,doctor_name,assessment_type')
     .eq('case_id', caseId).order('created_at', { ascending: false }).limit(1)) : []), [caseId, allowed], ['discharge_assessments']);
   const sheet = useLoad(() => (allowed ? rpc('care_plan_sheet', { p_case: caseId || null, p_days: d }) : null), [caseId, d, allowed], ['case_items', 'services', 'cases']);
   const [run, busy] = useAction();
@@ -144,6 +144,7 @@ export default function Checklist() {
   const loading = c.loading || visit.loading || sheet.loading;
   const k = c.data;
   const v = (visit.data || [])[0];
+  const isHome = (k?.assessment_type || c.data?.assessment_type || v?.assessment_type) === 'home_visit';
   const s = sheet.data;
   const plan = s?.case;
   const planDays = s?.days || 30;
@@ -161,7 +162,7 @@ export default function Checklist() {
   return (
     <div className="page">
       <div className="no-print">
-        <PageHead title="Assessment & closure checklist" sub="Print before the Hinduja visit; fill at the bedside and with the family. Enter the result on the case the same day.">
+        <PageHead title={isHome ? 'Home assessment & equipment readiness' : 'Assessment & closure checklist'} sub={isHome ? 'Print before the home assessment visit; fill at the patient\'s home and with the family. Enter the result on the case the same day.' : 'Print before the Hinduja visit; fill at the bedside and with the family. Enter the result on the case the same day.'}>
           <div className="row gap-8 wrap">
             {caseId ? <><Link className="btn" to={`/cases/${caseId}`}>Back to case</Link><Link className="btn" to="/checklist">Blank form</Link></> : null}
             <Button kind="primary" icon="print" disabled={busy || loading} onClick={print}>Print</Button>
@@ -181,8 +182,8 @@ export default function Checklist() {
           <header className="cl-head">
             <div>
               <div className="cl-org">Hinduja Home Care Services · operated by SecondMedic</div>
-              <h1>Clinical assessment & commercial closure checklist</h1>
-              <div className="cl-sub">Post-discharge home care transition · hospital care coordinator · {FORM}</div>
+              <h1>{isHome ? 'Home Assessment & Equipment Readiness Checklist' : 'Clinical assessment & commercial closure checklist'}</h1>
+              <div className="cl-sub">{isHome ? 'Home assessment & equipment readiness · care coordinator · ' : 'Post-discharge home care transition · hospital care coordinator · '}{FORM}</div>
             </div>
             <div className="cl-caseno"><span className="cl-lbl">Case ID</span><span className="mono">{k?.case_no || ''}</span></div>
           </header>

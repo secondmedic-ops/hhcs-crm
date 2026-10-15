@@ -12,6 +12,11 @@ import { asUser, readAsUser, type Tx } from '../db';
 const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
 const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
 const MANAGERS: readonly Role[] = ['supervisor', 'client_manager'];
+/** Manage the rate card and buying rates (platform admin: configuration only, no case data). */
+const RATE_MANAGERS: readonly Role[] = ['supervisor', 'admin'];
+/** SecondMedic commercial staff: buying costs and margins of the cases they can see. Not Hinduja, agents, field, medical, partners. */
+const COMMERCIAL: readonly Role[] = ['supervisor', 'coordinator'];
+const COMMERCIAL_RATES: readonly Role[] = ['supervisor', 'coordinator', 'admin'];
 /** ALL staff plus service-provider logins (Book My Medicare): only what a provider needs for its leads. */
 const WITH_PROVIDER: readonly Role[] = [...ALL, 'provider'];
 
@@ -27,6 +32,9 @@ export const READ: Record<string, readonly Role[]> = {
   payment_schedule: ALL, v_payment_schedule: ALL, partner_deployments: WITH_PROVIDER, v_deployments: WITH_PROVIDER, case_journey_history: WITH_PROVIDER,
   mis_snapshots: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   audit_log: MANAGERS, access_log: MANAGERS, v_audit: MANAGERS, v_access: MANAGERS,
+  // buying rates and imports: SecondMedic rate managers (and coordinators for the buying card); RLS narrows again.
+  // Booking costs and margins are not tables here: only case_margins / margin_report return them.
+  provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
   v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
 };
 
@@ -77,9 +85,12 @@ export const RPC: Record<string, readonly Role[]> = {
   case_gates: WITH_PROVIDER, render_template: ALL, log_access: WITH_PROVIDER,
   dashboard_kpis: ALL,
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
+  rate_import_check: RATE_MANAGERS, submit_rate_import: RATE_MANAGERS, set_provider_rate: RATE_MANAGERS, end_provider_rate: RATE_MANAGERS,
+  refresh_case_prices: OPS, set_item_provider: COMMERCIAL, case_margins: COMMERCIAL, margin_report: COMMERCIAL,
 };
 /** Read-only actions that may ride in a batch. */
-export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings']);
+export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings',
+  'rate_import_check', 'case_margins', 'margin_report']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);

@@ -1035,6 +1035,25 @@
       "supervisor",
       "client_manager"
     ],
+    "provider_rates": [
+      "supervisor",
+      "coordinator",
+      "admin"
+    ],
+    "rate_imports": [
+      "supervisor",
+      "admin"
+    ],
+    "service_price_history": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
     "v_cases": [
       "agent",
       "coordinator",
@@ -1558,6 +1577,40 @@
       "coordinator",
       "client_manager",
       "client_clinical"
+    ],
+    "rate_import_check": [
+      "supervisor",
+      "admin"
+    ],
+    "submit_rate_import": [
+      "supervisor",
+      "admin"
+    ],
+    "set_provider_rate": [
+      "supervisor",
+      "admin"
+    ],
+    "end_provider_rate": [
+      "supervisor",
+      "admin"
+    ],
+    "refresh_case_prices": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "set_item_provider": [
+      "supervisor",
+      "coordinator"
+    ],
+    "case_margins": [
+      "supervisor",
+      "coordinator"
+    ],
+    "margin_report": [
+      "supervisor",
+      "coordinator"
     ]
   }
 }

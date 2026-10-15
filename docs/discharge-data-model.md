@@ -180,10 +180,14 @@ The recommended item list is held in `case_items` with `recommended = true` (bel
 | id | uuid | no | PK |
 | code | text | no | Unique per workspace, for example NURSE-12H, HFNC, XR-CHEST |
 | name | text | no | |
-| category | text | no | lab, xray, ecg, visit, nursing, physio, beds, eldercare, homecare, equipment, icu, other. Decides the provider. |
-| price | numeric | no | Changed only through a rate-change approval |
-| unit | text | no | shift, day, setup, unit |
+| category | text | no | lab, xray, ecg, visit, nursing, physio, beds, eldercare, homecare, equipment, icu, consumables, other. Decides the provider. |
+| price | numeric | no | B2C selling rate. Changed only through a rate-change or rate-import approval |
+| unit | text | no | shift, day, setup, unit, or the unit of an imported service (month, 12 hours, visit, ...). Never converted |
+| tax_basis | text | yes | incl_gst, excl_gst, no_gst; null = not confirmed |
+| version | integer | no | Moves up with each approved price; every version is in `service_price_history` |
 | active | boolean | no | |
+
+B2B buying rates per provider are in `provider_rates`; booking costs in `case_item_costs`. Both are confidential: see `docs/RATES-AND-MARGINS.md`.
 
 ### `case_items` (itemised quotation: recommended vs agreed)
 | Column | Type | Null | Notes |
@@ -192,7 +196,8 @@ The recommended item list is held in `case_items` with `recommended = true` (bel
 | case_id | uuid | no | FK `cases.id` |
 | service_id | uuid | no | FK `services.id` |
 | service_code, service_name, category | text | yes | Copied from the rate card |
-| unit_price | numeric | no | From the rate card. A client-supplied price is ignored. |
+| unit_price | numeric | no | From the rate card when the line is added. A client-supplied price is ignored; a later rate change does not rewrite it (explicit refresh on drafts only). |
+| unit, price_version, price_tax_basis, priced_at | | yes | Snapshot taken with the price. `priced_at` null = priced before costs were captured |
 | qty | integer | no | For the whole plan, for example 60 shifts |
 | line_total | numeric | no | unit_price × qty |
 | recommended | boolean | no | On the validated list (the original 12) |

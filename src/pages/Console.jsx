@@ -25,7 +25,7 @@ const RELATIONS = [['self', 'Self'], ['son', 'Son'], ['daughter', 'Daughter'], [
 const GENDERS = [['M', 'Male'], ['F', 'Female'], ['O', 'Other']];
 const CHANNELS = [['phone', 'Phone'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['chat', 'Chat'], ['walkin', 'Walk-in'], ['referral', 'Referral']];
 const CATEGORY = { lab: 'Blood tests · sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy',
-  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home healthcare', other: 'Other' };
+  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home healthcare', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
 const PATIENT_KEYS = ['full_name', 'age', 'gender', 'mobile'];
 const FALLBACK_CONSENT = 'This call is recorded for quality and your records. May we record and use these details to arrange your service?';
 
@@ -193,7 +193,7 @@ export default function Console() {
   const svcGroups = useMemo(() => {
     const g = {};
     (services.data || []).forEach((s) => { (g[s.category] = g[s.category] || []).push(s); });
-    const order = ['ecg', 'xray', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'visit', 'other'];
+    const order = ['ecg', 'xray', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'equipment', 'icu', 'consumables', 'visit', 'other'];
     return Object.entries(g).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
   }, [services.data]);
   const toggleSvc = (id) => setF((x) => ({ ...x, service_ids: x.service_ids.includes(id) ? x.service_ids.filter((i) => i !== id) : [...x.service_ids, id] }));

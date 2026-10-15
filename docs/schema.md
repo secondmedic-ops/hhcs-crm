@@ -160,6 +160,36 @@
 | day | date | NO |
 | last_value | integer | NO |
 
+## case_item_cost_history
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| case_item_id | uuid | NO |
+| case_id | uuid | NO |
+| workspace_id | uuid | NO |
+| old | jsonb | YES |
+| new | jsonb | NO |
+| source | text | NO |
+| reason | text | YES |
+| changed_by | uuid | YES |
+| changed_at | timestamp with time zone | NO |
+
+## case_item_costs
+| column | type | nullable |
+|---|---|---|
+| case_item_id | uuid | NO |
+| case_id | uuid | NO |
+| workspace_id | uuid | NO |
+| provider_id | uuid | YES |
+| provider_rate_id | uuid | YES |
+| unit | text | YES |
+| buy_rate | numeric | YES |
+| tax_basis | text | YES |
+| source | text | NO |
+| note | text | YES |
+| captured_by | uuid | YES |
+| captured_at | timestamp with time zone | NO |
+
 ## case_items
 | column | type | nullable |
 |---|---|---|
@@ -177,6 +207,10 @@
 | excluded | boolean | NO |
 | exclude_reason | text | YES |
 | exclude_category | text | YES |
+| unit | text | YES |
+| price_version | integer | YES |
+| price_tax_basis | text | YES |
+| priced_at | timestamp with time zone | YES |
 
 ## case_journey_history
 | column | type | nullable |
@@ -290,6 +324,7 @@
 | hospital_room | text | YES |
 | journey_state | USER-DEFINED | NO |
 | journey_at | timestamp with time zone | YES |
+| assessment_type | text | NO |
 
 ## complaints
 | column | type | nullable |
@@ -345,6 +380,7 @@
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
 | doctor_recommendations | text | YES |
+| assessment_type | text | NO |
 
 ## escalation_matrix
 | column | type | nullable |
@@ -555,6 +591,25 @@
 | available_since | timestamp with time zone | YES |
 | last_autodial_at | timestamp with time zone | YES |
 
+## provider_rates
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| provider_id | uuid | NO |
+| service_id | uuid | NO |
+| unit | text | NO |
+| rate | numeric | NO |
+| tax_basis | text | NO |
+| effective_from | date | NO |
+| effective_to | date | YES |
+| status | text | NO |
+| import_id | uuid | YES |
+| note | text | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| replaced_at | timestamp with time zone | YES |
+
 ## providers
 | column | type | nullable |
 |---|---|---|
@@ -587,6 +642,24 @@
 | ai_generated | boolean | NO |
 | created_at | timestamp with time zone | NO |
 
+## rate_imports
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| content_key | text | NO |
+| file_name | text | YES |
+| sheet_name | text | YES |
+| options | jsonb | NO |
+| rows | jsonb | NO |
+| summary | jsonb | NO |
+| buy_status | text | NO |
+| sell_status | text | NO |
+| approval_id | uuid | YES |
+| created_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| sell_decided_at | timestamp with time zone | YES |
+
 ## samples
 | column | type | nullable |
 |---|---|---|
@@ -607,6 +680,25 @@
 | critical_note | text | YES |
 | file_url | text | YES |
 
+## service_price_history
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| service_id | uuid | NO |
+| version | integer | YES |
+| price | numeric | NO |
+| unit | text | NO |
+| tax_basis | text | YES |
+| effective_from | date | NO |
+| status | text | NO |
+| source | text | NO |
+| approval_id | uuid | YES |
+| import_id | uuid | YES |
+| approved_by | uuid | YES |
+| created_at | timestamp with time zone | NO |
+| activated_at | timestamp with time zone | YES |
+
 ## services
 | column | type | nullable |
 |---|---|---|
@@ -624,6 +716,7 @@
 | approved_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | NO |
 | unit | text | NO |
+| tax_basis | text | YES |
 
 ## sla_policies
 | column | type | nullable |
@@ -737,6 +830,7 @@
 | created_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | YES |
 | doctor_recommendations | text | YES |
+| assessment_type | text | YES |
 | nurse_name | text | YES |
 | case_no | text | YES |
 
@@ -930,6 +1024,7 @@
 | hospital_room | text | YES |
 | journey_state | USER-DEFINED | YES |
 | journey_at | timestamp with time zone | YES |
+| assessment_type | text | YES |
 | patient_name | text | YES |
 | patient_age | integer | YES |
 | patient_gender | text | YES |

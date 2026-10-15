@@ -39,11 +39,14 @@ begin
       case s.unit when 'shift' then x.per_day * v_days
                   when 'day' then v_days
                   when 'session' then ceil(v_days * 3 / 7.0)::int
-                  when 'setup' then 1 end as qty
+                  when 'setup' then 1
+                  when 'box' then 1
+                  when 'unit' then 1
+                  else 1 end as qty
     from services s
     cross join lateral (select v.n as per_day from (values (1), (2)) v(n) where s.unit = 'shift'
                         union all select 1 where s.unit <> 'shift') x
-    where s.workspace_id = v_ws and s.active and s.category in ('nursing','eldercare','physio','icu','equipment','beds','homecare')
+    where s.workspace_id = v_ws and s.active and s.category in ('nursing','eldercare','physio','icu','equipment','beds','homecare','consumables')
   )
   select coalesce(jsonb_agg(jsonb_build_object(
       'code', code, 'name', name, 'category', category, 'unit', unit,
@@ -53,7 +56,7 @@ begin
                          else 'as advised' end,
       'unit_price', price, 'priced', price > 0, 'qty', qty,
       'plan_total', case when price > 0 and qty is not null then price * qty end)
-    order by array_position(array['nursing','eldercare','physio','icu','equipment','beds','homecare'], category), name, per_day), '[]'::jsonb)
+    order by array_position(array['nursing','eldercare','physio','icu','equipment','beds','homecare','consumables'], category), name, per_day), '[]'::jsonb)
   into v_opts from opt;
 
   if p_case is not null then
