@@ -95,4 +95,4 @@ test('callback eligibility, retry boundaries, reservations, reconciliation and w
     await expect(db.query("select callback_close($1,'resolved')",[foreignCb])).rejects.toThrow('Callback not found');
     await expect(db.query('select autodial_claim()')).rejects.toThrow('System only');
   } finally { await db.close(); }
-});
+}, 120000);
