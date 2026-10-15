@@ -5,7 +5,11 @@ import { execSync } from "node:child_process";
 const sh = (c) => execSync(c, { encoding: "utf8" }).trim();
 const [before, after] = process.argv.slice(2);
 const zero = /^0+$/;
-const range = !before || zero.test(before) ? after : `${before}..${after}`;
+let range = !before || zero.test(before) ? `${after}^..${after}` : `${before}..${after}`;
+if (before && !zero.test(before)) {
+  try { execSync(`git cat-file -e ${before}^{commit}`, { stdio: "ignore" }); }
+  catch { range = `${after}^..${after}`; }
+}
 
 const reserved = [
   /^(backend|supabase|\.github|scripts|docs|cloudflare)\//,
