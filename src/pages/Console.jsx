@@ -6,6 +6,7 @@ import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { dial, aiExtract } from '../lib/api.js';
+import { downloadQuotationPdf } from '../lib/pdf.js';
 import { inr, num, pct, dur, time, ago, istDayRange, istDateStr, toLocalInput, fromLocalInput, isDay, REFERRAL_SOURCES } from '../lib/fmt.js';
 import {
   PageHead, Panel, Kpi, Button, Badge, StageBadge, PriorityBadge, Countdown, TableSkeleton, Skeleton, Empty, AiTag,
@@ -100,7 +101,7 @@ export default function Console() {
   const known = useLoad(() => (c?.patient_id
     ? q(db.from('v_patients').select('id,full_name,age,gender,mobile,email,address,landmark,locality,pincode,zone_name,case_count,last_case_at,consent_verbal_at').eq('id', c.patient_id).maybeSingle())
     : Promise.resolve(null)), [c?.patient_id]);
-  const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours').is('active', true).order('category').order('name')), []);
+  const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours,unit').is('active', true).order('category').order('name')), []);
   const providers = useLoad(() => q(db.from('providers').select('id,code,name,categories').is('active', true)), []);
   const providerFor = (cat) => (providers.data || []).find((p) => (p.categories || []).includes(cat))?.name;
   const branches = workspace?.settings?.branches || [];
@@ -137,6 +138,8 @@ export default function Console() {
   const [f, setF] = useState(BLANK);
   const [aiKeys, setAiKeys] = useState({});
   const [mode, setMode] = useState('known'); // known patient on file vs a different patient for this caller
+  const [serviceCategory, setServiceCategory] = useState('');
+  const [servicePick, setServicePick] = useState(''); // known patient on file vs a different patient for this caller
   const [paste, setPaste] = useState('');
   const [extracted, setExtracted] = useState(null);
   const [scriptTab, setScriptTab] = useState(null);
@@ -159,7 +162,7 @@ export default function Console() {
   const cls = (k) => (aiKeys[k] ? 'ai-filled' : '');
 
   // fresh form per call
-  useEffect(() => { setF(BLANK); setAiKeys({}); setExtracted(null); setPaste(''); setMode('known'); }, [linkedId]);
+  useEffect(() => { setF(BLANK); setAiKeys({}); setExtracted(null); setPaste(''); setMode('known'); setServiceCategory(''); setServicePick(''); }, [linkedId]);
   // visit address defaults to the address on file
   useEffect(() => {
     const p = known.data;
@@ -202,8 +205,18 @@ export default function Console() {
     const order = ['ecg', 'xray', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'equipment', 'icu', 'consumables', 'visit', 'other'];
     return Object.entries(g).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
   }, [services.data]);
-  const toggleSvc = (id) => setF((x) => ({ ...x, service_ids: x.service_ids.includes(id) ? x.service_ids.filter((i) => i !== id) : [...x.service_ids, id] }));
-  const rateTotal = f.service_ids.reduce((a, id) => a + Number(svcById[id]?.price || 0), 0);
+  const selectedServices = f.service_ids.map((id) => svcById[id]).filter(Boolean);
+  const availableServices = (svcGroups.find(([cat]) => cat === serviceCategory)?.[1] || [])
+    .filter((s) => !f.service_ids.includes(s.id));
+  const canDownloadQuote = selectedServices.length > 0
+    && selectedServices.length === f.service_ids.length
+    && selectedServices.every((s) => Number(s.price) > 0);
+  const addSvc = () => {
+    if (!servicePick || f.service_ids.includes(servicePick)) return;
+    setF((x) => ({ ...x, service_ids: [...x.service_ids, servicePick] }));
+    setServicePick('');
+  };
+  const removeSvc = (id) => setF((x) => ({ ...x, service_ids: x.service_ids.filter((i) => i !== id) }));
 
   const scriptVars = (body) => body
     .replaceAll('{{brand}}', workspace?.brand_name || 'Hinduja Home Care Services')
@@ -234,10 +247,14 @@ export default function Console() {
   if (f.requested_service_start_on && !isDay(f.requested_service_start_on)) problems.push('valid requested service start date');
   if (!f.consent) problems.push('consent');
 
-  const submit = async (e) => {
+  const submit = async (e, downloadPdf = false) => {
     e?.preventDefault();
     if (submittingRef.current || busy) return;
     if (problems.length) { toast.error(`Still needed: ${problems.join(', ')}`); return; }
+    if (downloadPdf && !canDownloadQuote) {
+      toast.error('A quotation PDF needs at least one selected product, with an approved price for every product.');
+      return;
+    }
     submittingRef.current = true;
     const kp = known.data;
     const patient = useKnown
@@ -265,8 +282,34 @@ export default function Console() {
         },
       }));
       if (out?.case_id) {
-        toast.ok(`Case ${out.case_no} created`);
+        if (downloadPdf) {
+          try {
+            const [caseRecord, items] = await Promise.all([
+              q(db.from('v_cases').select('*').eq('id', out.case_id).maybeSingle()),
+              q(db.from('case_items').select('*').eq('case_id', out.case_id).order('created_at')),
+            ]);
+            const activeItems = (items || []).filter((item) => !item.excluded);
+            const unpriced = activeItems.filter((item) => !item.unit_price || Number(item.unit_price) <= 0);
+            if (!caseRecord) throw new Error('The case was created, but its quotation details could not be loaded.');
+            if (!activeItems.length || unpriced.length) {
+              throw new Error(`${unpriced.length || 'No'} selected service${unpriced.length === 1 ? ' has' : 's have'} no approved rate-card price.`);
+            }
+            await rpc('log_access', {
+              p_action: 'export',
+              p_entity: 'case',
+              p_entity_id: out.case_id,
+              p_meta: { what: 'quotation_pdf' },
+            });
+            downloadQuotationPdf({ k: caseRecord, patient: null, items: activeItems, workspace });
+            toast.ok(`Case ${out.case_no} created and quotation PDF downloaded`);
+          } catch (err) {
+            toast.error(`Case ${out.case_no} created, but quotation PDF could not be generated: ${err.message || String(err)}`);
+          }
+        } else {
+          toast.ok(`Case ${out.case_no} created`);
+        }
         setF(BLANK); setAiKeys({});
+        setServiceCategory(''); setServicePick('');
         nav(`/cases/${out.case_id}`);
       }
     } finally {
@@ -435,23 +478,42 @@ export default function Console() {
                 <section>
                   <div className="row between mb-8">
                     <div className="section-title">Services · rate card {aiKeys.service_ids && <AiTag />}</div>
-                    {f.service_ids.length > 0 && <span className="small">Rate card total <strong className="mono">{inr(rateTotal)}</strong></span>}
+                    {f.service_ids.length > 0 && <span className="small">{f.service_ids.length} product{f.service_ids.length === 1 ? '' : 's'} selected</span>}
                   </div>
                   {services.loading ? <Skeleton lines={3} /> : services.error ? <div className="badge danger">{services.error}</div> : !services.data?.length ? <Empty title="No active services on the rate card" /> : (
                     <div className="col gap-12">
-                      {svcGroups.map(([cat, list]) => (
-                        <div key={cat}>
-                          <div className="tiny muted mb-8">{CATEGORY[cat] || cat}{providerFor(cat) && <span className="faint"> · {providerFor(cat)}</span>}</div>
-                          <div className="svc-chips">
-                            {list.map((s) => (
-                              <button key={s.id} type="button" className={`pill-filter svc-chip ${f.service_ids.includes(s.id) ? 'on' : ''}`} onClick={() => toggleSvc(s.id)} aria-pressed={f.service_ids.includes(s.id)} title={s.code}>
-                                {f.service_ids.includes(s.id) && <Icon name="check" size={12} />}
-                                {s.name} <span className="price">{Number(s.price) > 0 ? inr(s.price) : 'quote'}</span>
-                              </button>
-                            ))}
-                          </div>
+                      <div className="form-grid">
+                        <Field label="Service category">
+                          <Select value={serviceCategory} onChange={(e) => { setServiceCategory(e.target.value); setServicePick(''); }}
+                            options={svcGroups.map(([cat]) => [cat, `${CATEGORY[cat] || cat}${providerFor(cat) ? ` · ${providerFor(cat)}` : ''}`])}
+                            placeholder="Choose a category" aria-label="Rate card service category" />
+                        </Field>
+                        <Field label="Rate-card product">
+                          <Select value={servicePick} onChange={(e) => setServicePick(e.target.value)}
+                            options={availableServices.map((s) => [s.id, `${s.name} · ${Number(s.price) > 0 ? inr(s.price) : 'quote required'}${s.unit && s.unit !== 'unit' ? ` per ${s.unit}` : ''}`])}
+                            placeholder={serviceCategory ? 'Choose a product' : 'Choose a category first'} aria-label="Rate card product"
+                            disabled={!serviceCategory || !availableServices.length} />
+                        </Field>
+                        <div className="row" style={{ alignItems: 'flex-end' }}>
+                          <Button icon="plus" disabled={!servicePick} onClick={addSvc}>Add product</Button>
                         </div>
-                      ))}
+                      </div>
+                      {selectedServices.length > 0 && (
+                        <div className="col gap-4" aria-label="Selected rate-card products">
+                          {selectedServices.map((s) => (
+                            <div key={s.id} className="list-row">
+                              <div className="grow">
+                                <div className="small"><strong>{s.name}</strong></div>
+                                <div className="tiny muted">{CATEGORY[s.category] || s.category} · {Number(s.price) > 0 ? inr(s.price) : 'provider quote required'}</div>
+                              </div>
+                              <Button size="xs" kind="ghost" icon="x" aria-label={`Remove ${s.name}`} onClick={() => removeSvc(s.id)} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {f.service_ids.length > 0 && !canDownloadQuote && (
+                        <div className="tiny warn-text">A quotation PDF is available when every selected product has an approved rate. Provider-quoted services need pricing first.</div>
+                      )}
                       <div className="tiny faint">Prices are locked to the approved rate card. "quote" = priced by the provider after assessment. Each service goes to its provider automatically.</div>
                     </div>
                   )}
@@ -498,7 +560,12 @@ export default function Console() {
 
                 <div className="row wrap between">
                   <span className="small muted">{problems.length ? <>Still needed: {problems.join(', ')}</> : <span className="ok-text">Ready to create the case</span>}</span>
-                  <Button kind="primary" size="lg" icon="plus" type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create enquiry'}</Button>
+                  <div className="row wrap gap-8">
+                    <Button kind="primary" size="lg" icon="plus" onClick={() => submit()} disabled={busy}>{busy ? 'Creating…' : 'Create enquiry'}</Button>
+                    <Button size="lg" icon="print" onClick={(e) => submit(e, true)} disabled={busy || !canDownloadQuote}>
+                      Create enquiry & download quotation PDF
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Panel>

@@ -239,7 +239,7 @@ export async function demoApi(path, body = {}, method) {
     const agent = await me();
     let number, patientId = body.patient_id || null, caseId = body.case_id || null;
     if (caseId) { const r = await one(`select c.patient_id, p.mobile from cases c join patients p on p.id = c.patient_id where c.id = $1`, [caseId]); patientId = r.patient_id; number = r.mobile; }
-    else if (body.callback_id) { const r = await one(`update callbacks set status = 'in_progress', assigned_to = $2, last_attempt_at = now(), attempts = attempts + 1 where id = $1 returning number, patient_id`, [body.callback_id, agent.id]); number = r.number; patientId = r.patient_id; }
+    else if (body.callback_id) { const r = await one(`update callbacks set status = 'in_progress', assigned_to = $2, last_attempt_at = now(), attempts = attempts + 1, completed_at = null where id = $1 returning number, patient_id`, [body.callback_id, agent.id]); number = r.number; patientId = r.patient_id; }
     else if (patientId) number = (await one('select mobile from patients where id = $1', [patientId])).mobile;
     const c = await one(`insert into calls (workspace_id, provider, session_id, direction, customer_number, agent_id, agent_name, status, patient_id, case_id, click_to_call_ref, callback_id)
       values ($1,'myoperator',$2,'outbound',$3,$4,$5,'ringing',$6,$7,$2,$8) returning id`, [agent.workspace_id, 'crm-' + crypto.randomUUID(), number, agent.id, agent.full_name, patientId, caseId, body.callback_id || null]);

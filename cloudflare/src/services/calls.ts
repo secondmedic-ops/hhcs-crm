@@ -59,10 +59,11 @@ export async function dial(c: Ctx, body: J) {
       if (!k) return null;
       patientId = k.patient_id; number = body.use_caller && k.caller_mobile ? k.caller_mobile : k.mobile;
     } else if (body.callback_id) {
+      // a pending callback, or an unreachable one the agent tries again (it reopens; a failed attempt goes through callback_retry)
       const [cb] = await tx`update callbacks set status = 'in_progress', assigned_to = ${c.user.id}, last_attempt_at = now(),
-          attempts = attempts + 1, next_attempt_at = null, auto_dialled = false
-        where id = ${body.callback_id} and workspace_id = ${ws} and status = 'pending' returning number, patient_id`;
-      if (!cb) throw new ApiError(409, 'Callback is already being dialled or is no longer pending');
+          attempts = attempts + 1, next_attempt_at = null, auto_dialled = false, completed_at = null, completed_by = null
+        where id = ${body.callback_id} and workspace_id = ${ws} and status in ('pending', 'unreachable') returning number, patient_id`;
+      if (!cb) throw new ApiError(409, 'Callback is already being dialled or is no longer in the queue');
       number = cb.number; patientId = cb.patient_id;
     } else if (patientId) {
       const [p] = await tx`select mobile from patients where id = ${patientId} and workspace_id = ${ws}`;

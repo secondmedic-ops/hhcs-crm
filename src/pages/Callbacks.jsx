@@ -50,6 +50,8 @@ export default function Callbacks() {
   const onTime = (cb) => new Date(cb.reached_at) <= new Date(cb.due_at);
 
   const callBack = (cb) => run(async () => { await dial({ callback_id: cb.id }); toast.ok('Dialling via MyOperator. Pick up on your phone.'); });
+  // Pending and Needs outcome rows carry right-hand actions; unreachable rows have the call option right in the outcome column
+  const actions = canAct && (tab === 'pending' || tab === 'outcome');
   const closeWith = ({ outcome, note }) => run(async () => {
     await rpc('callback_close', { p_id: closing.id, p_outcome: outcome, p_note: note || null });
     setClosing(null);
@@ -106,7 +108,7 @@ export default function Callbacks() {
             <thead><tr>
               <th>Number</th><th>Patient</th><th>Reason</th><th>Raised</th>
               <th>{tab === 'pending' ? 'Due' : tab === 'outcome' ? 'Reached' : 'Outcome'}</th><th className="num">Attempts</th><th>Assignee</th><th>Case</th>
-              {canAct && (tab === 'pending' || tab === 'outcome') && <th />}
+              {actions && <th />}
             </tr></thead>
             <tbody>{rows.map((cb) => {
               const [rl, rk] = REASON[cb.reason] || [cb.reason, ''];
@@ -120,7 +122,12 @@ export default function Callbacks() {
                   <td className="nowrap"><span title={time(cb.created_at)}>{ago(cb.created_at, now)}</span></td>
                   <td className="nowrap">
                     {tab === 'pending' ? <Countdown due={cb.due_at} compact />
-                      : cb.status === 'unreachable' ? <Badge kind="warn">Unreachable · {time(cb.completed_at)}</Badge>
+                      : cb.status === 'unreachable' ? (
+                        <div className="row" style={{ alignItems: 'center' }}>
+                          <Badge kind="warn">Unreachable · {time(cb.completed_at)}</Badge>
+                          {canAct && <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call again</Button>}
+                        </div>
+                      )
                         : tab === 'outcome' ? <Badge kind={onTime(cb) ? 'ok' : 'danger'}>{onTime(cb) ? 'On time' : 'Late'} · {time(cb.reached_at)}</Badge>
                           : <>
                             <Badge kind={cb.outcome === 'follow_up' ? 'warn' : ''}>{OUTCOME[cb.outcome] || 'Closed'}</Badge>
@@ -136,7 +143,7 @@ export default function Callbacks() {
                   <td className="num">{cb.attempts}</td>
                   <td className="small">{cb.assignee_name || <span className="faint">–</span>}</td>
                   <td>{cb.open_case_id ? <a className="small" href={`/cases/${cb.open_case_id}`} onClick={(e) => { e.preventDefault(); nav(`/cases/${cb.open_case_id}`); }}>Open case</a> : <span className="faint">–</span>}</td>
-                  {canAct && (tab === 'pending' || tab === 'outcome') && (
+                  {actions && (
                     <td className="nowrap right">
                       <div className="row" style={{ justifyContent: 'flex-end' }}>
                         {cb.status === 'pending' && <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call back</Button>}
