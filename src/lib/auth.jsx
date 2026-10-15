@@ -8,6 +8,7 @@ export const useAuth = () => useContext(AuthCtx);
 
 // What each role can open. Mirrors the RLS role matrix (slide 20).
 export const NAV = [
+  { to: '/fulfilment', label: 'Provider fulfilment', icon: 'swap', roles: ['provider','field_staff','supervisor','coordinator','agent','client_manager','client_clinical','medical_desk'] },
   { to: '/', label: 'Live dashboard', icon: 'pulse', roles: ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'] },
   { to: '/console', label: 'Agent console', icon: 'headset', roles: ['agent', 'supervisor', 'coordinator'] },
   { to: '/leads', label: 'Provider leads', icon: 'swap', roles: ['provider', 'supervisor', 'coordinator', 'client_manager', 'agent'] },
@@ -33,7 +34,7 @@ export const NAV = [
 const SENIOR = ['supervisor', 'client_manager', 'client_clinical', 'coordinator', 'medical_desk', 'admin'];
 export const roleAllows = (roles, role) => !!role && (roles.includes(role) || (role === 'administrator' && roles.some((r) => SENIOR.includes(r))));
 
-export const homeFor = (role) => ({ agent: '/console', field_staff: '/my-visits', admin: '/settings', provider: '/leads' }[role] || '/');
+export const homeFor = (role, providerId) => role === 'field_staff' && providerId ? '/fulfilment' : ({ agent: '/console', field_staff: '/my-visits', admin: '/settings', provider: '/leads' }[role] || '/');
 
 export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);

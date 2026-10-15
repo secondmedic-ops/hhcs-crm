@@ -2,6 +2,10 @@
 
 Status: HHCS-side lead/progress API prepared, disabled by default. The user authorized deployment/publication on 15 October 2026, lifting the earlier deployment hold. Activation still requires BMM's actual interface documentation and contract confirmation. This defines an HHCS interface for BMM to confirm; it does not assert compatibility with BMM's existing software. No outbound request is made to an invented BMM endpoint. The complete proposed logic and remaining implementation work are in [BMM-CONNECTION-DESIGN.md](BMM-CONNECTION-DESIGN.md); publishing that design does not implement its extensions.
 
+## Human portal
+
+The human Medicare portal and assigned field-work lifecycle are described in [PROVIDER-FULFILMENT.md](PROVIDER-FULFILMENT.md). They operate through ordinary staff logins independently of the disabled-by-default machine API. Resource quantities, recipient handover, returns and live oversight are supported in that portal. The proposed external-system contract still requires BMM documentation.
+
 ## Connection and activation
 
 An administrator creates a dedicated `provider` login assigned to Book My Medicare in Settings > Users. BMM's server signs in through the project's Supabase Auth service and uses the returned access token in `Authorization: Bearer <access_token>` on the endpoints below. Refresh expiring tokens through Supabase Auth. Credentials belong on BMM's server, never in frontend code, logs or chat. Existing ES256 verification and database role checks apply to every request.

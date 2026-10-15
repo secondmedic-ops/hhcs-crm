@@ -1,6 +1,7 @@
 // Provider leads: cases sent to SecondMedic or Book My Medicare by service (lead assignment and transfer).
 // Book My Medicare staff land here and see only their own leads (row-level security); supervisors, coordinators,
 // agents and Hinduja management use it to track every transfer. Recordings are never shown here.
+import ProviderProgress from '../components/ProviderProgress.jsx';
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
@@ -18,7 +19,7 @@ export const RefBadge = ({ status }) => { const [l, k] = REF_STATUS[status] || [
 const OPEN = ['new', 'accepted', 'scheduled', 'dispatched', 'in_progress'];
 const COLS = 'id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,branch,priority,patient_id,patient_name,patient_age,patient_gender,'
   + 'patient_mobile,caller_name,caller_relation,address,landmark,locality,pincode,services_requested,additional_info,clinical_notes,service_names,'
-  + 'preferred_slot,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,created_at,case_created_at,'
+  + 'preferred_slot,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,created_at,case_created_at,fulfilment_managed,'
   + 'care_type,hospital_name,hospital_ward,expected_discharge_on,plan_days,dispatched_at,started_at';
 
 // The next steps a lead can take, for whoever may move it.
@@ -43,7 +44,7 @@ export function LeadActions({ lead, onDone, size = 'xs' }) {
   const { profile } = useAuth();
   const [dlg, setDlg] = useState(null);
   if (!canMove(profile, lead)) return lead?.provider_code === 'SM' && OPEN.includes(lead.status) ? <span className="tiny faint">Follows case stages</span> : null;
-  const steps = NEXT[lead.status] || [];
+  const steps = lead.fulfilment_managed ? [] : NEXT[lead.status] || [];
   if (!steps.length && !roleAllows(['supervisor', 'client_manager'], profile.role)) return null;
   return (
     <>
@@ -76,7 +77,8 @@ function LeadStep({ lead, to, onClose, onDone }) {
   const ok = (!needWhen || when) && (!needNote || note.trim());
   const save = () => run(async () => {
     const iso = when ? new Date(when + ':00+05:30').toISOString() : null;
-    await rpc('update_referral', { p_id: lead.id, p_status: to, p_note: note.trim() || null, p_when: needWhen ? iso : null });
+    if (to === 'accepted' && lead.provider_code !== 'SM') await rpc('accept_provider_lead', { p_id: lead.id, p_note: note.trim() || null });
+    else await rpc('update_referral', { p_id: lead.id, p_status: to, p_note: note.trim() || null, p_when: needWhen ? iso : null });
     onDone();
   }, STEP_TITLE[to] + ': saved');
   return (
@@ -208,7 +210,7 @@ function LeadDrawer({ lead: r, onClose, onOpenCase, reload }) {
             {dl('Declined because', r.decline_reason)}
           </dl>
           <div className="tiny faint mt-8">Call recordings are not shared with service providers.</div>
-          {r.provider_code !== 'SM' && <WorkOrders lead={r} />}
+          {r.provider_code !== 'SM' && <><ProviderProgress referralId={r.id} /><WorkOrders lead={r} /></>}
         </div>
         <div className="col gap-12">
           <div className="section-title">Progress notes and history</div>
@@ -291,7 +293,7 @@ const WO_NEXT = { staff: { dispatched: ['active', 'Mark on duty'], active: ['ret
  *  the first install / on-duty to Deployed. */
 function WorkOrders({ lead }) {
   const { profile } = useAuth();
-  const can = canMove(profile, lead) && ['accepted', 'scheduled', 'dispatched', 'in_progress'].includes(lead.status);
+  const can = !lead.fulfilment_managed && canMove(profile, lead) && ['accepted', 'scheduled', 'dispatched', 'in_progress'].includes(lead.status);
   const wo = useLoad(() => q(db.from('v_deployments').select('*').eq('referral_id', lead.id).order('created_at')), [lead.id], ['partner_deployments']);
   const items = useLoad(() => q(db.from('case_items').select('id,service_name,category,qty,excluded').eq('case_id', lead.case_id).order('created_at')), [lead.case_id]);
   const mine = (items.data || []).filter((i) => !i.excluded && (!lead.categories?.length || lead.categories.includes(i.category)));

@@ -2,7 +2,7 @@
 import type { Ctx } from '../api/context';
 import { ROLES, supabaseBase } from '../api/auth';
 import { ApiError } from '../domain/errors';
-import { asSystem, normMobile, pgArray } from '../db';
+import { asUser, asSystem, normMobile, pgArray } from '../db';
 import type { Env } from '../env';
 import { MO_FIELDS, clearMoCache, describeMo, missingCallingSettings, moEnv, randomKey } from './myoperator-config';
 import { loadWhatsAppQr } from './myoperator';
@@ -18,6 +18,11 @@ export async function createUser(c: Ctx, b: J) {
   if (!(ROLES as readonly string[]).includes(b.role)) throw new ApiError(400, 'Unknown role');
   if (String(b.password).length < 10) throw new ApiError(400, 'Password must be at least 10 characters');
   if (b.role === 'provider' && !b.provider_id) throw new ApiError(400, 'Pick the provider (SecondMedic / Book My Medicare) for this login');
+  if (b.provider_id) {
+    if (!['provider','field_staff'].includes(b.role) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.provider_id))) throw new ApiError(400,'Choose a valid provider for this login');
+    const provider = await asUser(c.sql,c.user.id,async tx => tx`select id from providers where id=${b.provider_id}::uuid and workspace_id=${c.user.workspaceId}::uuid and active`);
+    if (!provider.result.length) throw new ApiError(400,'Choose an active provider in this workspace');
+  }
   const base = supabaseBase(c.env);
   const r = await fetch(base + '/auth/v1/admin/users', {
     method: 'POST',
@@ -30,7 +35,7 @@ export async function createUser(c: Ctx, b: J) {
     const [p] = await tx`insert into profiles (id, workspace_id, full_name, email, phone, role, agent_code, myoperator_user_id, myoperator_extension, skills, provider_id)
       values (${u.id}, ${c.user.workspaceId}, ${b.full_name}, ${b.email}, ${normMobile(b.phone)}, ${b.role}, ${b.agent_code || null},
         ${b.myoperator_user_id || null}, ${b.myoperator_extension || null}, ${pgArray((b.skills || []).map(String))}::text[],
-        ${b.role === 'provider' ? (b.provider_id as string) : null}::uuid) returning *`;
+        ${['provider','field_staff'].includes(b.role) ? (b.provider_id as string || null) : null}::uuid) returning *`;
     return p;
   });
   c.changed.push(...changed);

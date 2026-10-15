@@ -1,5 +1,6 @@
 // 360-degree case view (proposal slide 8): stage gates, locked rate card and discount governance,
 // booking, field dispatch, chain of custody, payments, unified timeline and audit, with an AI brief.
+import ProviderProgress from '../components/ProviderProgress.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
@@ -67,7 +68,7 @@ export default function CaseDetail() {
   const calls = L(() => q(db.from('v_calls').select('id,direction,status,started_at,ring_seconds,talk_seconds,agent_label,has_recording,ai_summary,ai_sentiment,ai_flags,disposition').eq('case_id', id).order('started_at', { ascending: false })));
   const escs = L(() => q(db.from('v_escalations').select('*').eq('case_id', id).order('raised_at', { ascending: false })));
   const cmps = L(() => q(db.from('v_complaints').select('*').eq('case_id', id).order('opened_at', { ascending: false })));
-  const refs = L(() => q(db.from('v_referrals').select('id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,service_names,services_requested,patient_name,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,preferred_slot,created_at').eq('case_id', id).order('created_at')));
+  const refs = L(() => q(db.from('v_referrals').select('id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,service_names,services_requested,patient_name,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,preferred_slot,created_at,fulfilment_managed').eq('case_id', id).order('created_at')));
   const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours,unit,version').is('active', true).order('category').order('price')), []);
   const templates = useLoad(() => q(db.from('templates').select('id,kind,code,title,body,status,version').eq('status', 'approved').order('code')), []);
   const people = useLoad(() => q(db.from('profiles').select('id,full_name,role,skills,on_duty,agent_code,zone_id').in('role', ['coordinator', 'field_staff']).is('active', true).order('full_name')), []);
@@ -347,6 +348,7 @@ function ProvidersPanel({ c, refs, canRefer }) {
           {rows.map((r) => (
             <div key={r.id} className="col gap-4">
               <div className="row between"><strong className="small">{r.provider_name}</strong><RefBadge status={r.status} /></div>
+              {r.provider_code !== 'SM' && <ProviderProgress referralId={r.id} />}
               <div className="tiny muted">{r.service_names || (r.categories || []).join(', ') || 'Sent by hand'}{r.assigned_name ? ` · ${r.assigned_name}` : ''}</div>
               {r.scheduled_at && r.status === 'scheduled' && <div className="tiny">Visit {dateTime(r.scheduled_at)}</div>}
               {r.decline_reason && r.status === 'declined' && <div className="tiny danger-text">Declined: {r.decline_reason}</div>}

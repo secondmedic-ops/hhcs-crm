@@ -1505,6 +1505,32 @@
       "supervisor",
       "client_manager"
     ],
+    "provider_portal": [
+      "provider",
+      "field_staff",
+      "supervisor",
+      "coordinator",
+      "agent",
+      "client_manager",
+      "client_clinical",
+      "medical_desk"
+    ],
+    "accept_provider_lead": [
+      "provider",
+      "supervisor",
+      "coordinator"
+    ],
+    "plan_provider_job": [
+      "provider",
+      "supervisor",
+      "coordinator"
+    ],
+    "update_provider_job": [
+      "provider",
+      "field_staff",
+      "supervisor",
+      "coordinator"
+    ],
     "log_deployment": [
       "provider",
       "supervisor",

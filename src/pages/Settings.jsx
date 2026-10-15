@@ -684,7 +684,7 @@ function UserForm({ u, onClose, onSaved, providers = [] }) {
   const ok = f.full_name.trim() && (f.role !== 'provider' || f.provider_id) && (!isNew || (/\S+@\S+\.\S+/.test(f.email) && f.password.length >= 10));
   const save = () => run(async () => {
     const base = { full_name: f.full_name.trim(), role: f.role, agent_code: f.agent_code.trim() || null, myoperator_user_id: f.myoperator_user_id.trim() || null,
-      myoperator_extension: f.myoperator_extension.trim() || null, skills: list(f.skills), provider_id: f.role === 'provider' ? f.provider_id : null };
+      myoperator_extension: f.myoperator_extension.trim() || null, skills: list(f.skills), provider_id: ['provider','field_staff'].includes(f.role) ? (f.provider_id || null) : null };
     if (isNew) await createUser({ ...base, email: f.email.trim(), password: f.password, phone: f.phone.trim() || null });
     else await q(db.from('profiles').update({ ...base, phone: f.phone.trim() || null, active: f.active }).eq('id', u.id));
     onSaved();
@@ -696,7 +696,7 @@ function UserForm({ u, onClose, onSaved, providers = [] }) {
         {isNew && <Field label="Email" hint="sign-in id"><Input type="email" value={f.email} onChange={set('email')} /></Field>}
         {isNew && <Field label="Temporary password" hint="10+ characters"><Input type="text" className="mono" value={f.password} onChange={set('password')} autoComplete="new-password" /></Field>}
         <Field label="Role"><Select value={f.role} onChange={set('role')} options={ALL.map((r) => [r, ROLE_LABEL[r]])} /></Field>
-        {f.role === 'provider' && <Field label="Provider" hint="sees only this provider's leads"><Select value={f.provider_id} onChange={set('provider_id')} placeholder="Pick provider" options={providers.map((p) => [p.id, p.name])} /></Field>}
+        {['provider','field_staff'].includes(f.role) && <Field label="Provider" hint="Provider: manages leads. Field staff: assigned provider jobs only. Leave empty for SecondMedic field staff."><Select value={f.provider_id} onChange={set('provider_id')} placeholder="Pick provider" options={providers.map((p) => [p.id, p.name])} /></Field>}
         <Field label="Phone"><Input className="mono" value={f.phone} onChange={set('phone')} /></Field>
         <Field label="Agent code" hint="e.g. A-12"><Input className="mono" value={f.agent_code} onChange={set('agent_code')} /></Field>
         <Field label="Skills" hint="phlebotomy, xray, ecg"><Input value={f.skills} onChange={set('skills')} /></Field>

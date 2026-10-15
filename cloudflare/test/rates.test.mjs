@@ -113,7 +113,10 @@ check(again, 'preview says the file was already submitted');
 const [{ price: stillOld }] = await owner(`select price from services where code = 'NURSE-12H'`);
 check(Number(stillOld) === 0, 'selling price unchanged until approval');
 const [ap] = await as('client', `select id, payload from approvals where kind = 'rate_import' and status = 'pending'`);
-check(ap && !J(ap.payload).includes('1500') && !J(ap.payload).includes('b2b') && !J(ap.payload).includes('buy'), 'approval request carries selling prices only', ap?.payload);
+// Inspect confidential field names, not substrings of random UUIDs.
+const containsBuyingField = (value) => value && typeof value === 'object'
+  && Object.entries(value).some(([key, child]) => /b2b|buy|cost|margin/i.test(key) || containsBuyingField(child));
+check(ap && !containsBuyingField(ap.payload), 'approval request carries selling prices only', ap?.payload);
 await expectError('sup', `select decide_approval($1, true, null)`, [ap.id], 'client approver');
 await expectError('sup', `select submit_rate_import($1::jsonb, $2::jsonb, 'x', 'y')`,
   [J([{ row: 2, service_code: 'XR-LIMB', unit: 'unit', b2c: '2700', effective_from: today }]), J(OPT)], 'nothing was imported');

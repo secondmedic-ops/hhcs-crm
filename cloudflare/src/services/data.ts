@@ -79,6 +79,9 @@ export const RPC: Record<string, readonly Role[]> = {
   schedule_validation: ['coordinator', 'supervisor', 'medical_desk'],
   record_validation: ['coordinator', 'supervisor', 'medical_desk', 'field_staff'],
   import_referral_updates: ['provider', 'supervisor', 'client_manager'],
+  provider_portal: ['provider','field_staff','supervisor','coordinator','agent','client_manager','client_clinical','medical_desk'],
+  accept_provider_lead: ['provider','supervisor','coordinator'],
+  plan_provider_job: ['provider','supervisor','coordinator'], update_provider_job: ['provider','field_staff','supervisor','coordinator'],
   log_deployment: ['provider', 'supervisor', 'client_manager'], set_payment_schedule: OPS,
   transition_metrics: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   care_plan_sheet: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'],
@@ -89,7 +92,7 @@ export const RPC: Record<string, readonly Role[]> = {
   refresh_case_prices: OPS, set_item_provider: COMMERCIAL, case_margins: COMMERCIAL, margin_report: COMMERCIAL,
 };
 /** Read-only actions that may ride in a batch. */
-export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings',
+export const READ_RPC = new Set(['provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings',
   'rate_import_check', 'case_margins', 'margin_report']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);

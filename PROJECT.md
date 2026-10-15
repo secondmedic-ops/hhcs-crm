@@ -14,7 +14,7 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
   - **agent**: contact centre: own queue, enquiries, quotes, callbacks; sees masked phone numbers
   - **coordinator**: all active cases, booking, field assignment, reconciliation
   - **supervisor**: everything operational, recordings, QA, MIS, audit, controlled export
-  - **field_staff**: only assigned visits, check-in, samples, payment collection (phone layout)
+  - **field_staff**: only assigned visits, check-in, samples, payment collection (phone layout). A field login linked to a provider uses Provider fulfilment for its assigned partner jobs
   - **medical_desk**: clinical triage and escalations
   - **client_manager** (Hinduja management): full visibility, approvals (discounts, rate card, templates), export, data exit
   - **client_clinical** (Hinduja clinical): clinical records, escalations, MIS
@@ -39,6 +39,8 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
 | Supabase Realtime | Not used (closed with the Data API). Live updates come from the Worker's `LiveHub` Durable Object. |
 
 ## Everyday use
+
+Medicare human portal: **Provider fulfilment** tracks each agreed unit from planning and field assignment through dispatch, arrival, service/installation, handover and required returns. BMM coordinators use Provider logins; BMM delivery/service staff use Field staff logins linked to Book My Medicare. Hinduja monitors read-only; SecondMedic supervisors and authorized case coordinators monitor/manage live. Accounts can be added later in Settings > Users. See docs/PROVIDER-FULFILMENT.md. This does not activate BMM external-system API access.
 
 Supervisors can select a department and staff member from the first Live dashboard to open an audited staff workspace for 30 minutes. Actions display `Staff Name - Supervisor (Supervisor Name)` in audit/access records; the original supervisor login is retained. See `docs/SUPERVISOR-STAFF-ACCESS.md`.
 

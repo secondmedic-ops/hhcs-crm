@@ -244,6 +244,7 @@
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
 | dispatched_at | timestamp with time zone | YES |
+| fulfilment_managed | boolean | NO |
 
 ## case_stage_history
 | column | type | nullable |
@@ -507,6 +508,19 @@
 | created_by | uuid | YES |
 | created_at | timestamp with time zone | NO |
 | updated_at | timestamp with time zone | NO |
+| portal_managed | boolean | NO |
+| assigned_staff_id | uuid | YES |
+| scheduled_at | timestamp with time zone | YES |
+| scheduled_end | timestamp with time zone | YES |
+| arrived_at | timestamp with time zone | YES |
+| completed_at | timestamp with time zone | YES |
+| confirmed_by | text | YES |
+| return_confirmed_by | text | YES |
+| return_required | boolean | NO |
+| setup_required | boolean | NO |
+| issue_open | boolean | NO |
+| issue_note | text | YES |
+| version | integer | NO |
 
 ## patients
 | column | type | nullable |
@@ -590,6 +604,21 @@
 | available | boolean | NO |
 | available_since | timestamp with time zone | YES |
 | last_autodial_at | timestamp with time zone | YES |
+
+## provider_fulfilment_events
+| column | type | nullable |
+|---|---|---|
+| id | bigint | NO |
+| workspace_id | uuid | NO |
+| deployment_id | uuid | NO |
+| event_id | uuid | NO |
+| action | text | NO |
+| from_status | text | YES |
+| to_status | text | NO |
+| actor_id | uuid | NO |
+| payload_hash | text | NO |
+| note | text | YES |
+| occurred_at | timestamp with time zone | NO |
 
 ## provider_rates
 | column | type | nullable |
@@ -1229,6 +1258,7 @@
 | expected_discharge_on | date | YES |
 | plan_days | integer | YES |
 | signoff_at | timestamp with time zone | YES |
+| fulfilment_managed | boolean | YES |
 
 ## v_whatsapp_chats
 | column | type | nullable |

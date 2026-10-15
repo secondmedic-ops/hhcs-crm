@@ -11,6 +11,7 @@ import { Terms, Privacy } from './pages/Legal.jsx';
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Console = lazy(() => import('./pages/Console.jsx'));
 const Cases = lazy(() => import('./pages/Cases.jsx'));
+const ProviderFulfilment = lazy(() => import('./pages/ProviderFulfilment.jsx'));
 const Leads = lazy(() => import('./pages/Leads.jsx'));
 const CaseDetail = lazy(() => import('./pages/CaseDetail.jsx'));
 const Callbacks = lazy(() => import('./pages/Callbacks.jsx'));
@@ -51,7 +52,7 @@ function Boot({ children }) {
 function Guard({ path, children }) {
   const { profile } = useAuth();
   const item = NAV.find((n) => n.to === path);
-  if (item && !roleAllows(item.roles, profile.role)) return <Navigate to={homeFor(profile.role)} replace />;
+  if (item && !roleAllows(item.roles, profile.role)) return <Navigate to={homeFor(profile.role, profile.provider_id)} replace />;
   return children;
 }
 
@@ -65,8 +66,9 @@ function Routed() {
     <CallProvider>
       <Routes>
         <Route element={<Shell />}>
-          <Route index element={profile && homeFor(profile.role) !== '/' ? <Navigate to={homeFor(profile.role)} replace /> : g('/', <Dashboard />)} />
+          <Route index element={profile && homeFor(profile.role, profile.provider_id) !== '/' ? <Navigate to={homeFor(profile.role, profile.provider_id)} replace /> : g('/', <Dashboard />)} />
           <Route path="console" element={g('/console', <Console />)} />
+          <Route path="fulfilment" element={g('/fulfilment', <ProviderFulfilment />)} />
           <Route path="leads" element={g('/leads', <Leads />)} />
           <Route path="cases" element={g('/cases', <Cases />)} />
           <Route path="cases/:id" element={g('/cases', <CaseDetail />)} />
@@ -85,7 +87,7 @@ function Routed() {
           <Route path="settings" element={g('/settings', <Settings />)} />
           <Route path="find" element={g('/patients', <Find />)} />
           <Route path="checklist" element={g('/checklist', <Checklist />)} />
-          <Route path="*" element={<Navigate to={homeFor(profile.role)} replace />} />
+          <Route path="*" element={<Navigate to={homeFor(profile.role, profile.provider_id)} replace />} />
         </Route>
       </Routes>
     </CallProvider>

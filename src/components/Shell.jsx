@@ -10,7 +10,7 @@ import { Avatar, Button, Badge, useToast } from './ui.jsx';
 import { DEMO_USERS } from '../demo/seed.js';
 
 const GROUPS = [
-  ['Operate', ['/', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits', '/checklist']],
+  ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits', '/checklist']],
   ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
   ['Configure', ['/settings']],
 ];
@@ -180,7 +180,7 @@ function DemoBar() {
   const switchTo = async (id) => {
     await signInDemo(id);
     const u = DEMO_USERS.find((x) => x.id === id);
-    nav(homeFor(u.role));
+    nav(homeFor(u.role, u.provider_id));
   };
   const inbound = async (scripted) => {
     if (!roleAllows(['agent', 'coordinator', 'supervisor'], profile.role)) { toast('Switch to an agent to receive calls'); return; }

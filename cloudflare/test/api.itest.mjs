@@ -1,3 +1,4 @@
+import { providerFulfilmentApiTests } from './provider-fulfilment.itest.mjs';
 // API checks run by the rehearsal (pipeline step 3c) against the REAL Worker on a database built from the migrations.
 // Covers: login required (missing / forged / expired / wrong-audience tokens), role rules per endpoint, Row Level
 // Security through the API, the case workflow, MyOperator webhooks + click-to-call, and live updates.
@@ -623,6 +624,6 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await call('administrator', 'POST', '/api/v1/staff-sessions/end', {}, admH);
   await staffSessionTests({ call, sql, check, U, ws });
   await rateApiTests({ call, sql, check, U, ws });
+  await providerFulfilmentApiTests({call,sql,check,U,ws,token,base});
   return { total, failed };
 }
-
