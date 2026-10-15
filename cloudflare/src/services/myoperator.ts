@@ -338,7 +338,8 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
   switch (ev.event_type) {
     case 'call.answered': {
       if (!['ringing','answered'].includes(call.status)) break; // delayed answer must not reopen a finished call
-      const leg = legs.find((l) => l.answered_at) || legs[0] || {};
+      const answeredLegs = call.direction === 'outbound' ? customerLegs(legs, call.customer_number) : legs;
+      const leg = answeredLegs.find((l) => l.answered_at) || answeredLegs[0] || {};
       patch.status = 'answered';
       if (call.direction === 'inbound' || legsAnswered(customerLegs(legs, call.customer_number))) {
         patch.answered_at = toIso(leg.answered_at || ev.timestamp) || new Date().toISOString();

@@ -189,8 +189,9 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await hook({myoperator:{_ai:'unrelated-same-number',_cl:b3.customer_identifier,_ev:2,_su:1,_st:t0,_et:t0+120,_dr:120}});
   check((await one(`select status from callbacks where id=$1`,cb.id)).status === 'in_progress',
     'uncorrelated same-number call log cannot adopt and reach a reserved callback');
-  await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ type: 'customer', phone_number: b3.customer_identifier, dial_status: 'ANSWER', answered_at: t0 + 5, ring_duration: 5 }] } });
-  const live = await one(`select cb.status, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, cb.id, dial.body?.call_id);
+  await hook({ ...b3, event_id: 'o2', event_type: 'call.answered', timestamp: t0 + 5, payload: { legs: [{ type: 'agent', dial_status: 'ANSWER', answered_at: t0 + 2 }, { type: 'customer', phone_number: b3.customer_identifier, dial_status: 'ANSWER', answered_at: t0 + 5, ring_duration: 5 }] } });
+  const live = await one(`select cb.status, cb.reached_at, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, cb.id, dial.body?.call_id);
+  check(Date.parse(live.reached_at) === (t0 + 5) * 1000, 'SLA reach time uses the customer answer, even when the earlier agent leg comes first');
   check(live?.status === 'reached' && live.cid === cb.id, 'patient connected -> callback reached at once, before the call ends (dashboard pending drops live)', JSON.stringify(live));
   await hook({ ...b3, event_id: 'o3', event_type: 'call.end', timestamp: t0 + 100, payload: { legs: [{ talk_duration: 95 }] } });
   const out = await one(`select session_id, status from calls where id = $1`, dial.body?.call_id);
