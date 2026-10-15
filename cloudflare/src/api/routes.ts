@@ -3,6 +3,7 @@
 // access: 'public' only for health / version, 'login' only for /api/v1/me, otherwise the roles allowed.
 import type { Ctx } from './context';
 import type { Role } from './auth';
+import { staffDirectory, startStaffSession, endStaffSession } from '../services/staff-session';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
 import { whatsappSession, whatsappSessionAction } from '../services/myoperator';
@@ -39,6 +40,9 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/actuator/health', access: 'public', summary: 'Health with database check' },
   { method: 'GET', path: '/api/actuator/health/liveness', access: 'public', summary: 'Worker is up' },
   { method: 'GET', path: '/api/v1/me', access: 'login', summary: 'Signed-in user, role and workspace' },
+  { method: 'GET', path: '/api/v1/staff-sessions/staff', access: ['supervisor'], handler: (c) => staffDirectory(c), summary: 'Active operational staff for supervisor access' },
+  { method: 'POST', path: '/api/v1/staff-sessions/start', access: ['supervisor'], handler: (c, b) => startStaffSession(c, b), summary: 'Open an audited staff workspace for 30 minutes' },
+  { method: 'POST', path: '/api/v1/staff-sessions/end', access: 'login', handler: (c) => endStaffSession(c), summary: 'Return to the original supervisor login' },
   { method: 'GET', path: '/api/v1/live', access: ALL, summary: 'WebSocket: table names that changed' },
   { method: 'GET', path: '/api/v1/local/users', access: ALL, summary: 'Local test only: logins to pick from' },
   { method: 'POST', path: '/api/v1/batch', access: ALL, handler: (c, b) => batch(c, b), summary: 'Several reads in one transaction (RLS per user)' },

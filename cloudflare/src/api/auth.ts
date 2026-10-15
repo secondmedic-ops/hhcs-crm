@@ -6,8 +6,15 @@ import type { Db } from '../db';
 import { databaseUrl, isLocalDb } from '../db';
 import type { Env } from '../env';
 
-export const ROLES = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider'] as const;
+export const ROLES = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'administrator'] as const;
 export type Role = (typeof ROLES)[number];
+
+/** Same rule as has_role() in the database: an administrator may do anything a senior role may (supervisor, Hinduja
+ *  management or clinical, coordinator, medical desk) and anything the platform admin may (logins, configuration). Lists
+ *  of only agent / field staff / partner roles stay closed to it: those are scoped to one person's own work. */
+const SENIOR: readonly string[] = ['supervisor', 'client_manager', 'client_clinical', 'coordinator', 'medical_desk', 'admin'];
+export const allows = (roles: readonly string[] | undefined, role: Role | null | undefined): boolean =>
+  !!role && !!roles && (roles.includes(role) || (role === 'administrator' && roles.some((r) => SENIOR.includes(r))));
 
 export interface User {
   id: string;

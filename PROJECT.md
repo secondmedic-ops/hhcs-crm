@@ -19,6 +19,7 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
   - **client_manager** (Hinduja management): full visibility, approvals (discounts, rate card, templates), export, data exit
   - **client_clinical** (Hinduja clinical): clinical records, escalations, MIS
   - **admin** (SecondMedic platform admin): configuration and users only, sees no patient data
+  - **administrator** (SecondMedic administrator): full access. Everything a supervisor, Hinduja management and the platform admin can do, with full phone numbers; creates staff logins of any role and opens staff workspaces. In the database `has_role()` lets an administrator pass any check that names a senior role (supervisor, client roles, coordinator, medical desk), but not the agent / field staff / partner / platform-admin rules that narrow what one person sees; the Worker (`allows()` in `api/auth.ts`) and the screens (`roleAllows()` in `src/lib/auth.jsx`) use the same rule. The first one is created with the `create-login` GitHub Action (secret `NEW_LOGIN`, deleted after use).
   - **provider** (service-provider staff, e.g. Book My Medicare; `profiles.provider_id` says which): only the cases sent to their provider (Provider leads page): case ID, patient details, requirements; accept / schedule / start / complete / decline, progress notes. Never calls or recordings.
 - Providers and lead routing (Hinduja requirements, Oct 2026): table `providers` (SM = SecondMedic: ECG, X-ray, blood tests, visits; BMM = Book My Medicare: nursing, physiotherapy, hospital beds, elder care, other home care) and `case_referrals` (one lead per provider per case). `route_case()` sends each case by its services (or by the request text when no services are added); SecondMedic's lead follows the case stages, an outside provider moves its lead with `update_referral()`, and a case served only by outside providers closes when its leads are done. SecondMedic coordinators see only SecondMedic or not-yet-routed cases. Branch (Khar / Mahim, `workspaces.settings.branches`) and `additional_info` are on every case. `import_cases()` (Settings > Import from old CRM) brings in the previous Hinduja CRM from Excel / CSV; the old ID is `cases.external_ref`.
 - Sensitive fields kept out of `audit_log` and logs: patient names, phone numbers, addresses, clinical notes (DPDP Act 2023). Hinduja is the Data Fiduciary; SecondMedic is the Data Processor.
@@ -39,6 +40,8 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
 
 ## Everyday use
 
+Supervisors can select a department and staff member from the first Live dashboard to open an audited staff workspace for 30 minutes. Actions display `Staff Name - Supervisor (Supervisor Name)` in audit/access records; the original supervisor login is retained. See `docs/SUPERVISOR-STAFF-ACCESS.md`.
+
 AI Summary supports microphone transcription during active calls using `gemini-3.5-transcribe-live` and server-created, single-use ephemeral tokens. Finished live transcripts are summarised by the configured text model; recordings remain the fallback. MyOperator does not currently stream live audio into the CRM: use speakerphone near the microphone. Setup, charges and limits: `docs/AI-LIVE-TRANSCRIPTION.md`.
 
 BMM system access: the HHCS-side authenticated lead/progress API is prepared but **disabled by default**. See `docs/BMM-INTEGRATION.md`. BMM must confirm the contract before activation under Settings > Telephony & integrations > Book My Medicare integration. Deployment of this change is on hold pending BMM documentation; no BMM endpoint or credentials have been assumed.
@@ -48,7 +51,7 @@ BMM system access: the HHCS-side authenticated lead/progress API is prepared but
 | Ship any change | Double-click `SHIP.bat` |
 | Test locally without touching live data | Double-click `RUN-LOCAL-TEST.bat` (same Worker code on an in-memory test database with a week of sample data; pick any role; "Simulate test call" sends a real MyOperator webhook to it) |
 | Run the API's tests yourself | `cd cloudflare`, `npm test` (workflow + translator) and `npm run rehearse` (the whole API on a throw-away database, 60+ checks) |
-| Give someone access | Settings > Users > Add user (needs `SUPABASE_SERVICE_ROLE_KEY`), or Supabase > Authentication > Add user, then Settings > Users |
+| Give someone access | Settings > Users > Add user (platform admin or administrator; needs `SUPABASE_SERVICE_ROLE_KEY`). With nobody to do that: GitHub secret `NEW_LOGIN` = {"full_name","email","password","role"}, run GitHub > Actions > create-login, then delete the secret |
 | Replace the Cloudflare key | Double-click `CLOUDFLARE-TOKEN.bat` |
 | Roll back | GitHub > Actions > ship > Run workflow: `ref` = the last good `deploy-*` tag, tick `skip_db` |
 

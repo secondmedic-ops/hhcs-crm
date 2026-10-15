@@ -28,7 +28,7 @@
     {
       "id": "TASK-6",
       "title": "Deploy via ship.mjs and verify production pipeline",
-      "status": "in_progress"
+      "status": "done"
     }
   ]
 }

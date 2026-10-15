@@ -4,7 +4,7 @@
 //   POST /api/v1/data/{table}   one write (insert / update / upsert / delete) on an allowed table
 //   POST /api/v1/rpc/{fn}       one business action (advance a case, approve a discount, record a payment ...)
 import type { Ctx } from '../api/context';
-import type { Role } from '../api/auth';
+import { allows, type Role } from '../api/auth';
 import { ApiError } from '../domain/errors';
 import { buildQuery, QueryError, shape, type QuerySpec, ident, toParam } from '../domain/query';
 import { asUser, readAsUser, type Tx } from '../db';
@@ -81,7 +81,7 @@ export const RPC: Record<string, readonly Role[]> = {
 /** Read-only actions that may ride in a batch. */
 export const READ_RPC = new Set(['case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings']);
 
-const allowed = (roles: readonly Role[] | undefined, role: Role | null) => !!role && !!roles && roles.includes(role);
+const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);
 
 /** Postgres error -> the message the screen shows (RPCs raise readable business messages). */

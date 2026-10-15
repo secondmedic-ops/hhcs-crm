@@ -17,7 +17,7 @@ export default function Login({ next }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  const [authMode, setAuthMode] = useState('dept'); // 'dept' | 'password'
+  const [authMode, setAuthMode] = useState(isDemo || isLocal ? 'dept' : 'password');
   const [dept, setDept] = useState('agent');
   const [find, setFind] = useState('');
   const [staffList, setStaffList] = useState(DEMO_USERS);
@@ -27,7 +27,7 @@ export default function Login({ next }) {
     let mounted = true;
     (async () => {
       try {
-        if (db) {
+        if (db && (isDemo || isLocal)) {
           const res = await q(
             db.from('profiles')
               .select('id,full_name,email,phone,role,agent_code,myoperator_user_id,myoperator_extension,zone_id,skills,provider_id,active')
@@ -132,12 +132,12 @@ export default function Login({ next }) {
               <div className="row between mb-8 wrap">
                 <div>
                   <h1 style={{ fontSize: 22, margin: 0 }}>CareDesk Login</h1>
-                  <p className="muted small mt-4">Select your department and sign in as any staff member.</p>
+                  <p className="muted small mt-4">{isDemo || isLocal ? 'Select a test login.' : 'Sign in to your account. Supervisors can open staff workspaces from the first page.'}</p>
                 </div>
-                <div className="btn-group">
+                {(isDemo || isLocal) && <div className="btn-group">
                   <button type="button" className={`btn sm${authMode === 'dept' ? ' on' : ''}`} onClick={() => setAuthMode('dept')}>Department & Staff</button>
                   <button type="button" className={`btn sm${authMode === 'password' ? ' on' : ''}`} onClick={() => setAuthMode('password')}>Password</button>
-                </div>
+                </div>}
               </div>
 
               {authMode === 'password' ? (

@@ -82,10 +82,18 @@ export function parsePgArray(text: string): (string | null)[] {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const changedOf = (v: unknown) => [...new Set(String(v ?? '').split(',').filter(Boolean))];
+// Request-scoped: each request owns its connection. Never a global current-user value.
+const staffSessions = new WeakMap<Sql, string>();
+export const setStaffSession = (sql: Sql, id: string) => staffSessions.set(sql, id);
+async function staffContext(sql: Sql, tx: Tx) {
+  const id = staffSessions.get(sql);
+  if (id) await tx`select set_config('caredesk.staff_session', ${id}, true)`;
+}
 
 export async function asUser<T>(sql: Sql, userId: string, fn: (tx: Tx) => Promise<T>): Promise<{ result: T; changed: string[] }> {
   if (!UUID.test(userId)) throw new ApiError(401, 'Please log in again (missing or expired session).');
   return sql.begin(async (tx) => {
+    await staffContext(sql, tx);
     // one statement: who is asking, then become caredesk_app for the rest of this transaction
     await tx`select set_config('request.jwt.claim.sub', ${userId}, true), set_config('request.jwt.claim.role', 'authenticated', true),
                     set_config('role', 'caredesk_app', true)`;
@@ -99,6 +107,7 @@ export async function asUser<T>(sql: Sql, userId: string, fn: (tx: Tx) => Promis
 export async function readAsUser<T>(sql: Sql, userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
   if (!UUID.test(userId)) throw new ApiError(401, 'Please log in again (missing or expired session).');
   return sql.begin(async (tx) => {
+    await staffContext(sql, tx);
     await tx`select set_config('request.jwt.claim.sub', ${userId}, true), set_config('request.jwt.claim.role', 'authenticated', true),
                     set_config('role', 'caredesk_app', true)`;
     return fn(tx);
@@ -107,6 +116,7 @@ export async function readAsUser<T>(sql: Sql, userId: string, fn: (tx: Tx) => Pr
 
 export async function asSystem<T>(sql: Sql, fn: (tx: Tx) => Promise<T>): Promise<{ result: T; changed: string[] }> {
   return sql.begin(async (tx) => {
+    await staffContext(sql, tx);
     await tx`select set_config('request.jwt.claim.role', 'service_role', true), set_config('request.jwt.claim.sub', '', true)`;
     const result = await fn(tx);
     const [row] = await tx`select current_setting('caredesk.changed', true) as c`;
@@ -119,6 +129,7 @@ export async function asSystem<T>(sql: Sql, fn: (tx: Tx) => Promise<T>): Promise
  * by the views and RPCs). The rehearsal checks them against the database built from supabase/migrations.
  */
 export const SCHEMA: Record<string, string[]> = {
+  staff_sessions: ['id', 'workspace_id', 'supervisor_id', 'staff_id', 'expires_at', 'ended_at'],
   workspaces: ['id', 'code', 'settings'],
   profiles: ['id', 'workspace_id', 'full_name', 'email', 'phone', 'role', 'agent_code', 'myoperator_user_id', 'myoperator_extension', 'skills', 'active', 'provider_id',
     'available', 'available_since', 'last_autodial_at'],

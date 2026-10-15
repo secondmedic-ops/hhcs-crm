@@ -6,15 +6,16 @@ import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
 import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
-import { homeFor, useAuth } from '../lib/auth.jsx';
+import { homeFor, roleAllows, useAuth } from '../lib/auth.jsx';
 import { inr, dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
 import {
   PageHead, Panel, Tabs, Badge, Button, Modal, Drawer, Field, Input, Select, Textarea, Check, Segmented, Kpi,
   TableSkeleton, Skeleton, Empty, ErrorNote, useAction, useToast,
 } from '../components/ui.jsx';
 import Icon from '../components/icons.jsx';
+import { STAFF_ROLES } from '../components/StaffWorkspace.jsx';
 
-const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider'];
+const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'administrator'];
 const TABS = [
   ['profile', 'Profile & security', ALL],
   ['workspace', 'Workspace', ['client_manager', 'admin']],
@@ -40,7 +41,7 @@ const list = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boole
 export default function Settings() {
   const { profile } = useAuth();
   const [sp, setSp] = useSearchParams();
-  const tabs = TABS.filter(([, , roles]) => roles.includes(profile.role));
+  const tabs = TABS.filter(([, , roles]) => roleAllows(roles, profile.role));
   const tab = tabs.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : tabs[0][0];
   return (
     <>
@@ -633,6 +634,7 @@ function DepartmentsTab() {
   const { can, switchUser } = useAuth();
   const nav = useNavigate();
   const admin = can('admin');
+  const [openStaff, staffBusy] = useAction();
   const [tel, setTel] = useState(null);
   const [sp, setSp] = useSearchParams();
   const dept = DEPARTMENTS.some(([k]) => k === sp.get('dept')) ? sp.get('dept') : 'agent';
@@ -710,7 +712,7 @@ function DepartmentsTab() {
                   <td>{x.active ? <Badge kind="ok">Active</Badge> : <Badge>Disabled</Badge>}</td>
                   <td className="right">
                     <div className="row gap-4" style={{ justifyContent: 'flex-end' }}>
-                      <Button size="xs" kind="ghost" onClick={async () => { await switchUser(x.id); nav(homeFor(x.role)); }}>Login as</Button>
+                      {can('supervisor') && x.active && STAFF_ROLES.includes(x.role) && <Button size="xs" kind="ghost" disabled={staffBusy} onClick={() => openStaff(() => switchUser(x.id))}>Open staff workspace</Button>}
                       {admin ? <Button size="xs" onClick={() => setEdit(x)}>Edit</Button>
                         : x.role !== 'provider' && <Button size="xs" onClick={() => setTel(x)}>Telephony</Button>}
                     </div>
@@ -1081,7 +1083,7 @@ function AiSummaries({ onSaved }) {
 
 function TelephonyTab() {
   const { profile } = useAuth();
-  const isAdmin = ['admin', 'supervisor'].includes(profile?.role);   // supervisors run the call centre: they connect MyOperator too
+  const isAdmin = roleAllows(['admin', 'supervisor'], profile?.role);   // supervisors run the call centre: they connect MyOperator too
   const h = useLoad(() => integrations(), []);
   const w = useLoad(() => webhookEvents(), []);
   const [openId, setOpenId] = useState(null);

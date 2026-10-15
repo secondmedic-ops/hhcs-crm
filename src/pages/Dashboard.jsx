@@ -7,13 +7,14 @@ import { useAuth } from '../lib/auth.jsx';
 import { inr, num, pct, istDayRange, ago, time, SLA_LABEL } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Segmented, Badge, StageBadge, SlaBadge, Countdown, TableSkeleton, Empty, AiTag } from '../components/ui.jsx';
 import { Bars, HBars, Funnel, Meter } from '../components/charts.jsx';
+import StaffWorkspace from '../components/StaffWorkspace.jsx';
 
 const RANGES = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', '7 days'], ['30d', '30 days']];
 const rangeOf = (r) => ({ today: istDayRange(0), yesterday: istDayRange(-1), '7d': istDayRange(-6, 7), '30d': istDayRange(-29, 30) }[r]);
 
 export default function Dashboard() {
   const nav = useNavigate();
-  const { workspace, isClient } = useAuth();
+  const { workspace, isClient, can } = useAuth();
   const [range, setRange] = useState('today');
   const now = useNow(30000);
   const [from, to] = rangeOf(range);
@@ -37,6 +38,7 @@ export default function Dashboard() {
       <PageHead title="Live dashboard" sub={<>{workspace?.name} · updated {k ? ago(k.generated_at, now) : '…'} · every number opens the cases behind it</>}>
         <Segmented options={RANGES} value={range} onChange={setRange} />
       </PageHead>
+      {can('supervisor') && <div className="mb-12"><StaffWorkspace /></div>}
       {error && <div className="badge danger mb-12">{error}</div>}
 
       <div className="kpis">

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { initDb, isDemo } from './lib/db.js';
-import { AuthProvider, homeFor, NAV, useAuth } from './lib/auth.jsx';
+import { AuthProvider, homeFor, NAV, roleAllows, useAuth } from './lib/auth.jsx';
 import { ToastProvider, Skeleton } from './components/ui.jsx';
 import { CallProvider } from './components/CallCenter.jsx';
 import Shell from './components/Shell.jsx';
@@ -51,7 +51,7 @@ function Boot({ children }) {
 function Guard({ path, children }) {
   const { profile } = useAuth();
   const item = NAV.find((n) => n.to === path);
-  if (item && !item.roles.includes(profile.role)) return <Navigate to={homeFor(profile.role)} replace />;
+  if (item && !roleAllows(item.roles, profile.role)) return <Navigate to={homeFor(profile.role)} replace />;
   return children;
 }
 

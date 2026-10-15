@@ -16,13 +16,14 @@ export const DEMO_USERS = [
   { id: 'a0000000-0000-4000-8000-000000000012', full_name: 'Neha Kulkarni', role: 'client_manager', email: 'programme.owner@hinduja.demo' },
   { id: 'a0000000-0000-4000-8000-000000000013', full_name: 'Dr. S. Mehta', role: 'client_clinical', email: 'clinical@hinduja.demo' },
   { id: 'a0000000-0000-4000-8000-000000000014', full_name: 'Platform Admin', role: 'admin', email: 'admin@secondmedic.demo' },
+  { id: 'a0000000-0000-4000-8000-000000000017', full_name: 'Demo Administrator', role: 'administrator', email: 'administrator@secondmedic.demo' },
   { id: 'a0000000-0000-4000-8000-000000000015', full_name: 'Ritu Sawant', role: 'provider', provider: 'BMM', email: 'ritu@bookmymedicare.demo' },
   { id: 'a0000000-0000-4000-8000-000000000016', full_name: 'Sachin Bhalerao', role: 'provider', provider: 'BMM', email: 'sachin@bookmymedicare.demo' },
 ];
 
 export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
-  medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider',
+  medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider', administrator: 'Administrator',
 };
 
 const LOCALITIES = [

@@ -1,6 +1,7 @@
 // API checks run by the rehearsal (pipeline step 3c) against the REAL Worker on a database built from the migrations.
 // Covers: login required (missing / forged / expired / wrong-audience tokens), role rules per endpoint, Row Level
 // Security through the API, the case workflow, MyOperator webhooks + click-to-call, and live updates.
+import { staffSessionTests } from './staff-session.itest.mjs';
 const WS = 'HHC';
 const U = {
   agent: 'b0000000-0000-4000-8000-000000000001', agent2: 'b0000000-0000-4000-8000-000000000002',
@@ -8,10 +9,10 @@ const U = {
   field: 'b0000000-0000-4000-8000-000000000005', client: 'b0000000-0000-4000-8000-000000000006',
   clinical: 'b0000000-0000-4000-8000-000000000007', admin: 'b0000000-0000-4000-8000-000000000008',
   medical: 'b0000000-0000-4000-8000-000000000009', nobody: 'b0000000-0000-4000-8000-000000000010',
-  bmm: 'b0000000-0000-4000-8000-000000000011',
+  bmm: 'b0000000-0000-4000-8000-000000000011', administrator: 'b0000000-0000-4000-8000-000000000012',
 };
 const ROLE = { agent: 'agent', agent2: 'agent', coord: 'coordinator', sup: 'supervisor', field: 'field_staff', client: 'client_manager',
-  clinical: 'client_clinical', admin: 'admin', medical: 'medical_desk', bmm: 'provider' };
+  clinical: 'client_clinical', admin: 'admin', medical: 'medical_desk', bmm: 'provider', administrator: 'administrator' };
 
 export async function runApiTests({ base, token, sql, wrongKey, obdCalls, geminiCalls = [], webhookKey }) {
   const failed = [];
@@ -600,6 +601,26 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await call('bmm','POST',updatePath,{...partnerBody,event_id:'33000000-0000-4000-8000-000000000002',status:'scheduled',scheduled_at:'2026-10-16T10:00:00Z'})).status === 409,'BMM stale expected status rejected');
   check((await call('bmm','POST',updatePath,{...partnerBody,event_id:'bad'})).status === 400,'BMM event ID validated');
   check((await rpc('sup','set_bmm_integration',{p_enabled:false,p_contract_confirmed:false})).status === 200,'BMM disabled again after rehearsal');
+  // ---- Administrator: full access, creates staff of any role, opens staff workspaces under its own label
+  const admRead = await batch('administrator', [sel('v_cases', { cols: 'id' }), sel('v_calls', { cols: 'id' }), sel('v_audit', { cols: 'id' })]);
+  check(admRead.status === 200 && admRead.body.results.every((r) => (r.data || []).length > 0), 'administrator reads cases, calls and the audit trail', JSON.stringify(admRead.body).slice(0, 200));
+  check((await call('administrator', 'GET', '/api/v1/admin/integrations')).status === 200 && (await call('administrator', 'GET', '/api/v1/admin/ai')).status === 200,
+    'administrator opens integration and AI settings');
+  const admAgent = await call('administrator', 'POST', '/api/v1/admin/users', { email: 'administrator.made.agent@rehearsal.test', password: 'longenough-1', full_name: 'Administrator Made Agent', role: 'agent' });
+  check(admAgent.status === 200 && admAgent.body?.role === 'agent', 'administrator creates a staff login', JSON.stringify(admAgent.body));
+  const admAdm = await call('administrator', 'POST', '/api/v1/admin/users', { email: 'second.administrator@rehearsal.test', password: 'longenough-1', full_name: 'Second Administrator', role: 'administrator' });
+  check(admAdm.status === 200 && admAdm.body?.role === 'administrator', 'administrator creates another administrator', JSON.stringify(admAdm.body));
+  check((await call('sup', 'POST', '/api/v1/admin/users', { email: 'x2@y.z', password: 'longenough1', full_name: 'X', role: 'agent' })).status === 403, 'a supervisor still cannot create logins');
+  const admSess = await call('administrator', 'POST', '/api/v1/staff-sessions/start', { staff_id: U.coord });
+  const admH = { 'X-Staff-Session': admSess.body?.id };
+  const admMe = await call('administrator', 'GET', '/api/v1/me', undefined, admH);
+  check(admSess.status === 200 && admMe.body?.role === 'coordinator' && admMe.body.staffSession?.supervisorName === 'ADMINISTRATOR user',
+    'administrator opens a staff workspace', JSON.stringify({ s: admSess.body, me: admMe.body }));
+  await call('administrator', 'POST', '/api/v1/data/interactions', { table: 'interactions', op: 'insert', rows: [{ workspace_id: ws, case_id: cid, channel: 'note', direction: 'internal', actor_id: U.coord, summary: 'Administrator workspace test' }] }, admH);
+  const [admNote] = await sql`select actor_label from interactions where summary = 'Administrator workspace test'`;
+  check(admNote?.actor_label === 'COORD user - Administrator (ADMINISTRATOR user)', 'administrator workspace actions read "Staff - Administrator (Name)"', JSON.stringify(admNote));
+  await call('administrator', 'POST', '/api/v1/staff-sessions/end', {}, admH);
+  await staffSessionTests({ call, sql, check, U, ws });
   return { total, failed };
 }
 

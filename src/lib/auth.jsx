@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { db, isDemo, isLocal, supabase, demoSession, q, rpc } from './db.js';
 import { DEMO_USERS } from '../demo/seed.js';
+import { api, setStaffSession as saveStaffSession } from '../api.ts';
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -26,6 +27,12 @@ export const NAV = [
   { to: '/settings', label: 'Settings', icon: 'gear', roles: ['admin', 'supervisor', 'client_manager', 'coordinator', 'agent', 'medical_desk', 'client_clinical', 'field_staff', 'provider'] },
 ];
 
+/** Same rule as the server and has_role() in the database: an administrator passes any list that names a senior role
+ *  (supervisor, Hinduja management or clinical, coordinator, medical desk) or the platform admin. Lists of only agent /
+ *  field staff / partner roles stay closed to it. */
+const SENIOR = ['supervisor', 'client_manager', 'client_clinical', 'coordinator', 'medical_desk', 'admin'];
+export const roleAllows = (roles, role) => !!role && (roles.includes(role) || (role === 'administrator' && roles.some((r) => SENIOR.includes(r))));
+
 export const homeFor = (role) => ({ agent: '/console', field_staff: '/my-visits', admin: '/settings', provider: '/leads' }[role] || '/');
 
 export function AuthProvider({ children }) {
@@ -34,13 +41,21 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [mfa, setMfa] = useState(null); // { factorId, userId } while a second factor is owed
   const [noProfile, setNoProfile] = useState(false); // signed in to Supabase, but no CareDesk profile yet
+  const [staffSession, setStaffSession] = useState(null);
 
   const load = useCallback(async (userId) => {
-    if (!userId) { setProfile(null); setWorkspace(null); return; }
+    if (!userId) { saveStaffSession(null); setStaffSession(null); setProfile(null); setWorkspace(null); return; }
     let p = null, why = null;
-    try { p = await q(db.from('profiles').select('*').eq('id', userId).maybeSingle()); }
+    try {
+      if (!isDemo) {
+        const me = await api.me();
+        userId = me.userId;
+        setStaffSession(me.staffSession || null);
+      }
+      p = await q(db.from('profiles').select('*').eq('id', userId).maybeSingle());
+    }
     catch (e) { why = e.message || String(e); }
-    if (!p) {
+    if (!p && isDemo) {
       const demoU = DEMO_USERS.find((x) => x.id === userId);
       if (demoU) {
         p = {
@@ -124,12 +139,28 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   };
-  const signInDemo = async (userId) => { demoSession.set(userId); await load(userId); };
+  const signInDemo = async (userId) => {
+    if (!isDemo && !isLocal) throw new Error('Sign in with your supervisor email and password first.');
+    saveStaffSession(null);
+    demoSession.set(userId); await load(userId);
+  };
+  const switchUser = async (staffId) => {
+    if (isDemo) throw new Error('Audited staff access is available on the live site and in the local Worker test.');
+    const s = await api.startStaffSession(staffId);
+    saveStaffSession(s.id);
+    // Reload clears all prior-role data, call panels and in-flight loaders.
+    window.location.assign('/');
+  };
+  const returnToSupervisor = async () => {
+    try { await api.endStaffSession(); }
+    finally { saveStaffSession(null); window.location.assign('/'); }
+  };
   // after sign-out the address goes back to "/", so the next person who logs in lands on their own role's home page,
   // not on the page the previous user was on (e.g. Settings)
   const resetAddress = () => { try { window.history.replaceState(null, '', '/'); } catch { /* not a browser */ } };
   const signOut = async () => {
     try {
+      if (staffSession && !isDemo) await api.endStaffSession().catch(() => {});
       if (isDemo || isLocal) {
         demoSession.set(null);
       } else if (supabase) {
@@ -155,12 +186,12 @@ export function AuthProvider({ children }) {
       window.location.href = '/';
     }
   };
-  const can = (...roles) => !!profile && roles.includes(profile.role);
+  const can = (...roles) => !!profile && roleAllows(roles, profile.role);
   const isClient = profile && ['client_manager', 'client_clinical'].includes(profile.role);
-  const isOps = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
+  const isOps = profile && roleAllows(['agent', 'coordinator', 'supervisor', 'medical_desk'], profile.role);
 
   return (
-    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, switchUser: signInDemo, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
+    <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, switchUser, staffSession, returnToSupervisor, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>
       {children}
     </AuthCtx.Provider>
   );

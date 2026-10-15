@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, q, isDemo, isLocal, subscribe } from '../lib/db.js';
-import { useAuth } from '../lib/auth.jsx';
+import { roleAllows, useAuth } from '../lib/auth.jsx';
 import { useNow } from '../lib/hooks.js';
 import { dur, date, STAGE_LABEL } from '../lib/fmt.js';
 import Icon from './icons.jsx';
@@ -19,8 +19,8 @@ export function CallProvider({ children }) {
   const [dismissed, setDismissed] = useState({});
   // everyone who can place a call (same roles as POST /calls/dial) tracks their own live call;
   // the incoming-call pop-up stays with the contact-centre roles that answer the helpline
-  const ops = profile && ['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role);
-  const takesInbound = profile && ['agent', 'coordinator', 'supervisor'].includes(profile.role);
+  const ops = profile && roleAllows(['agent', 'coordinator', 'supervisor', 'medical_desk'], profile.role);
+  const takesInbound = profile && roleAllows(['agent', 'coordinator', 'supervisor'], profile.role);
 
   const load = useCallback(async () => {
     if (!ops) return;

@@ -5,7 +5,7 @@
 //   email()                inbound mailbox -> ticket on the patient timeline (Cloudflare Email Routing)
 //   everything else        the React build (../dist) as static assets
 // Deployed ONLY by the pipeline (.github/workflows/ship.yml, step 5). Workers Builds must stay disconnected.
-import { accessOf, authOff, User, verifyJwt, verifyToken } from './api/auth';
+import { accessOf, allows, authOff, User, verifyJwt, verifyToken } from './api/auth';
 import type { Ctx } from './api/context';
 import { errorResponse, json, noContent, readJson, toResponse } from './api/http';
 import { contract, match } from './api/routes';
@@ -17,6 +17,7 @@ import { handleMyOperatorWebhook } from './services/myoperator';
 import { liveToken, notifyLive, openLive } from './services/live';
 import { runScheduled } from './services/cron';
 import { handleEmail } from './services/email';
+import { resolveStaffSession, logStaffRequest } from './services/staff-session';
 
 export { LiveHub } from './services/live';
 export type { Env };
@@ -99,13 +100,16 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
     }
     if (path === '/api/v1/local/users') return errorResponse(404, 'Only available in the local test');
     const access = await accessOf(sql, who.id);
-    const user: User = { id: who.id, email: who.email, ...access, authMode: off ? 'off' : 'supabase' };
-    c.user = user;
+    const principal: User = { id: who.id, email: who.email, ...access, authMode: off ? 'off' : 'supabase' };
+    c.user = principal;
+    const staffSession = path === '/api/v1/staff-sessions/end' ? null : await resolveStaffSession(c, principal);
+    const user = c.user;
+    if (staffSession) await logStaffRequest(c, found.route.path);
     if (found.route.path === '/api/v1/me') {
       if (!user.role) return errorResponse(403, 'Your login has no CareDesk profile yet. Ask the administrator to add you in Settings > Users.');
-      return json({ userId: user.id, email: user.email, role: user.role, workspaceId: user.workspaceId, fullName: user.fullName, authMode: user.authMode });
+      return json({ userId: user.id, email: user.email, role: user.role, workspaceId: user.workspaceId, fullName: user.fullName, authMode: user.authMode, staffSession });
     }
-    if (found.route.access !== 'login' && (!user.role || !(found.route.access as readonly string[]).includes(user.role))) {
+    if (found.route.access !== 'login' && !allows(found.route.access as readonly string[], user.role)) {
       return errorResponse(403, FORBIDDEN);
     }
     if (isLive) return openLive(env, req);

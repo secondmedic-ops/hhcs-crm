@@ -24,8 +24,9 @@ const users = {
   client: '55555555-5555-5555-5555-555555555555',
   admin: '66666666-6666-6666-6666-666666666666',
   agent2: '77777777-7777-7777-7777-777777777777',
+  administrator: 'adadadad-adad-4dad-8dad-adadadadadad',
 };
-const roles = { agent: 'agent', coord: 'coordinator', sup: 'supervisor', field: 'field_staff', client: 'client_manager', admin: 'admin', agent2: 'agent' };
+const roles = { agent: 'agent', coord: 'coordinator', sup: 'supervisor', field: 'field_staff', client: 'client_manager', admin: 'admin', agent2: 'agent', administrator: 'administrator' };
 for (const [k, id] of Object.entries(users)) {
   await db.query(`insert into profiles(id, workspace_id, full_name, role, agent_code) values ($1,$2,$3,$4,$5)`,
     [id, ws, k.toUpperCase() + ' user', roles[k], k.startsWith('agent') ? 'A-0' + (k === 'agent' ? 7 : 8) : null]);
@@ -398,6 +399,25 @@ await as('agent', `select set_intake($1, $2::jsonb)`, [pd.case_id, JSON.stringif
 const [dm] = await as('agent', `select decision_maker_mobile_display d, hospital_room r from v_cases where id = $1`, [pd.case_id]);
 const [{ n: dmAudit }] = (await db.query(`select count(*)::int n from audit_log where changes::text like '%9820099999%'`)).rows;
 dm.d.includes('XXX') && dm.r === 'Room 512' && dmAudit === pdDmAudit ? ok('decision-maker mobile masked for agents, kept out of the audit log') : fail(JSON.stringify({ dm, dmAudit }));
+
+console.log('\nAdministrator: full access, not narrowed by agent / partner / platform-admin rules');
+const [{ n: supCases }] = await as('sup', `select count(*)::int n from cases`);
+const [{ n: admCases }] = await as('administrator', `select count(*)::int n from cases`);
+admCases > 0 && admCases === supCases ? ok('administrator sees every case a supervisor sees') : fail(JSON.stringify({ supCases, admCases }));
+const [{ n: platformCases }] = await as('admin', `select count(*)::int n from cases`);
+platformCases === 0 ? ok('platform admin still sees no patient data') : fail('platform admin sees cases: ' + platformCases);
+const [hr] = await as('administrator', `select has_role('client_manager') cm, has_role('supervisor', 'admin') sa, has_role('agent') ag,
+  has_role('provider') pv, has_role('field_staff') fs, has_role('admin') ad, has_role('admin', 'field_staff') af, is_user_admin() ua`);
+hr.cm && hr.sa && !hr.ag && !hr.pv && !hr.fs && !hr.ad && !hr.af && hr.ua
+  ? ok('has_role: administrator passes senior checks, not the agent / partner / platform-admin narrowing ones') : fail(JSON.stringify(hr));
+const [dmAdm] = await as('administrator', `select decision_maker_mobile_display d from v_cases where id = $1`, [pd.case_id]);
+dmAdm && !dmAdm.d.includes('XXX') ? ok('administrator sees full phone numbers') : fail(JSON.stringify(dmAdm));
+await as('administrator', `select transition_metrics(now() - interval '1 day', now() + interval '1 day')`);
+ok('administrator reads management reports');
+const supEdit = await as('sup', `update profiles set agent_code = 'A-98' where id = $1 returning id`, [users.agent2]);
+const admEdit = await as('administrator', `update profiles set agent_code = 'A-99' where id = $1 returning id`, [users.agent2]);
+const [{ c: newCode }] = (await db.query(`select agent_code c from profiles where id = $1`, [users.agent2])).rows;
+supEdit.length === 0 && admEdit.length === 1 && newCode === 'A-99' ? ok('administrator manages logins; a supervisor still cannot') : fail(JSON.stringify({ supEdit, admEdit, newCode }));
 
 expect(problems).toEqual([]);
 }, 120000);

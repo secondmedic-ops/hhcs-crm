@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, q } from '../lib/db.js';
 import { aiCommand } from '../lib/api.js';
-import { NAV, useAuth } from '../lib/auth.jsx';
+import { NAV, roleAllows, useAuth } from '../lib/auth.jsx';
 import { useDebounced } from '../lib/hooks.js';
 import Icon from './icons.jsx';
 import { AiTag, StageBadge } from './ui.jsx';
@@ -32,7 +32,7 @@ export default function CommandBar({ onClose }) {
     return () => { live = false; };
   }, [dq]);
 
-  const pages = useMemo(() => NAV.filter((n) => n.roles.includes(profile?.role))
+  const pages = useMemo(() => NAV.filter((n) => roleAllows(n.roles, profile?.role))
     .filter((n) => !text || n.label.toLowerCase().includes(text.toLowerCase())), [text, profile?.role]);
 
   const items = [

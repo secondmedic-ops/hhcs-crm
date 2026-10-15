@@ -3,7 +3,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { db, q, rpc, isDemo } from '../lib/db.js';
 import { useLoad, useDebounced } from '../lib/hooks.js';
-import { useAuth } from '../lib/auth.jsx';
+import { roleAllows, useAuth } from '../lib/auth.jsx';
 import { aiCall, recordingUrl } from '../lib/api.js';
 import { num, pct, dur, time, date, dateTime, istDayRange } from '../lib/fmt.js';
 import {
@@ -176,7 +176,7 @@ function CallDrawer({ id, onClose }) {
           <section>
             <div className="section-title mb-8">Recording</div>
             {!c.has_recording ? <div className="small muted">No recording for this call{['missed', 'abandoned', 'failed'].includes(c.status) ? ' (not answered)' : ''}.</div>
-              : !REC_ROLES.includes(profile.role) ? <div className="small muted row"><Icon name="lock" size={14} /> Recordings are available to supervisors. Ask your supervisor for a QA review.</div>
+              : !roleAllows(REC_ROLES, profile.role) ? <div className="small muted row"><Icon name="lock" size={14} /> Recordings are available to supervisors. Ask your supervisor for a QA review.</div>
                 : src ? <audio controls src={src} style={{ width: '100%' }} autoPlay />
                   : <div className="row wrap"><Button size="sm" icon="play" disabled={recBusy} onClick={loadRecording}>{recBusy ? 'Loading…' : 'Load recording'}</Button><span className="tiny faint">Each play is written to the access log.</span></div>}
           </section>
@@ -241,7 +241,7 @@ function CallDrawer({ id, onClose }) {
                 ))}
               </div>
             )}
-            {profile.role === 'supervisor' && c.status === 'completed' && <QaForm call={c} onSaved={() => { qa.reload(); call.reload(); }} />}
+            {roleAllows(['supervisor'], profile.role) && c.status === 'completed' && <QaForm call={c} onSaved={() => { qa.reload(); call.reload(); }} />}
           </section>
         </div>
       )}

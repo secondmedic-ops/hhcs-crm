@@ -1,0 +1,22 @@
+# One-off: create a CareDesk login from the GitHub secret NEW_LOGIN (see scripts/create-login.mjs).
+# Run: GitHub > Actions > create-login > Run workflow (or gh workflow run create-login.yml), then delete the secret.
+name: create-login
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Create or update the login
+        env:
+          SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          NEW_LOGIN: ${{ secrets.NEW_LOGIN }}
+        run: node scripts/create-login.mjs

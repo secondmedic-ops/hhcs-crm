@@ -53,6 +53,43 @@
         ]
       }
     },
+    "/api/v1/staff-sessions/staff": {
+      "get": {
+        "summary": "Active operational staff for supervisor access",
+        "x-access": [
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/staff-sessions/start": {
+      "post": {
+        "summary": "Open an audited staff workspace for 30 minutes",
+        "x-access": [
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/staff-sessions/end": {
+      "post": {
+        "summary": "Return to the original supervisor login",
+        "x-access": "login",
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/live": {
       "get": {
         "summary": "WebSocket: table names that changed",

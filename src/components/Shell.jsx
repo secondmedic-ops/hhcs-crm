@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { db, q, rpc, isDemo, isLocal, resetDemo, subscribe } from '../lib/db.js';
-import { NAV, homeFor, useAuth } from '../lib/auth.jsx';
+import { NAV, homeFor, roleAllows, useAuth } from '../lib/auth.jsx';
 import { useKey, useLoad } from '../lib/hooks.js';
 import { ago, ROLE_LABEL } from '../lib/fmt.js';
 import Icon from './icons.jsx';
@@ -16,7 +16,7 @@ const GROUPS = [
 ];
 
 export default function Shell() {
-  const { profile, workspace, signOut } = useAuth();
+  const { profile, workspace, signOut, staffSession } = useAuth();
   const [cmd, setCmd] = useState(false);
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
@@ -24,7 +24,7 @@ export default function Shell() {
   useEffect(() => setMenu(false), [loc.pathname]);
 
   const counts = useLoad(async () => {
-    const sees = (to) => NAV.some((n) => n.to === to && n.roles.includes(profile?.role));   // only badges this role has menu items for
+    const sees = (to) => NAV.some((n) => n.to === to && roleAllows(n.roles, profile?.role));   // only badges this role has menu items for
     const [a, e, w] = await Promise.all([
       sees('/approvals') ? q(db.from('approvals').select('id', { count: 'exact', head: true }).eq('status', 'pending')).catch(() => 0) : 0,
       sees('/escalations') ? q(db.from('escalations').select('id', { count: 'exact', head: true }).neq('status', 'resolved')).catch(() => 0) : 0,
@@ -33,7 +33,7 @@ export default function Shell() {
     return { approvals: a, escalations: e, whatsapp: w };
   }, [profile?.id], ['approvals', 'escalations', 'interactions', 'cases']);
 
-  const items = NAV.filter((n) => n.roles.includes(profile.role));
+  const items = NAV.filter((n) => roleAllows(n.roles, profile.role));
   return (
     <div className="shell">
       <aside className={`side ${menu ? 'open' : ''}`}>
@@ -76,6 +76,7 @@ export default function Shell() {
         </div>
       </aside>
       <div className="main">
+        {staffSession && <StaffSessionBanner />}
         {(isDemo || isLocal) && <DemoBar />}
         <header className="topbar">
           <button className="btn ghost sm menu-btn" onClick={() => setMenu((m) => !m)} aria-label="Menu"><Icon name="menu" /></button>
@@ -92,6 +93,19 @@ export default function Shell() {
       {cmd && <CommandBar onClose={() => setCmd(false)} />}
     </div>
   );
+}
+
+function StaffSessionBanner() {
+  const { staffSession, returnToSupervisor } = useAuth();
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => { returnToSupervisor(); }, Math.max(0, new Date(staffSession.expiresAt).getTime() - Date.now()));
+    return () => clearTimeout(t);
+  }, [staffSession.id]);
+  return <div className="panel-body row wrap gap-12" role="status" style={{ borderBottom: '1px solid var(--line)' }}>
+    <div className="grow"><strong>{staffSession.staffName} - Supervisor ({staffSession.supervisorName})</strong><div className="tiny muted">Working with this staff member's permissions. Every action keeps your supervisor identity in the audit trail.</div></div>
+    <Button disabled={busy} onClick={() => { setBusy(true); returnToSupervisor(); }}>Return to supervisor</Button>
+  </div>;
 }
 
 // Available / Away for auto-dialled callbacks: the dialer rings only agents who are Available, linked to MyOperator
@@ -169,7 +183,7 @@ function DemoBar() {
     nav(homeFor(u.role));
   };
   const inbound = async (scripted) => {
-    if (!['agent', 'coordinator', 'supervisor'].includes(profile.role)) { toast('Switch to an agent to receive calls'); return; }
+    if (!roleAllows(['agent', 'coordinator', 'supervisor'], profile.role)) { toast('Switch to an agent to receive calls'); return; }
     if (isLocal) {
       const { localInboundCall } = await import('../lib/localsim.js');
       try { await localInboundCall(); toast('Test call sent to the local Worker as a MyOperator webhook'); } catch (e) { toast.error(e.message); }
@@ -179,7 +193,7 @@ function DemoBar() {
     await simulateInboundCall(scripted ? 'demo' : null);
   };
   const inboundWhatsApp = async () => {
-    if (!['agent', 'coordinator', 'supervisor', 'medical_desk'].includes(profile.role)) { toast('Switch to an operations login to receive WhatsApp chats'); return; }
+    if (!roleAllows(['agent', 'coordinator', 'supervisor', 'medical_desk'], profile.role)) { toast('Switch to an operations login to receive WhatsApp chats'); return; }
     if (isLocal) {
       const { localInboundWhatsApp } = await import('../lib/localsim.js');
       try { await localInboundWhatsApp(); toast('Inbound WhatsApp sent to local Worker'); nav('/whatsapp'); } catch (e) { toast.error(e.message); }

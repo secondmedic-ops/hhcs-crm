@@ -11,6 +11,8 @@
 | entity_id | text | YES |
 | meta | jsonb | NO |
 | at | timestamp with time zone | NO |
+| staff_id | uuid | YES |
+| staff_session_id | uuid | YES |
 
 ## approvals
 | column | type | nullable |
@@ -63,6 +65,8 @@
 | changes | jsonb | YES |
 | actor_id | uuid | YES |
 | at | timestamp with time zone | NO |
+| staff_id | uuid | YES |
+| staff_session_id | uuid | YES |
 
 ## bmm_integration_settings
 | column | type | nullable |
@@ -648,6 +652,17 @@
 | breached_at | timestamp with time zone | YES |
 | status | text | NO |
 
+## staff_sessions
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| supervisor_id | uuid | NO |
+| staff_id | uuid | NO |
+| created_at | timestamp with time zone | NO |
+| expires_at | timestamp with time zone | NO |
+| ended_at | timestamp with time zone | YES |
+
 ## templates
 | column | type | nullable |
 |---|---|---|
@@ -678,6 +693,8 @@
 | at | timestamp with time zone | YES |
 | user_name | text | YES |
 | user_role | USER-DEFINED | YES |
+| staff_id | uuid | YES |
+| staff_session_id | uuid | YES |
 
 ## v_approvals
 | column | type | nullable |
@@ -776,6 +793,8 @@
 | at | timestamp with time zone | YES |
 | actor_name | text | YES |
 | actor_role | USER-DEFINED | YES |
+| staff_id | uuid | YES |
+| staff_session_id | uuid | YES |
 
 ## v_callbacks
 | column | type | nullable |

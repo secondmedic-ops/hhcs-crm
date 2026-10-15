@@ -48,8 +48,10 @@ export const SLA_LABEL = {
 export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
   medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider',
+  administrator: 'Administrator',
 };
 export const DEPARTMENTS = [
+  ['administrator', 'Administration', 'Full access: everything supervisors, Hinduja management and the platform admin can do; creates staff of any role.'],
   ['agent', 'Contact centre', 'Calls and WhatsApp, new enquiries, quotes, the callback queue. Sees masked phone numbers.'],
   ['coordinator', 'Coordination', 'All active cases, booking, field and hospital-visit assignment, reconciliation.'],
   ['supervisor', 'Supervision', 'Everything operational: recordings, QA, MIS, audit, controlled export.'],

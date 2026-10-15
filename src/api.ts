@@ -9,6 +9,9 @@ export class ApiCallError extends Error { constructor(public status: number, mes
 let localUser: string | null = null;
 /** Local test only: the profile picked on the start screen (the local Worker trusts it because login is off there). */
 export const setLocalUser = (id: string | null) => { localUser = id; };
+const STAFF_SESSION_KEY = 'caredesk.staff-session';
+export const getStaffSession = () => sessionStorage.getItem(STAFF_SESSION_KEY);
+export const setStaffSession = (id: string | null) => { id ? sessionStorage.setItem(STAFF_SESSION_KEY, id) : sessionStorage.removeItem(STAFF_SESSION_KEY); };
 
 async function headers(json: boolean): Promise<Record<string, string>> {
   const h: Record<string, string> = { Accept: 'application/json' };
@@ -16,6 +19,8 @@ async function headers(json: boolean): Promise<Record<string, string>> {
   const token = await accessToken();
   if (token) h.Authorization = `Bearer ${token}`;
   else if (localUser) h['X-Local-User'] = localUser;
+  const staffSession = getStaffSession();
+  if (staffSession) h['X-Staff-Session'] = staffSession;
   return h;
 }
 
@@ -34,6 +39,10 @@ async function request<T>(path: string, opts: { method?: 'GET' | 'POST'; body?: 
   try { data = text ? JSON.parse(text) : null; } catch { data = { message: text }; }
   if (!res.ok) {
     const b = (data || {}) as ApiErrorBody;
+    if (res.status === 409 && b.message?.startsWith('Staff session has ended')) {
+      setStaffSession(null);
+      window.location.assign('/');
+    }
     throw new ApiCallError(res.status, b.message || b.error || `Request failed (${res.status})`);
   }
   return data as T;
@@ -44,7 +53,10 @@ export interface BatchOp { kind?: 'select' | 'rpc'; spec?: unknown; fn?: string;
 
 export const api = {
   health: () => request<{ status: string; database: string; auth: string }>('/api/v1/health'),
-  me: () => request<{ userId: string; role: string; workspaceId: string; fullName: string; authMode: string }>('/api/v1/me'),
+  me: () => request<{ userId: string; role: string; workspaceId: string; fullName: string; authMode: string; staffSession?: { id: string; staffName: string; supervisorName: string; expiresAt: string } | null }>('/api/v1/me'),
+  staffDirectory: () => request<{ id: string; full_name: string; role: string; agent_code: string | null }[]>('/api/v1/staff-sessions/staff'),
+  startStaffSession: (staff_id: string) => request<{ id: string; expires_at: string }>('/api/v1/staff-sessions/start', { method: 'POST', body: { staff_id } }),
+  endStaffSession: () => request<{ ended: boolean }>('/api/v1/staff-sessions/end', { method: 'POST', body: {} }),
   localUsers: () => request<{ id: string; full_name: string; role: string; agent_code: string | null }[]>('/api/v1/local/users'),
 
   batch: (ops: BatchOp[]) => request<{ results: QueryResult[] }>('/api/v1/batch', { method: 'POST', body: { ops } }),

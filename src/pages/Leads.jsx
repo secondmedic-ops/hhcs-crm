@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
-import { useAuth } from '../lib/auth.jsx';
+import { roleAllows, useAuth } from '../lib/auth.jsx';
 import { num, ago, date, dateTime } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Button, Badge, Modal, Field, Input, Textarea, Select, TableSkeleton, Empty, ErrorNote, useAction, useToast } from '../components/ui.jsx';
 
@@ -35,7 +35,7 @@ const NEXT = {
 export function canMove(profile, lead) {
   if (!profile || !lead || lead.provider_code === 'SM') return false;
   if (profile.role === 'provider') return profile.provider_id === lead.provider_id;
-  return ['supervisor', 'client_manager'].includes(profile.role);
+  return roleAllows(['supervisor', 'client_manager'], profile.role);
 }
 
 /** Buttons for one lead (also used on the case page). */
@@ -44,14 +44,14 @@ export function LeadActions({ lead, onDone, size = 'xs' }) {
   const [dlg, setDlg] = useState(null);
   if (!canMove(profile, lead)) return lead?.provider_code === 'SM' && OPEN.includes(lead.status) ? <span className="tiny faint">Follows case stages</span> : null;
   const steps = NEXT[lead.status] || [];
-  if (!steps.length && !['supervisor', 'client_manager'].includes(profile.role)) return null;
+  if (!steps.length && !roleAllows(['supervisor', 'client_manager'], profile.role)) return null;
   return (
     <>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 6, flexWrap: 'nowrap' }}>
         {steps.map(([to, label, kind]) => <Button key={to + label} size={size} kind={kind} onClick={() => setDlg(to)}>{label}</Button>)}
-        {['completed', 'declined', 'cancelled'].includes(lead.status) && ['supervisor', 'client_manager'].includes(profile.role) &&
+        {['completed', 'declined', 'cancelled'].includes(lead.status) && roleAllows(['supervisor', 'client_manager'], profile.role) &&
           <Button size={size} onClick={() => setDlg('new')}>Reopen</Button>}
-        {OPEN.includes(lead.status) && ['supervisor', 'client_manager'].includes(profile.role) && lead.provider_code !== 'SM' &&
+        {OPEN.includes(lead.status) && roleAllows(['supervisor', 'client_manager'], profile.role) && lead.provider_code !== 'SM' &&
           <Button size={size} kind="ghost" onClick={() => setDlg('cancelled')}>Cancel</Button>}
       </div>
       {dlg && <LeadStep lead={lead} to={dlg} onClose={() => setDlg(null)} onDone={() => { setDlg(null); onDone?.(); }} />}
@@ -130,7 +130,7 @@ export default function Leads() {
         sub={isProvider ? 'Cases sent to you by the Hinduja call centre: case ID, patient details and requirements. Accept, schedule, add progress notes and complete.'
           : 'Every case is sent to SecondMedic (ECG, X-ray, blood tests) or Book My Medicare (nursing, physiotherapy, beds, elder care) by its services.'} />
       <ErrorNote error={error} />
-      {(isProvider || ['supervisor', 'client_manager'].includes(profile?.role)) && <SheetSync rows={(data?.rows || []).filter((r) => OPEN.includes(r.status))} onDone={reload} isProvider={isProvider} />}
+      {(isProvider || roleAllows(['supervisor', 'client_manager'], profile?.role)) && <SheetSync rows={(data?.rows || []).filter((r) => OPEN.includes(r.status))} onDone={reload} isProvider={isProvider} />}
       <div className="kpis mb-16">
         <Kpi label="New, waiting to be accepted" value={data && num(waiting)} detail={waiting ? `oldest ${ago(new Date(oldestNew), now)}` : 'none waiting'} tone={waiting ? 'warn' : 'ok'} onClick={() => setTab('new')} />
         <Kpi label="Open leads" value={data && num(byTab.open.length)} detail="accepted, scheduled, dispatched or deployed" onClick={() => setTab('open')} />
