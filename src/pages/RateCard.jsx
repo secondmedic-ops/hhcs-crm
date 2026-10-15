@@ -20,6 +20,7 @@ const GST = { incl_gst: 'Includes GST', excl_gst: 'GST extra', no_gst: 'No GST c
 const GST_OPTS = Object.entries(GST);
 const day = (d) => (d ? dateLong(`${String(d).slice(0, 10)}T00:00:00+05:30`) : '–');
 const STATUS = { new: ['info', 'New'], changed: ['warn', 'Changed'], unchanged: ['', 'Unchanged'] };
+const BY_CATEGORY = '*category';
 
 export function RatesTab() {
   const { profile } = useAuth();
@@ -306,7 +307,7 @@ function ImportRates() {
   const [run, busy] = useAction();
   const [file, setFile] = useState(null);        // { name, wb, sheet, grid, head }
   const [map, setMap] = useState({});
-  const [opts, setOpts] = useState({ buy_tax_basis: '', sell_tax_basis: '', effective_from: '', provider_code: '' });
+  const [opts, setOpts] = useState({ buy_tax_basis: '', sell_tax_basis: '', effective_from: '', provider_code: '', buy_pct_of_sell: '' });
   const [resolve, setResolve] = useState({});    // file row -> { service_id } | { new_service } | { provider_id }
   const [check, setCheck] = useState(null);      // server preview
   const [stale, setStale] = useState(false);
@@ -316,7 +317,7 @@ function ImportRates() {
   const [confirm, setConfirm] = useState(false);
   const [done, setDone] = useState(null);
   const svcs = useLoad(() => q(db.from('services').select('id,code,name,category,unit,price,tax_basis,active').order('code')), [], ['services']);
-  const provs = useLoad(() => q(db.from('providers').select('id,code,name,active').order('code')), []);
+  const provs = useLoad(() => q(db.from('providers').select('id,code,name,active,categories').order('code')), []);
   const hist = useLoad(() => q(db.from('rate_imports').select('id,file_name,sheet_name,summary,buy_status,sell_status,created_at,approval_id').order('created_at', { ascending: false }).limit(15)), [], ['rate_imports', 'approvals']);
 
   const touch = () => { setStale(true); setDone(null); };
@@ -344,7 +345,12 @@ function ImportRates() {
     return { ...o, ...(resolve[g.n] || {}) };
   }), [dataRows, map, resolve]);
   const sentBy = useMemo(() => Object.fromEntries(sent.map((o) => [o.row, o])), [sent]);
-  const options = () => Object.fromEntries(Object.entries(opts).filter(([, v]) => v));
+  // "By category" in the Provider choice = the provider_by_routing option (the server picks by the case-routing categories)
+  const options = () => {
+    const o = Object.fromEntries(Object.entries(opts).filter(([, v]) => v));
+    if (o.provider_code === BY_CATEGORY) { delete o.provider_code; o.provider_by_routing = true; }
+    return o;
+  };
   const runCheck = () => run(async () => {
     const r = await rpc('rate_import_check', { p_rows: sent, p_options: options() });
     setCheck(r); setStale(false); setFilter(r.ok ? 'changes' : 'errors');
@@ -367,7 +373,8 @@ function ImportRates() {
   };
   const s = check?.summary;
   const changes = s ? s.buy_new + s.buy_changed + s.sell_new + s.sell_changed : 0;
-  const hasB2b = map.b2b !== '' && map.b2b != null;
+  const hasB2b = (map.b2b !== '' && map.b2b != null) || opts.buy_pct_of_sell.trim() !== '';
+  const routing = (provs.data || []).filter((p) => p.active && p.categories?.length).map((p) => `${p.code}: ${p.categories.map((c) => CAT[c] || c).join(', ')}`).join(' · ');
   const hasB2c = map.b2c !== '' && map.b2c != null;
 
   const template = async () => {
@@ -381,7 +388,7 @@ function ImportRates() {
       ['Provider Code', 'Who SecondMedic pays (sheet "Providers"). Needed on every row with a B2B rate.'],
       ['Category', 'For new services: ' + Object.values(CAT).join(', ') + '.'],
       ['Unit', 'Must equal the rate-card unit of the service (e.g. shift, day, visit, test). "Per day" and "day" are the same; nothing is converted.'],
-      ['B2B Rate', 'What SecondMedic pays this provider per unit, in rupees. Blank = no change. 0 = free. One row per provider.'],
+      ['B2B Rate', 'What SecondMedic pays this provider per unit, in rupees. Blank = no change, or the share of B2C set in the import screen (B2B = % of B2C). 0 = free. One row per provider.'],
       ['B2C Rate', 'What the patient pays per unit, in rupees. Must be the same on every row of the service. Goes to Hinduja management for approval.'],
       ['Effective From', 'YYYY-MM-DD or DD-MM-YYYY. Can be set for the whole file in the import screen instead.'],
       ['GST', 'Chosen in the import screen for all B2B and all B2C rates: includes GST, GST extra, or no GST charged.'],
@@ -394,7 +401,7 @@ function ImportRates() {
   const report = () => {
     const aoa = [['File row', 'Service Code', 'Service', 'Provider', 'Unit', 'Effective From', 'B2B old', 'B2B new', 'B2B', 'B2C old', 'B2C new', 'B2C', 'Errors', 'Warnings'],
       ...rowsOut.map((r) => [r.row, r.service_code || '', r.service_name || '', r.provider_code || '', r.unit || '', r.effective_from || '',
-        r.buy?.old ?? '', r.buy?.new ?? '', r.buy?.status || '', r.sell?.old ?? '', r.sell?.new ?? '', r.sell?.status || '', r.errors.join('; '), r.warnings.join('; ')])];
+        r.buy?.old ?? '', r.buy?.new ?? '', r.buy?.derived ? `${r.buy.status} (${r.buy.pct}% of B2C)` : (r.buy?.status || ''), r.sell?.old ?? '', r.sell?.new ?? '', r.sell?.status || '', r.errors.join('; '), r.warnings.join('; ')])];
     if (check.file_errors?.length) aoa.push([], ['File', ...check.file_errors]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Check');
@@ -431,12 +438,17 @@ function ImportRates() {
             ))}
           </div>
           <div className="grid g4 mt-12" style={{ gap: 10 }}>
-            <Field label="B2B rates" hint={hasB2b ? 'required' : 'no B2B column'}><Select value={opts.buy_tax_basis} disabled={!hasB2b} onChange={(e) => { setOpts({ ...opts, buy_tax_basis: e.target.value }); touch(); }} placeholder="GST basis?" options={GST_OPTS} /></Field>
+            <Field label="B2B rates" hint={hasB2b ? 'required' : 'no B2B column or %'}><Select value={opts.buy_tax_basis} disabled={!hasB2b} onChange={(e) => { setOpts({ ...opts, buy_tax_basis: e.target.value }); touch(); }} placeholder="GST basis?" options={GST_OPTS} /></Field>
             <Field label="B2C rates" hint={hasB2c ? 'required' : 'no B2C column'}><Select value={opts.sell_tax_basis} disabled={!hasB2c} onChange={(e) => { setOpts({ ...opts, sell_tax_basis: e.target.value }); touch(); }} placeholder="GST basis?" options={GST_OPTS} /></Field>
             <Field label="Effective From" hint="rows without a date"><Input type="date" value={opts.effective_from} onChange={(e) => { setOpts({ ...opts, effective_from: e.target.value }); touch(); }} /></Field>
-            <Field label="Provider" hint="rows without a provider code"><Select value={opts.provider_code} onChange={(e) => { setOpts({ ...opts, provider_code: e.target.value }); touch(); }} placeholder="None" options={(provs.data || []).filter((p) => p.active).map((p) => [p.code, `${p.code} · ${p.name}`])} /></Field>
+            <Field label="Provider" hint="rows without a provider code"><Select value={opts.provider_code} onChange={(e) => { setOpts({ ...opts, provider_code: e.target.value }); touch(); }} placeholder="None"
+              options={[[BY_CATEGORY, 'By category (as case routing)'], ...(provs.data || []).filter((p) => p.active).map((p) => [p.code, `${p.code} · ${p.name}`])]} /></Field>
+            <Field label="B2B = % of B2C" hint="rows with an empty B2B"><Input className="mono" inputMode="decimal" placeholder="e.g. 70" value={opts.buy_pct_of_sell}
+              onChange={(e) => { setOpts({ ...opts, buy_pct_of_sell: e.target.value }); touch(); }} /></Field>
           </div>
-          <div className="tiny faint mt-8">The GST basis is never assumed. Margins are shown only where the buying and selling rates have the same basis.</div>
+          <div className="tiny faint mt-8">The GST basis is never assumed. Margins are shown only where the buying and selling rates have the same basis.
+            {opts.buy_pct_of_sell.trim() !== '' && ` B2B on rows without one = ${opts.buy_pct_of_sell.trim()}% of their B2C, computed by the server to the paisa (SecondMedic keeps the rest).`}
+            {opts.provider_code === BY_CATEGORY && routing && ` By category: ${routing}.`}</div>
           {stale && check && <div className="small warn-text mt-8">Changed since the last check. Check again before submitting.</div>}
         </Panel>
       )}
@@ -473,7 +485,7 @@ function ImportRates() {
                   <td className="mono small">{r.provider_code || '–'}</td>
                   <td className="small nowrap">{r.unit ? `per ${r.unit}` : '–'}</td>
                   <td className="small nowrap">{r.effective_from ? day(r.effective_from) : '–'}</td>
-                  <td className="num nowrap">{r.buy?.new != null ? <>{r.buy.old != null ? inr(r.buy.old) : '–'} → <strong>{inr(r.buy.new)}</strong> {STATUS[r.buy.status] && <Badge kind={STATUS[r.buy.status][0]}>{STATUS[r.buy.status][1]}</Badge>}</> : <span className="faint">blank</span>}</td>
+                  <td className="num nowrap">{r.buy?.new != null ? <>{r.buy.old != null ? inr(r.buy.old) : '–'} → <strong>{inr(r.buy.new)}</strong> {STATUS[r.buy.status] && <Badge kind={STATUS[r.buy.status][0]}>{STATUS[r.buy.status][1]}</Badge>}{r.buy.derived && <div className="tiny muted">{r.buy.pct}% of B2C</div>}</> : <span className="faint">blank</span>}</td>
                   <td className="num nowrap">{r.sell?.new != null ? <>{r.sell.old != null ? inr(r.sell.old) : '–'} → <strong>{inr(r.sell.new)}</strong> {STATUS[r.sell.status] && <Badge kind={STATUS[r.sell.status][0]}>{STATUS[r.sell.status][1]}</Badge>}</> : <span className="faint">blank</span>}</td>
                   <td className="small">{r.errors.map((e) => <div key={e} className="danger-text">{e}</div>)}{r.warnings.map((w) => <div key={w} className="warn-text">{w}</div>)}</td>
                   <td className="right">{(r.errors.length > 0 || resolve[Number(r.row)]) && <Button size="xs" kind="ghost" onClick={() => setFixing(r)}>Resolve</Button>}</td>

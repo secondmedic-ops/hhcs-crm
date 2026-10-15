@@ -160,6 +160,35 @@ check(subN2.duplicate && subN2.import_id === subN.import_id && o2n === 1 && o2r 
 check(o2s.active === false && o2s.unit === 'month' && Number(o2s.price) === 0, 'new service waits off the quotable card, unit kept as "month" (no conversion to day)', o2s);
 await as('client', `select decide_approval($1, false, 'Test only')`, [subN.approval_id]);
 
+console.log('\nB2B as a share of B2C, provider by category');
+const PCT = { ...OPT, buy_pct_of_sell: '70', provider_by_routing: true };
+const share = await preview([
+  { row: 2, service_code: 'NURSE-12H', unit: 'shift', b2c: '2,500', effective_from: today },
+  { row: 3, service_code: 'XR-CHEST', unit: 'unit', b2c: '1234.57', effective_from: today },
+  { row: 4, service_code: 'LAB-CBC', unit: 'unit', b2c: '500', effective_from: today },
+  { row: 5, service_code: 'ECG-12', unit: 'unit', b2c: '900', b2b: '450', effective_from: today },
+  { row: 6, service_code: 'AMB-TEST', unit: 'trip', b2c: '3000', effective_from: today, new_service: { code: 'AMB-TEST', name: 'Ambulance (test)', category: 'other', unit: 'trip' } },
+], PCT);
+const sr = (n) => rowOf(share, n);
+check(share.ok && Number(sr(2).buy.new) === 1750 && sr(2).buy.derived && Number(sr(2).buy.pct) === 70 && sr(2).provider_code === 'BMM', 'B2B = 70% of B2C, nursing paid to BMM', sr(2));
+check(Number(sr(3).buy.new) === 864.2 && sr(3).provider_code === 'SM', 'rounded to the paisa (1,234.57 x 70% = 864.20); X-ray to SecondMedic', sr(3));
+check(sr(4).provider_code === 'SM' && Number(sr(4).buy.new) === 350, 'blood test to SecondMedic', sr(4));
+check(Number(sr(5).buy.new) === 450 && !sr(5).buy.derived, 'an explicit B2B in the file is never replaced', sr(5));
+check(sr(6).provider_code === 'BMM' && Number(sr(6).buy.new) === 2100, 'category "other" (ambulance) goes to BMM', sr(6));
+const badPct = await preview([{ row: 2, service_code: 'NURSE-12H', unit: 'shift', b2c: '2500', effective_from: today }], { ...OPT, buy_pct_of_sell: 'abc' });
+check(!badPct.ok && has(badPct.file_errors, 'B2B as % of B2C'), 'a percentage that is not a number is refused', badPct.file_errors);
+const over = await preview([{ row: 2, service_code: 'NURSE-12H', unit: 'shift', b2c: '2500', effective_from: today }], { ...OPT, buy_pct_of_sell: '120' });
+check(!over.ok && has(over.file_errors, 'at most 100'), 'more than 100% is refused');
+const noRoute = await preview([{ row: 2, service_code: 'NURSE-12H', unit: 'shift', b2c: '2500', effective_from: today }], { ...OPT, buy_pct_of_sell: '70' });
+check(has(rowOf(noRoute, 2).errors, 'needs the provider'), 'a derived B2B still needs a provider');
+const amb = [{ row: 2, service_code: 'AMB-TEST', unit: 'trip', b2c: '3000', effective_from: today, new_service: { code: 'AMB-TEST', name: 'Ambulance (test)', category: 'other', unit: 'trip' } }];
+const [{ r: subA }] = await as('sup', `select submit_rate_import($1::jsonb, $2::jsonb, 'amb.xlsx', 'Rates') r`, [J(amb), J(PCT)]);
+const [ambRate] = await owner(`select r.rate::float8 rate, p.code, r.tax_basis from provider_rates r join providers p on p.id = r.provider_id join services s on s.id = r.service_id where s.code = 'AMB-TEST'`);
+const [{ o: ambOpt }] = await owner(`select options o from rate_imports where id = $1`, [subA.import_id]);
+check(subA.buying_applied === 1 && ambRate?.rate === 2100 && ambRate.code === 'BMM' && Number(ambOpt.buy_pct_of_sell) === 70 && ambOpt.provider_by_routing === true,
+  'submitted: derived BMM buying rate saved, the rule kept with the import', { subA, ambRate, ambOpt });
+await as('client', `select decide_approval($1, false, 'Test only')`, [subA.approval_id]);
+
 console.log('\nBuying-rate versions never overlap');
 await as('sup', `select set_provider_rate($1, $2, 1800, $3::date, 'no_gst', 'from next week')`, [prov.BMM, svc['NURSE-12H'], plus(10)]);
 await as('sup', `select set_provider_rate($1, $2, 1750, $3::date, 'no_gst', null)`, [prov.BMM, svc['NURSE-12H'], plus(5)]);

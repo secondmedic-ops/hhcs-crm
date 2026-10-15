@@ -35,6 +35,8 @@ Hinduja management has no access to costs or margins. Extending it needs a busin
 
 1. *Download template*: sheets Rates (Service Code, Service Name, Provider Code, Category, Unit, B2B Rate, B2C Rate, Effective From), Instructions, Rate card (current codes and units) and Providers.
 2. Choose an .xlsx or .csv file, the worksheet and the header row, and match each field to a column (template headings, and the marketing sheet's "Service/ Equipment Diagnostics" and "Proposed Hinduja Patient Price", are matched automatically; anything else is chosen by hand. A provider's "BMM B2C / Listed Tariff" is never matched to B2C). Choose the GST basis for the B2B column and for the B2C column. Optionally choose one effective date and one provider for rows that leave them blank.
+   - **B2B = % of B2C** (migration `20261015140000_rate_import_derived_buying.sql`): rows with a B2C rate and an empty B2B cell get B2B = round(B2C × % / 100, 2), computed on the server; the preview marks them "70% of B2C". An explicit B2B in the file always wins. HHCS rule (Oct 2026): **70**, i.e. the provider is paid 70% of the patient price and SecondMedic keeps its 30% agreed share. The rule is kept in `rate_imports.options`.
+   - **Provider: By category (as case routing)**: rows without a provider code get the one active provider whose routing categories cover the service category: lab, X-ray, ECG and visit to SecondMedic (SM), everything else to Book My Medicare (BMM). BMM also takes category `other` (for example ambulance) since that migration.
 3. *Check file* calls `rate_import_check()`. It is read-only and validates on the server:
    - Service by exact code (or an explicit choice). Similar names are never matched. A row with an unknown code, or no code at all (a sheet such as the marketing price list), must be resolved: choose the rate-card service on the row (*Resolve*), or confirm it as a new service. *Review N as new services* lists them all, one line per service (same code, or same name and unit), with a suggested code (from the name, plus the unit when the name appears with several units) and a suggested category (from the file's category column, else from the name) to check and edit. Nothing is added until the import is submitted.
    - Provider by exact code (or an explicit choice). It is required for every B2B rate. Inactive and unknown providers are refused.
@@ -80,7 +82,7 @@ State in `rate_imports`: `buy_status` none / applied; `sell_status` none / await
 ## Business inputs still open
 
 See the hand-over notes for this change. In short:
-- B2B rates per provider. The marketing sheet's "BMM B2C / Listed Tariff" is BMM's listed customer price, and "30% agreed share" is not a stated buying rate.
+- B2B rates: settled as 70% of the patient price (SecondMedic keeps 30%), BMM for everything except X-ray, ECG and blood tests (SecondMedic). Provider-specific rates that differ from this can still be set under Buying rates (B2B).
 - The GST basis of each column.
 - Effective dates.
 - Whether "12 hours" / "24 hours" / "Per month" services replace or sit beside the existing shift / day services.
