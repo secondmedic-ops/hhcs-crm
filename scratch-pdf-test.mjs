@@ -101,3 +101,4 @@ const pdfBuf = createPdf();
 console.log('PDF Generated successfully, size in bytes:', pdfBuf.length);
 console.log('Starts with:', pdfBuf.slice(0, 15).toString());
 console.log('Ends with:', pdfBuf.slice(-30).toString());
+

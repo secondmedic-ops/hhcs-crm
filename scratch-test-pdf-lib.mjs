@@ -34,3 +34,4 @@ const pdfBytes = generateQuotationPdfBytes({
 console.log('Quotation PDF generated successfully! Total bytes:', pdfBytes.length);
 console.log('Header:', Buffer.from(pdfBytes.slice(0, 15)).toString());
 console.log('Trailer:', Buffer.from(pdfBytes.slice(-30)).toString());
+

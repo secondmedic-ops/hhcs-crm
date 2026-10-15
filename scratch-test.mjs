@@ -41,3 +41,4 @@ console.log('r2:', r2[0].r);
 
 const pats = (await db.query(`select id, full_name, mobile, email from patients`)).rows;
 console.log('Patients in DB:', pats);
+

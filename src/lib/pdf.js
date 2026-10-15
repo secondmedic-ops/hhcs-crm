@@ -413,3 +413,4 @@ export function downloadQuotationPdf({ k, patient, items = [], workspace = null 
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+

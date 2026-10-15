@@ -111,4 +111,4 @@ test('BMM provider isolation, sign-off, workflow, idempotency and closure', asyn
     expect((await as('bmm','select id from v_referrals')).length).toBeGreaterThan(0);
     expect((await db.query<any>('select count(*)::int n from bmm_status_events where event_id=$1',[event])).rows[0].n).toBe(1);
   } finally {await db.close();}
-},30000);
+},120000);

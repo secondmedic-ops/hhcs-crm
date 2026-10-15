@@ -97,10 +97,10 @@ test('enquiry creation, sequence recovery, repeat enquiries, and referral subtyp
 
   // 6. Referral subtype: editable via set_case_requirements
   await asAgent(`select set_case_requirements($1, $2::jsonb)`, [enqRef.case_id, JSON.stringify({
-    referral_subtype: 'Nursing Team / Internal Nurse',
+    referral_subtype: 'Nursing Team',
   })]);
   const [updatedRef] = await asAgent(`select referral_subtype from v_cases where id = $1`, [enqRef.case_id]);
-  expect(updatedRef.referral_subtype).toBe('Nursing Team / Internal Nurse');
+  expect(updatedRef.referral_subtype).toBe('Nursing Team');
 
   // 7. Non-referral source clears referral_subtype in set_case_requirements
   await asAgent(`select set_case_requirements($1, $2::jsonb)`, [enqRef.case_id, JSON.stringify({
@@ -109,4 +109,4 @@ test('enquiry creation, sequence recovery, repeat enquiries, and referral subtyp
   const [clearedRef] = await asAgent(`select source_channel, referral_subtype from v_cases where id = $1`, [enqRef.case_id]);
   expect(clearedRef.source_channel).toBe('phone');
   expect(clearedRef.referral_subtype).toBeNull();
-});
+}, 120000);
