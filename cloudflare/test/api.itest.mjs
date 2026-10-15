@@ -297,14 +297,15 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const rv = await one(`select count(*)::int n from access_log where action = 'reveal_number' and user_id = $1`, U.agent);
   check(back.status === 200 && back.body?.mode === 'api' && rv.n === 0 && !back.body.number,
     'old app setting ignored: API calls only, no number reveals', JSON.stringify(back.body));
+  await sql`update calls set status='completed',ended_at=now() where id=${back.body.call_id}`;
   await rpc('agent', 'callback_update', { p_id: pendingCb.id, p_status: 'unreachable', p_note: 'No answer twice' });
   const dialAgain = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: pendingCb.id });
   const reopened = await one(`select cb.status, cb.completed_at, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, pendingCb.id, dialAgain.body?.call_id);
   check(dialAgain.status === 200 && reopened?.status === 'in_progress' && !reopened.completed_at && reopened.cid === pendingCb.id,
     'unreachable callback can be called again (reopens as in progress)', JSON.stringify({ body: dialAgain.body, reopened }));
+  await sql`update calls set status='completed',ended_at=now() where id=${dialAgain.body.call_id}`;
   const configured = await call('admin', 'GET', '/api/v1/admin/myoperator');
   check(!configured.body.fields.some(f => f.key === 'dial_mode'), 'extension dial mode removed from settings');
-  await sql`update calls set status='completed',ended_at=now() where id=${back.body.call_id}`;
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'unknown' } });
   const attempts = obdCalls.length;
   const unknownCall = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
