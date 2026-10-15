@@ -1,6 +1,6 @@
 # Book My Medicare: HHCS-side integration contract
 
-Status: implemented for local review, disabled by default. Deployment is on hold at the user's request until BMM documentation is available. This defines an HHCS interface for BMM to confirm; it does not assert compatibility with BMM's existing software. No outbound request is made to an invented BMM endpoint.
+Status: HHCS-side lead/progress API prepared, disabled by default. The user authorized deployment/publication on 15 October 2026, lifting the earlier deployment hold. Activation still requires BMM's actual interface documentation and contract confirmation. This defines an HHCS interface for BMM to confirm; it does not assert compatibility with BMM's existing software. No outbound request is made to an invented BMM endpoint. The complete proposed logic and remaining implementation work are in [BMM-CONNECTION-DESIGN.md](BMM-CONNECTION-DESIGN.md); publishing that design does not implement its extensions.
 
 ## Connection and activation
 

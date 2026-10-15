@@ -44,7 +44,7 @@ Supervisors can select a department and staff member from the first Live dashboa
 
 AI Summary supports microphone transcription during active calls using `gemini-3.5-transcribe-live` and server-created, single-use ephemeral tokens. Finished live transcripts are summarised by the configured text model; recordings remain the fallback. MyOperator does not currently stream live audio into the CRM: use speakerphone near the microphone. Setup, charges and limits: `docs/AI-LIVE-TRANSCRIPTION.md`.
 
-BMM system access: the HHCS-side authenticated lead/progress API is prepared but **disabled by default**. See `docs/BMM-INTEGRATION.md`. BMM must confirm the contract before activation under Settings > Telephony & integrations > Book My Medicare integration. Deployment of this change is on hold pending BMM documentation; no BMM endpoint or credentials have been assumed.
+BMM system access: the HHCS-side authenticated lead/progress API is prepared but **disabled by default**. See `docs/BMM-INTEGRATION.md` and the complete proposed logic in `docs/BMM-CONNECTION-DESIGN.md`. Deployment/publication was authorized on 15 October 2026. BMM must still confirm its actual interface and the contract before activation under Settings > Telephony & integrations > Book My Medicare integration; no BMM endpoint or credentials have been assumed. The design's proposed extensions are not implemented by publishing it.
 
 | You want to | Do this |
 |---|---|
