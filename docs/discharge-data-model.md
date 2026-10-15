@@ -149,7 +149,8 @@ The journey state sits alongside the operational `stage` (enquiry, pricing, book
 | priority | text | no | routine, urgent |
 | services_requested | text | yes | Preliminary requirements as the caller said them |
 | clinical_notes | text | yes | Preliminary clinical status. Personal data. |
-| expected_discharge_on | date | yes | Estimated discharge date |
+| expected_discharge_on | date | yes | Estimated discharge date (expected, not confirmed). Entered at enquiry (Agent console), in the intake, on Requirements > Edit, or revised by the validation |
+| requested_service_start_on | date | yes | Date the patient / family wants the captured home care to begin. A request only: no booking, assignment, dispatch or stage change follows from it. Independent of callbacks, `preferred_slot` and `booked_slot` |
 
 ## 3. Clinical validation and assessment
 

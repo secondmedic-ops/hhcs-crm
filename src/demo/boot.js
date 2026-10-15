@@ -6,7 +6,7 @@ import { buildSeedSql } from './seed.js';
 const MIGRATIONS = Object.entries(import.meta.glob('../../supabase/migrations/*.sql', { query: '?raw', import: 'default', eager: true }))
   .sort(([a], [b]) => a.localeCompare(b)).map(([, sql]) => sql);
 
-const DB_VERSION = 'caredesk-demo-v6';
+const DB_VERSION = 'caredesk-demo-v8';
 
 export async function seedDatabase(pg, onStep = () => {}) {
   onStep('Creating schema');

@@ -21,7 +21,7 @@ await rpc('advance_case', { p_case: id, p_note: null });   // throws Error(messa
 - The builder records a query description; the Worker turns it into SQL and runs it as the signed-in user (Row Level Security applies). Reads issued together travel in one request. The same subset works in the browser demo (PGlite): `select(cols, {count, head})`, `insert(rows)`, `update(patch)`, `delete()`, `upsert(rows, {onConflict})`, `eq neq gt gte lt lte like ilike is in contains not(col,'is',null) not(col,'in','(a,b)') or('a.ilike.*x*,b.eq.y') order limit range single maybeSingle`, and `.select()` after insert/update to return rows.
 - **Never use embedded relations** (`select('*, patients(*)')`). Use the views: `v_cases v_patients v_calls v_callbacks v_assignments v_escalations v_approvals v_complaints v_audit v_access`. Column lists must be plain identifiers.
 - RPC args are passed by name exactly as the SQL function parameter names (`p_case`, `p_note`, `p` ...). jsonb args take plain JS objects.
-- Protected case columns (stage, totals, quote_status, payment_status, booking_confirmed_at, quote_sent_at, closed_at...) can only change through RPCs. Plain `update` on cases is fine for: clinical_notes, services_requested, preferred_slot, caller_*, priority, address, pincode, owner_id, coordinator_id (only before close).
+- Protected case columns (stage, totals, quote_status, payment_status, booking_confirmed_at, quote_sent_at, closed_at...) can only change through RPCs. The Worker allows no plain `update` on cases: the requirement fields (branch, services_requested, additional_info, expected_discharge_on, requested_service_start_on) change through `set_case_requirements`.
 - Live updates: `useLoad(fn, deps, ['cases','calls'])` re-runs when those tables change (the Worker's live hub pushes changed table names over a WebSocket; demo uses an in-browser event bus).
 - Worker actions (secrets live server side): `import { dial, sendQuote, sendMessage, aiBrief, aiCall, aiCommand, aiExtract, recordingUrl, createUser, webhookEvents, integrations } from '../lib/api.js'`. In demo they are simulated by `demo/sim.js`. Never call `fetch('/api...')` from a screen.
 - A table or action a screen needs must be allowed for that role in `cloudflare/src/services/data.ts` (`READ`, `WRITE`, `RPC`); otherwise the Worker answers 403.
@@ -30,7 +30,8 @@ await rpc('advance_case', { p_case: id, p_note: null });   // throws Error(messa
 
 | RPC | args | notes |
 |---|---|---|
-| create_enquiry | p (jsonb: patient{full_name,age,gender,mobile,email,address,landmark,locality,pincode,lat,lng}, caller_name, caller_relation, caller_mobile, source_channel, priority, services_requested, clinical_notes, preferred_slot, consent bool, call_id, service_ids[]) | returns {case_id, case_no, patient_id} |
+| create_enquiry | p (jsonb: patient{full_name,age,gender,mobile,email,address,landmark,locality,pincode,lat,lng}, caller_name, caller_relation, caller_mobile, source_channel, priority, services_requested, clinical_notes, preferred_slot, expected_discharge_on, requested_service_start_on (dates 'YYYY-MM-DD', optional), consent bool, call_id, service_ids[]) | returns {case_id, case_no, patient_id} |
+| set_case_requirements | p_case, p (jsonb: any of branch, services_requested, additional_info, expected_discharge_on, requested_service_start_on; dates 'YYYY-MM-DD') | only the keys sent change (null clears); returns {case_id, expected_discharge_on, requested_service_start_on} |
 | case_gates | p_case | {stage, next, ready, checks:[{label, ok}]} |
 | advance_case | p_case, p_note | next stage only, gates enforced |
 | cancel_case / reopen_case | p_case, p_reason | |

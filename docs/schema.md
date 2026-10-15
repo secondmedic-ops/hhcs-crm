@@ -330,6 +330,8 @@
 | journey_state | USER-DEFINED | NO |
 | journey_at | timestamp with time zone | YES |
 | assessment_type | text | NO |
+| requested_service_start_on | date | YES |
+| referral_subtype | text | YES |
 
 ## complaints
 | column | type | nullable |
@@ -1090,6 +1092,8 @@
 | items_recommended | bigint | YES |
 | items_agreed | bigint | YES |
 | decision_maker_mobile_display | text | YES |
+| requested_service_start_on | date | YES |
+| referral_subtype | text | YES |
 
 ## v_complaints
 | column | type | nullable |
@@ -1271,6 +1275,8 @@
 | plan_days | integer | YES |
 | signoff_at | timestamp with time zone | YES |
 | fulfilment_managed | boolean | YES |
+| requested_service_start_on | date | YES |
+| referral_subtype | text | YES |
 
 ## v_whatsapp_chats
 | column | type | nullable |

@@ -44,6 +44,12 @@ export function toResponse(e: unknown): Response {
   const pg = e as { code?: string; message?: string };
   if (pg && typeof pg.code === 'string') {
     // Postgres: 23xxx = constraint violation (duplicate, foreign key, check).
+    if (pg.code === '23505') {
+      const msg = String(pg.message || '');
+      if (msg.includes('mobile')) return errorResponse(409, 'A patient with this mobile number already exists.');
+      if (msg.includes('case_no')) return errorResponse(409, 'Case number already exists. Please submit again.');
+      return errorResponse(409, 'That record already exists.');
+    }
     if (pg.code.startsWith('23')) return errorResponse(409, 'Record conflicts with existing data');
     console.error('Database error', pg.code, pg.message);
     return errorResponse(503, 'Database is unavailable');

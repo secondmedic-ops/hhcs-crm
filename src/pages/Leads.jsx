@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { roleAllows, useAuth } from '../lib/auth.jsx';
-import { num, ago, date, dateTime } from '../lib/fmt.js';
+import { num, ago, date, dateTime, dayLong } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Button, Badge, Modal, Field, Input, Textarea, Select, TableSkeleton, Empty, ErrorNote, useAction, useToast } from '../components/ui.jsx';
 
 export const REF_STATUS = {
@@ -20,7 +20,7 @@ const OPEN = ['new', 'accepted', 'scheduled', 'dispatched', 'in_progress'];
 const COLS = 'id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,branch,priority,patient_id,patient_name,patient_age,patient_gender,'
   + 'patient_mobile,caller_name,caller_relation,address,landmark,locality,pincode,services_requested,additional_info,clinical_notes,service_names,'
   + 'preferred_slot,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,created_at,case_created_at,fulfilment_managed,'
-  + 'care_type,hospital_name,hospital_ward,expected_discharge_on,plan_days,dispatched_at,started_at';
+  + 'care_type,hospital_name,hospital_ward,expected_discharge_on,plan_days,dispatched_at,started_at,requested_service_start_on';
 
 // The next steps a lead can take, for whoever may move it.
 const NEXT = {
@@ -200,6 +200,7 @@ function LeadDrawer({ lead: r, onClose, onOpenCase, reload }) {
             {dl('Branch', r.branch)}
             {dl('Hospital', r.care_type === 'post_discharge' && [r.hospital_name, r.hospital_ward].filter(Boolean).join(', '))}
             {dl('Discharge', r.expected_discharge_on && `${date(r.expected_discharge_on)}${r.plan_days ? ` · ${r.plan_days}-day plan` : ''}`)}
+            {dl('Service start requested', r.requested_service_start_on && dayLong(r.requested_service_start_on))}
             {dl('Services', r.service_names || r.services_requested)}
             {dl('Requirements', r.additional_info)}
             {dl('Clinical notes', r.clinical_notes)}

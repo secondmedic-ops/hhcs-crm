@@ -345,8 +345,25 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const done = await rpc('bmm', 'update_referral', { p_id: lead?.id, p_status: 'completed', p_note: 'Shift done' });
   const st = await batch('agent', [sel('v_cases', { cols: 'stage,provider_names', filters: [{ col: 'id', op: 'eq', val: pcid }], mode: 'single' })]);
   check(done.status === 200 && st.body?.results?.[0]?.data?.stage === 'closed', 'provider completes -> case closed for the agent too', JSON.stringify(st.body));
+  // ---- 7b2. expected discharge / requested service start captured on the enquiry, corrected on the case
+  const dcid = (await rpc('agent', 'create_enquiry', { p: { consent: true, services_requested: 'ECG at home', expected_discharge_on: '2026-10-18',
+    requested_service_start_on: '2026-10-20', patient: { full_name: 'Dates Patient', mobile: '9811177004', address: 'Mahim W', pincode: '400016' } } })).body?.data?.case_id;
+  const dsel = () => batch('agent', [sel('v_cases', { cols: 'expected_discharge_on,requested_service_start_on,stage,booked_slot', filters: [{ col: 'id', op: 'eq', val: dcid }], mode: 'single' })]);
+  let dv = (await dsel()).body?.results?.[0]?.data;
+  check(dv?.expected_discharge_on === '2026-10-18' && dv?.requested_service_start_on === '2026-10-20', 'enquiry saves both dates, returned as plain days', JSON.stringify(dv));
+  const dset = await rpc('agent', 'set_case_requirements', { p_case: dcid, p: { expected_discharge_on: '2026-10-19' } });
+  dv = (await dsel()).body?.results?.[0]?.data;
+  check(dset.status === 200 && dv?.expected_discharge_on === '2026-10-19' && dv?.requested_service_start_on === '2026-10-20', 'discharge edit leaves the requested start', JSON.stringify(dv));
+  check(dv?.stage === 'enquiry' && dv?.booked_slot === null, 'dates book nothing and keep the stage', JSON.stringify(dv));
+  const dbad = await rpc('agent', 'set_case_requirements', { p_case: dcid, p: { requested_service_start_on: '2026-02-30' } });
+  check(dbad.status >= 400 && dbad.status < 500 && /calendar date/.test(JSON.stringify(dbad.body)), 'impossible date refused', JSON.stringify(dbad.body));
+  for (const who of ['field', 'bmm', 'client', 'admin']) {
+    check((await rpc(who, 'set_case_requirements', { p_case: dcid, p: { requested_service_start_on: '2026-10-21' } })).status === 403, `${who} cannot change the case dates`);
+  }
+  check((await data('agent', 'cases', { op: 'update', patch: { requested_service_start_on: '2026-10-21' }, filters: [{ col: 'id', op: 'eq', val: dcid }] })).status === 403, 'case columns change only through the action');
+
   // ---- 7c. post-discharge transition: intake, validation roles, partner sync, metrics
-  const tcid = (await rpc('agent', 'create_enquiry', { p: { consent: true, services_requested: 'ICU bed and a nurse',
+  const tcid =(await rpc('agent', 'create_enquiry', { p: { consent: true, services_requested: 'ICU bed and a nurse',
     patient: { full_name: 'Transition Patient', mobile: '9811177003', address: 'Mahim W', pincode: '400016' } } })).body?.data?.case_id;
   const ti = await rpc('agent', 'set_intake', { p_case: tcid, p: { care_type: 'post_discharge', intake_disposition: 'requirement_captured',
     spoke_with: 'patient', expected_discharge_on: '2026-10-20', hospital_name: 'P. D. Hinduja Hospital, Mahim' } });

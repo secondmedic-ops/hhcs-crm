@@ -13,7 +13,7 @@ import {
 } from '../components/ui.jsx';
 
 const LIMIT = 200;
-const COLS = 'id,case_no,patient_id,patient_name,patient_age,patient_gender,service_names,services_requested,stage,priority,zone_name,sla_state,next_sla_due,next_sla_key,total,owner_id,owner_code,owner_name,created_at,source_channel,quote_status,payment_status,open_escalations,open_complaints,branch,provider_names';
+const COLS = 'id,case_no,patient_id,patient_name,patient_age,patient_gender,service_names,services_requested,stage,priority,zone_name,sla_state,next_sla_due,next_sla_key,total,owner_id,owner_code,owner_name,created_at,source_channel,referral_subtype,quote_status,payment_status,open_escalations,open_complaints,branch,provider_names';
 
 const VIEWS = [
   ['open', 'All open'], ['mine', 'My cases'], ['attention', 'Needs attention'], ['urgent', 'Urgent'],
@@ -199,7 +199,7 @@ export default function Cases() {
                       <td className="mono">{r.case_no}</td>
                       <td style={{ maxWidth: 190 }}>
                         <div className="truncate strong">{r.patient_name}</div>
-                        <div className="tiny muted">{ageGender(r) || '–'} · {CHANNEL_LABEL[r.source_channel] || r.source_channel}</div>
+                        <div className="tiny muted">{ageGender(r) || '–'} · {CHANNEL_LABEL[r.source_channel] || r.source_channel}{r.source_channel === 'referral' && r.referral_subtype ? ` (${r.referral_subtype})` : ''}</div>
                       </td>
                       <td style={{ maxWidth: 210 }}><div className="truncate small" title={r.service_names || r.services_requested || ''}>{r.service_names || r.services_requested || <span className="faint">–</span>}</div>
                         {r.provider_names && <div className="tiny muted truncate">{r.provider_names}</div>}</td>

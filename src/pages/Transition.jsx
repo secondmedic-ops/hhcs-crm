@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad } from '../lib/hooks.js';
-import { inr, date, dateTime, toLocalInput, fromLocalInput, istDateStr } from '../lib/fmt.js';
+import { inr, date, dateTime, toLocalInput, fromLocalInput, istDateStr, dayStr, dayLong } from '../lib/fmt.js';
 import { Panel, Button, Badge, Modal, Field, Input, Select, Textarea, Segmented, Check, Skeleton, useAction } from '../components/ui.jsx';
 import { sendMessage } from '../lib/api.js';
 
@@ -100,7 +100,8 @@ function IntakeView({ c }) {
         {dl('Decision-maker', [c.decision_maker_name, c.decision_maker_relation, c.decision_maker_mobile_display].filter(Boolean).join(', '))}
         {dl('Hospital', [c.hospital_name, c.hospital_ward, c.hospital_room].filter(Boolean).join(', '))}
         {dl('Treating doctor', c.treating_doctor)}
-        {dl('Discharge', c.expected_discharge_on && date(c.expected_discharge_on))}
+        {dl('Discharge expected', c.expected_discharge_on && dayLong(c.expected_discharge_on))}
+        {dl('Service start requested', c.requested_service_start_on && dayLong(c.requested_service_start_on))}
         {dl('Plan', `${c.plan_days} days`)}
       </>}
     </dl>
@@ -113,7 +114,7 @@ function IntakeForm({ c, onDone }) {
     decision_maker_name: c.decision_maker_name || '', decision_maker_relation: c.decision_maker_relation || '', decision_maker_mobile: '',
     hospital_room: c.hospital_room || '',
     hospital_name: c.hospital_name || 'P. D. Hinduja Hospital', hospital_ward: c.hospital_ward || '', treating_doctor: c.treating_doctor || '',
-    expected_discharge_on: c.expected_discharge_on || '', plan_days: String(c.plan_days || 30), clinical_status: '',
+    expected_discharge_on: dayStr(c.expected_discharge_on), plan_days: String(c.plan_days || 30), clinical_status: '',
   });
   const [run, busy] = useAction();
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e?.target ? e.target.value : e }));

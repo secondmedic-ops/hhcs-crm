@@ -1501,6 +1501,12 @@
       "supervisor",
       "medical_desk"
     ],
+    "set_case_requirements": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
     "schedule_validation": [
       "coordinator",
       "supervisor",

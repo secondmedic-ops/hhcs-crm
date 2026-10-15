@@ -6,7 +6,7 @@ import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { dial, aiExtract } from '../lib/api.js';
-import { inr, num, pct, dur, time, ago, istDayRange, istDateStr, toLocalInput, fromLocalInput } from '../lib/fmt.js';
+import { inr, num, pct, dur, time, ago, istDayRange, istDateStr, toLocalInput, fromLocalInput, isDay, REFERRAL_SOURCES } from '../lib/fmt.js';
 import {
   PageHead, Panel, Kpi, Button, Badge, StageBadge, PriorityBadge, Countdown, TableSkeleton, Skeleton, Empty, AiTag,
   Field, Input, Select, Textarea, Tabs, useToast, useAction,
@@ -18,8 +18,9 @@ const BLANK = {
   caller_name: '', caller_relation: '', caller_mobile: '',
   full_name: '', age: '', gender: '', mobile: '', email: '',
   address: '', landmark: '', locality: '', pincode: '',
-  services_requested: '', preferred_slot: '', priority: 'routine', source_channel: 'phone', clinical_notes: '',
+  services_requested: '', preferred_slot: '', priority: 'routine', source_channel: 'phone', referral_subtype: '', clinical_notes: '',
   service_ids: [], consent: false, confirm_mobile: '', branch: '', additional_info: '',
+  expected_discharge_on: '', requested_service_start_on: '',
 };
 const RELATIONS = [['self', 'Self'], ['son', 'Son'], ['daughter', 'Daughter'], ['wife', 'Wife'], ['husband', 'Husband'], ['parent', 'Parent'], ['relative', 'Relative'], ['caregiver', 'Caregiver'], ['doctor', 'Doctor / clinic'], ['other', 'Other']];
 const GENDERS = [['M', 'Male'], ['F', 'Female'], ['O', 'Other']];
@@ -143,11 +144,16 @@ export default function Console() {
   const [extracting, setExtracting] = useState(false);
   const firstRef = useRef(null);
   const formRef = useRef(null);
+  const submittingRef = useRef(false);
 
   const useKnown = !!known.data && mode === 'known';
   const set = (k) => (e) => {
     const v = e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e;
-    setF((x) => ({ ...x, [k]: v }));
+    setF((x) => ({
+      ...x,
+      [k]: v,
+      ...(k === 'source_channel' && v !== 'referral' ? { referral_subtype: '' } : {}),
+    }));
     setAiKeys((a) => (a[k] ? { ...a, [k]: false } : a));
   };
   const cls = (k) => (aiKeys[k] ? 'ai-filled' : '');
@@ -223,11 +229,16 @@ export default function Console() {
   if (!f.service_ids.length && !f.services_requested.trim()) problems.push('services');
   if (f.caller_mobile && !normMobile(f.caller_mobile)) problems.push('valid caller mobile');
   if (branches.length && !f.branch) problems.push('branch');
+  if (!c && f.source_channel === 'referral' && !f.referral_subtype) problems.push('referring source');
+  if (f.expected_discharge_on && !isDay(f.expected_discharge_on)) problems.push('valid expected discharge date');
+  if (f.requested_service_start_on && !isDay(f.requested_service_start_on)) problems.push('valid requested service start date');
   if (!f.consent) problems.push('consent');
 
   const submit = async (e) => {
     e?.preventDefault();
+    if (submittingRef.current || busy) return;
     if (problems.length) { toast.error(`Still needed: ${problems.join(', ')}`); return; }
+    submittingRef.current = true;
     const kp = known.data;
     const patient = useKnown
       ? {
@@ -239,20 +250,27 @@ export default function Console() {
         full_name: f.full_name.trim(), age: f.age, gender: f.gender, mobile: normMobile(f.mobile) || '', email: f.email.trim(),
         address: f.address, landmark: f.landmark, locality: f.locality, pincode: f.pincode,
       };
-    const out = await run(() => rpc('create_enquiry', {
-      p: {
-        patient,
-        caller_name: f.caller_name, caller_relation: f.caller_relation, caller_mobile: normMobile(f.caller_mobile) || '',
-        source_channel: c ? 'phone' : f.source_channel, priority: f.priority,
-        services_requested: f.services_requested, clinical_notes: f.clinical_notes, branch: f.branch || null, additional_info: f.additional_info.trim() || null,
-        preferred_slot: fromLocalInput(f.preferred_slot),
-        consent: true, call_id: c?.id || null, service_ids: f.service_ids,
-      },
-    }));
-    if (out?.case_id) {
-      toast.ok(`Case ${out.case_no} created`);
-      setF(BLANK); setAiKeys({});
-      nav(`/cases/${out.case_id}`);
+    try {
+      const out = await run(() => rpc('create_enquiry', {
+        p: {
+          patient,
+          caller_name: f.caller_name, caller_relation: f.caller_relation, caller_mobile: normMobile(f.caller_mobile) || '',
+          source_channel: c ? 'phone' : f.source_channel,
+          referral_subtype: !c && f.source_channel === 'referral' ? (f.referral_subtype || null) : null,
+          priority: f.priority,
+          services_requested: f.services_requested, clinical_notes: f.clinical_notes, branch: f.branch || null, additional_info: f.additional_info.trim() || null,
+          preferred_slot: fromLocalInput(f.preferred_slot),
+          expected_discharge_on: f.expected_discharge_on || null, requested_service_start_on: f.requested_service_start_on || null,
+          consent: true, call_id: c?.id || null, service_ids: f.service_ids,
+        },
+      }));
+      if (out?.case_id) {
+        toast.ok(`Case ${out.case_no} created`);
+        setF(BLANK); setAiKeys({});
+        nav(`/cases/${out.case_id}`);
+      }
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -363,6 +381,11 @@ export default function Console() {
                       <Input inputMode="tel" value={f.caller_mobile} onChange={set('caller_mobile')} placeholder={c ? `On the call record (${c.customer_number})` : '98XXXXXXXX'} />
                     </Field>
                     {!c && <Field label="Source channel"><Select value={f.source_channel} onChange={set('source_channel')} options={CHANNELS} /></Field>}
+                    {!c && f.source_channel === 'referral' && (
+                      <Field label="Referring source" hint="needed for a referral">
+                        <Select value={f.referral_subtype} onChange={set('referral_subtype')} options={REFERRAL_SOURCES} placeholder="Select" />
+                      </Field>
+                    )}
                   </div>
                 </section>
 
@@ -452,6 +475,15 @@ export default function Console() {
                     <Field label="Clinical notes" hint="symptoms, prescriptions, mobility, fasting" className="span2"><Textarea rows={2} value={f.clinical_notes} onChange={set('clinical_notes')} /></Field>
                     <Field label="Additional information" hint="customer requirements, timings, preferences: shared with the provider" className="span2"><Textarea rows={2} value={f.additional_info} onChange={set('additional_info')} /></Field>
                   </div>
+                </section>
+
+                <section>
+                  <div className="section-title mb-8">Discharge and service start</div>
+                  <div className="form-grid">
+                    <Field label="Expected discharge date" hint="when the family expects discharge, not confirmed"><Input type="date" value={f.expected_discharge_on} onChange={set('expected_discharge_on')} /></Field>
+                    <Field label="Requested service start date" hint="when the family wants home care to begin"><Input type="date" value={f.requested_service_start_on} onChange={set('requested_service_start_on')} /></Field>
+                  </div>
+                  <div className="tiny faint mt-8">Optional. Saving these books nothing and starts nothing. Callbacks are scheduled in the callback queue; the preferred slot is the visit time.</div>
                 </section>
 
                 <div className={`consent-box ${f.consent ? 'on' : ''}`}>

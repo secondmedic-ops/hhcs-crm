@@ -3,6 +3,7 @@
    hairline borders instead of shadows, IBM Plex Sans for text and Plex Mono for numbers & IDs. */
 
 :root {
+  color-scheme: light; /* native pickers and dropdown lists stay light, even in a dark-mode browser */
   --paper: #f3f1ea;
   --paper-2: #ebe8de;
   --panel: #faf8f2;
@@ -202,6 +203,7 @@ label.f .hint { font-weight: 400; color: var(--faint); font-size: 11px; }
   height: 32px; padding: 0 9px; border: 1px solid var(--line); background: #fdfcf8; border-radius: var(--r);
   font: inherit; color: var(--ink); width: 100%; min-width: 0;
 }
+select.input option { color: var(--ink); background: #fdfcf8; }
 textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 64px; }
 .input:focus, .btn:focus-visible, select.input:focus, textarea.input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 .input.sm { height: 26px; font-size: 12.5px; }

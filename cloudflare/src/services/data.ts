@@ -75,7 +75,7 @@ export const RPC: Record<string, readonly Role[]> = {
   update_referral: ['provider', 'supervisor', 'client_manager', 'coordinator'],
   refer_case: [...OPS, 'client_manager'],
   import_cases: ['supervisor', 'client_manager'],
-  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS,
+  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS, set_case_requirements: OPS,
   schedule_validation: ['coordinator', 'supervisor', 'medical_desk'],
   record_validation: ['coordinator', 'supervisor', 'medical_desk', 'field_staff'],
   import_referral_updates: ['provider', 'supervisor', 'client_manager'],
@@ -105,7 +105,13 @@ export function dbMessage(e: unknown): ApiError | null {
   if (!pg || typeof pg.code !== 'string') return null;
   if (pg.code === 'P0001') return new ApiError(400, String(pg.message));                                  // raise exception in an RPC
   if (pg.code === '42501') return new ApiError(403, 'Not allowed: ' + String(pg.message).replace(/^new row violates /, ''));
-  if (pg.code.startsWith('23')) return new ApiError(409, String(pg.message).includes('duplicate') ? 'That record already exists.' : 'Record conflicts with existing data.');
+  if (pg.code === '23505') {
+    const msg = String(pg.message || '');
+    if (msg.includes('mobile')) return new ApiError(409, 'A patient with this mobile number already exists.');
+    if (msg.includes('case_no')) return new ApiError(409, 'Case number already exists. Please submit again.');
+    return new ApiError(409, 'That record already exists.');
+  }
+  if (pg.code.startsWith('23')) return new ApiError(409, 'Record conflicts with existing data.');
   if (pg.code === '22P02' || pg.code === '22007' || pg.code === '22008' || pg.code === '22003') return new ApiError(400, 'Invalid value: ' + String(pg.message));
   if (pg.code === '42703' || pg.code === '42P01' || pg.code === '42883') return new ApiError(400, String(pg.message));
   return null;

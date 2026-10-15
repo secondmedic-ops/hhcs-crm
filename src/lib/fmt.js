@@ -12,6 +12,27 @@ export const date = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2
 export const dateLong = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: TZ }) : '–';
 export const dateTime = (d) => d ? `${date(d)} · ${time(d)}` : '–';
 
+// Date-only columns (Postgres `date`): the Worker sends 'YYYY-MM-DD', the browser demo a Date at UTC midnight.
+// Read and shown as the calendar day itself, never through a time zone, so no day shift anywhere.
+export const dayStr = (v) => {
+  if (!v) return '';
+  if (v instanceof Date) return isNaN(v) ? '' : v.toISOString().slice(0, 10);
+  const m = String(v).match(/^\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : '';
+};
+export const isDay = (s) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return false;
+  const [y, mo, d] = s.split('-').map(Number);
+  const x = new Date(Date.UTC(y, mo - 1, d));
+  return x.getUTCFullYear() === y && x.getUTCMonth() === mo - 1 && x.getUTCDate() === d;
+};
+export const dayLong = (v) => {
+  const s = dayStr(v);
+  if (!s) return '–';
+  const [y, mo, d] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+};
+
 export function ago(d, now = Date.now()) {
   if (!d) return '–';
   let s = Math.round((now - new Date(d).getTime()) / 1000);
@@ -63,6 +84,15 @@ export const DEPARTMENTS = [
   ['provider', 'Service partners', 'Partner staff (for example Book My Medicare): only the leads sent to their partner, never calls or recordings.'],
 ];
 export const CHANNEL_LABEL = { phone: 'Phone', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email', chat: 'Chat', note: 'Note', system: 'System', crm_edit: 'CRM edit', field: 'Field', lab: 'Lab', payment: 'Payment', walkin: 'Walk-in', referral: 'Referral' };
+// referring source when the channel is Referral (stored as shown; check in 20261015210000_referral_source_options)
+export const REFERRAL_SOURCES = ['ICU', 'Doctor', 'Nursing Team', 'Other'];
+export const CHANNELS = [['phone', 'Phone'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['chat', 'Chat'], ['walkin', 'Walk-in'], ['referral', 'Referral']];
+export const REFERRAL_OPTIONS = [
+  ['Doctor', 'Doctor'],
+  ['Nursing Team / Internal Nurse', 'Nursing Team / Internal Nurse'],
+  ['ICU / Pamphlet Advertisement', 'ICU / Pamphlet Advertisement'],
+  ['Other', 'Other'],
+];
 
 export const initials = (name = '') => name.replace(/^(Mr\.|Mrs\.|Ms\.|Dr\.)\s*/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 

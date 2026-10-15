@@ -8,7 +8,7 @@ import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { dial, sendQuote, sendMessage, sendWhatsAppChat, aiBrief, recordingUrl } from '../lib/api.js';
 import {
-  inr, ago, time, date, dateTime, dur, STAGES, STAGE_LABEL, SLA_LABEL, CHANNEL_LABEL, toLocalInput, fromLocalInput,
+  inr, ago, time, date, dateTime, dur, STAGES, STAGE_LABEL, SLA_LABEL, CHANNEL_LABEL, toLocalInput, fromLocalInput, dayStr, dayLong, isDay, REFERRAL_SOURCES,
 } from '../lib/fmt.js';
 import Icon, { channelIcon } from '../components/icons.jsx';
 import { useCalls, LiveCallBar } from '../components/CallCenter.jsx';
@@ -17,6 +17,7 @@ import { TransitionPanel } from './Transition.jsx';
 import { WhatsAppChat } from '../components/WhatsAppChat.jsx';
 import CaseMargins from '../components/CaseMargins.jsx';
 import FinalInvoiceModal from '../components/FinalInvoiceModal.jsx';
+import { downloadQuotationPdf } from '../lib/pdf.js';
 import {
   Panel, Button, Badge, StageBadge, SlaBadge, PriorityBadge, Countdown, AiTag, Tabs, Modal, Field, Input, Select, Textarea,
   Segmented, Confirm, Empty, TableSkeleton, Skeleton, ErrorNote, useToast, useAction,
@@ -131,10 +132,12 @@ export default function CaseDetail() {
           <div className="cd-meta">
             <span><strong>{c.patient_name}</strong>{ageGender(c) && <span className="muted"> · {ageGender(c)}</span>}</span>
             {c.branch && <span><span className="muted">Branch</span> {c.branch}</span>}
+            {c.expected_discharge_on && <span><span className="muted">Discharge expected</span> {dayLong(c.expected_discharge_on)}</span>}
+            {c.requested_service_start_on && <span><span className="muted">Service start requested</span> {dayLong(c.requested_service_start_on)}</span>}
             <span className="muted">{c.zone_name || 'Zone not mapped'}</span>
             <span><span className="muted">Owner</span> {c.owner_name || DASH}{c.owner_code ? <span className="mono muted"> {c.owner_code}</span> : null}</span>
             <span><span className="muted">Coordinator</span> {c.coordinator_name || DASH}</span>
-            <span className="muted" title={dateTime(c.created_at)}>Created {dateTime(c.created_at)} · {ago(c.created_at, now)} · via {CHANNEL_LABEL[c.source_channel] || c.source_channel}</span>
+            <span className="muted" title={dateTime(c.created_at)}>Created {dateTime(c.created_at)} · {ago(c.created_at, now)} · via {CHANNEL_LABEL[c.source_channel] || c.source_channel}{c.source_channel === 'referral' && c.referral_subtype ? ` (${c.referral_subtype})` : ''}</span>
           </div>
         </div>
         <div className="row wrap cd-actions">
@@ -181,7 +184,7 @@ export default function CaseDetail() {
         <div className="col gap-12 cd-main">
           {!can('provider') && <GateCard c={c} gates={gates} canAct={canAct} onRaiseException={() => setModal({ k: 'esc', type: 'operational', text: 'Closure exception: Pending service or payment justification for supervisor approval.' })} />}
           {!can('provider') && <TransitionPanel c={c} services={services.data || []} people={people.data || []} items={items.data || []} canAct={canAct && open} can={can} profile={profile} templates={tpl} />}
-          <ServicesQuote c={c} items={items} services={services.data || []} templates={tpl} approvals={appr.data || []} canAct={canAct} band={workspace?.discount_band_pct} />
+          <ServicesQuote c={c} items={items} services={services.data || []} templates={tpl} approvals={appr.data || []} canAct={canAct} band={workspace?.discount_band_pct} workspace={workspace} />
           {can('supervisor', 'coordinator') && (items.data || []).length > 0 && <CaseMargins c={c} />}
           {phase >= 2 && <Booking c={c} coordinators={(people.data || []).filter((p) => p.role === 'coordinator')} templates={tpl} canAct={canAct} me={profile} />}
           {phase >= 2 && <FieldPanel c={c} items={items.data || []} asg={asg} staff={(people.data || []).filter((p) => p.role === 'field_staff')} canDispatch={canDispatch && open} />}
@@ -399,26 +402,46 @@ function RequirementsPanel({ c, canEdit, branches }) {
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState({});
   const [run, busy] = useAction();
-  const start = () => { setF({ branch: c.branch || '', services_requested: c.services_requested || '', additional_info: c.additional_info || '' }); setEdit(true); };
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const start = () => {
+    setF({ branch: c.branch || '', services_requested: c.services_requested || '', additional_info: c.additional_info || '',
+      expected_discharge_on: dayStr(c.expected_discharge_on), requested_service_start_on: dayStr(c.requested_service_start_on),
+      referral_subtype: c.referral_subtype || '' });
+    setEdit(true);
+  };
+  const referral = c.source_channel === 'referral';
+  const badDate = (f.expected_discharge_on && !isDay(f.expected_discharge_on)) || (f.requested_service_start_on && !isDay(f.requested_service_start_on));
+  // one database action: only these five fields change, so editing one date never touches the other
   const save = () => run(async () => {
-    await q(db.from('cases').update({ branch: f.branch || null, services_requested: f.services_requested.trim() || null, additional_info: f.additional_info.trim() || null }).eq('id', c.id));
+    await rpc('set_case_requirements', { p_case: c.id, p: {
+      branch: f.branch || null, services_requested: f.services_requested.trim() || null, additional_info: f.additional_info.trim() || null,
+      expected_discharge_on: f.expected_discharge_on || null, requested_service_start_on: f.requested_service_start_on || null,
+      ...(referral ? { referral_subtype: f.referral_subtype || null } : {}),
+    } });
     setEdit(false);
   }, 'Requirements saved');
   return (
     <Panel title="Requirements" actions={canEdit && <Button size="xs" kind="ghost" icon="edit" onClick={start}>Edit</Button>}>
       <dl className="kv">
+        <dt>Expected discharge</dt><dd>{c.expected_discharge_on ? <strong>{dayLong(c.expected_discharge_on)}</strong> : DASH}</dd>
+        <dt>Service start requested</dt><dd>{c.requested_service_start_on ? <strong>{dayLong(c.requested_service_start_on)}</strong> : DASH}</dd>
         <dt>Branch</dt><dd>{c.branch || <span className="warn-text">Not set</span>}</dd>
+        {referral && <><dt>Referral through</dt><dd>{c.referral_subtype || <span className="warn-text">Not set</span>}</dd></>}
         <dt>Request</dt><dd className="small">{c.services_requested || DASH}</dd>
         <dt>Additional info</dt><dd className="small" style={{ whiteSpace: 'pre-wrap' }}>{c.additional_info || DASH}</dd>
         {c.external_ref && <><dt>Old CRM ID</dt><dd className="mono small">{c.external_ref}</dd></>}
       </dl>
       {edit && (
-        <Modal title={`Requirements · ${c.case_no}`} onClose={() => setEdit(false)} footer={<><Button onClick={() => setEdit(false)}>Cancel</Button><Button kind="primary" disabled={busy} onClick={save}>Save</Button></>}>
+        <Modal title={`Requirements · ${c.case_no}`} onClose={() => setEdit(false)} footer={<><Button onClick={() => setEdit(false)}>Cancel</Button><Button kind="primary" disabled={busy || badDate} onClick={save}>Save</Button></>}>
           <div className="form-grid">
-            <Field label="Branch"><Select value={f.branch} onChange={(e) => setF((x) => ({ ...x, branch: e.target.value }))} placeholder="Not set" options={branches} /></Field>
-            <Field label="Request" hint="as the caller said it" className="span2"><Input value={f.services_requested} onChange={(e) => setF((x) => ({ ...x, services_requested: e.target.value }))} /></Field>
-            <Field label="Additional information" hint="customer requirements, timings, preferences" className="span2"><Textarea rows={4} value={f.additional_info} onChange={(e) => setF((x) => ({ ...x, additional_info: e.target.value }))} /></Field>
+            <Field label="Expected discharge date" hint="expected, not confirmed"><Input type="date" value={f.expected_discharge_on} onChange={set('expected_discharge_on')} /></Field>
+            <Field label="Requested service start date" hint="requested, not booked"><Input type="date" value={f.requested_service_start_on} onChange={set('requested_service_start_on')} /></Field>
+            <Field label="Branch"><Select value={f.branch} onChange={set('branch')} placeholder="Not set" options={branches} /></Field>
+            {referral && <Field label="Referral through"><Select value={f.referral_subtype} onChange={set('referral_subtype')} placeholder="Select referral source" options={REFERRAL_SOURCES} /></Field>}
+            <Field label="Request" hint="as the caller said it" className="span2"><Input value={f.services_requested} onChange={set('services_requested')} /></Field>
+            <Field label="Additional information" hint="customer requirements, timings, preferences" className="span2"><Textarea rows={4} value={f.additional_info} onChange={set('additional_info')} /></Field>
           </div>
+          {badDate && <div className="tiny danger-text mt-8">Enter real calendar dates.</div>}
         </Modal>
       )}
     </Panel>
@@ -500,7 +523,7 @@ function OpenItems({ c, gates, escs, cmps, appr, pays, phase }) {
 
 /* =========================================================== services & quote */
 
-function ServicesQuote({ c, items, services, templates, approvals, canAct, band }) {
+function ServicesQuote({ c, items, services, templates, approvals, canAct, band, workspace }) {
   const toast = useToast();
   const [run, busy] = useAction();
   const editable = canAct && ['enquiry', 'pricing'].includes(c.stage);
@@ -530,6 +553,31 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
   const pctNum = Number(pct || 0);
   const overBand = band != null && pctNum > Number(band);
 
+  const handleDownloadPdf = async () => {
+    const activeItems = rows.filter((r) => !r.excluded);
+    if (!activeItems.length) {
+      toast('No active services added to this case yet.', 'warn');
+      return;
+    }
+    const unpriced = activeItems.filter((r) => !r.unit_price || Number(r.unit_price) <= 0);
+    if (unpriced.length) {
+      toast(`Cannot generate quotation: ${unpriced.length} service(s) have no approved rate-card pricing.`, 'error');
+      return;
+    }
+    try {
+      await rpc('log_access', {
+        p_action: 'export',
+        p_entity: 'case',
+        p_entity_id: c.id,
+        p_meta: { what: 'quotation_pdf' },
+      }).catch(() => {});
+      downloadQuotationPdf({ k: c, patient: null, items: activeItems, workspace });
+      toast.ok(`Quotation PDF downloaded for Case ${c.case_no}`);
+    } catch (err) {
+      toast(err.message || 'Failed to generate quotation PDF', 'error');
+    }
+  };
+
   const add = async () => {
     if (!pick) return;
     const r = await run(() => q(db.from('case_items').insert({ case_id: c.id, service_id: pick, qty: Math.max(1, Number(qty) || 1) })), 'Service added from rate card');
@@ -542,7 +590,20 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
 
   return (
     <Panel title="Services & quote" sub="Prices come only from the approved rate card"
-      actions={<Badge kind={qk}>Quote: {ql}</Badge>} tight>
+      actions={
+        <div className="row gap-8">
+          <Badge kind={qk}>Quote: {ql}</Badge>
+          <Button
+            size="xs"
+            kind="ghost"
+            icon="print"
+            disabled={busy || !rows.filter((r) => !r.excluded).length}
+            onClick={handleDownloadPdf}
+          >
+            Download Quotation PDF
+          </Button>
+        </div>
+      } tight>
       {items.loading ? <div className="panel-body"><TableSkeleton rows={3} cols={4} /></div> : (
         <div className="table-wrap">
           <table className="t compact">
@@ -641,7 +702,12 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
           <div className="small muted row gap-4"><Icon name="stamp" size={13} />{lastDisc.title} approved by {lastDisc.decided_by_name || 'Hinduja approver'} · {dateTime(lastDisc.decided_at)}</div>
         )}
 
-        {canAct && c.stage === 'enquiry' && <div className="tiny muted">Advance the case to Pricing to send the quote.</div>}
+        {canAct && c.stage === 'enquiry' && (
+          <div className="row between wrap gap-8">
+            <div className="tiny muted">Advance the case to Pricing to send the quote via template.</div>
+            <Button size="sm" kind="outline" icon="print" disabled={busy || !rows.filter((r) => !r.excluded).length} onClick={handleDownloadPdf}>Download Quotation PDF</Button>
+          </div>
+        )}
         {showQuote && (
           <div className="cd-quote">
             <div className="row between wrap gap-8">
@@ -652,7 +718,10 @@ function ServicesQuote({ c, items, services, templates, approvals, canAct, band 
             <div className="cd-preview">{preview.loading ? <Skeleton lines={4} /> : preview.error ? <span className="danger-text small">{preview.error}</span> : preview.data || <span className="faint">Choose a template</span>}</div>
             <div className="row between wrap gap-8">
               <span className="tiny muted">{c.quote_sent_at ? `Last sent ${dateTime(c.quote_sent_at)}` : 'Approved template only. Delivery is logged on the timeline.'}</span>
-              <Button kind="primary" icon="chat" disabled={busy || !tid || !['approved', 'sent'].includes(c.quote_status) || Number(c.subtotal) <= 0} onClick={send}>{c.quote_status === 'sent' ? 'Resend quote' : 'Send quote'}</Button>
+              <div className="row gap-8">
+                <Button size="sm" kind="ghost" icon="print" disabled={busy || !rows.filter((r) => !r.excluded).length} onClick={handleDownloadPdf}>Download Quotation PDF</Button>
+                <Button kind="primary" icon="chat" disabled={busy || !tid || !['approved', 'sent'].includes(c.quote_status) || Number(c.subtotal) <= 0} onClick={send}>{c.quote_status === 'sent' ? 'Resend quote' : 'Send quote'}</Button>
+              </div>
             </div>
           </div>
         )}
