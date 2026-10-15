@@ -14,7 +14,9 @@ import Icon, { channelIcon } from '../components/icons.jsx';
 import { useCalls, LiveCallBar } from '../components/CallCenter.jsx';
 import { LeadActions, RefBadge } from './Leads.jsx';
 import { TransitionPanel } from './Transition.jsx';
+import { WhatsAppChat } from '../components/WhatsAppChat.jsx';
 import CaseMargins from '../components/CaseMargins.jsx';
+import FinalInvoiceModal from '../components/FinalInvoiceModal.jsx';
 import {
   Panel, Button, Badge, StageBadge, SlaBadge, PriorityBadge, Countdown, AiTag, Tabs, Modal, Field, Input, Select, Textarea,
   Segmented, Confirm, Empty, TableSkeleton, Skeleton, ErrorNote, useToast, useAction,
@@ -33,7 +35,11 @@ const HOPS = [
   ['collected_at', 'Collected'], ['handover_at', 'Handover'], ['dispatched_at', 'Dispatched'], ['transport_temp_c', 'Temp'],
   ['received_at', 'Received at lab'], ['accessioned_at', 'Accessioned'], ['report_released_at', 'Report released'], ['delivered_at', 'Delivered'],
 ];
-const ESC_TYPES = [['clinical', 'Clinical'], ['emergency', 'Emergency'], ['delay', 'Delay'], ['complaint', 'Complaint'], ['privacy', 'Privacy']];
+const ESC_TYPES = [
+  ['clinical', 'Clinical'], ['emergency', 'Emergency'], ['delay', 'Delay'],
+  ['complaint', 'Complaint'], ['privacy', 'Privacy'],
+  ['operational', 'Operational exception'], ['billing', 'Billing exception'],
+];
 const CMP_CATS = [['service', 'Service'], ['behaviour', 'Staff behaviour'], ['billing', 'Billing'], ['report_delay', 'Report delay'], ['other', 'Other']];
 
 const parseJson = (v) => { if (!v) return null; if (typeof v === 'object') return v; try { return JSON.parse(v); } catch { return null; } };
@@ -173,16 +179,16 @@ export default function CaseDetail() {
 
       <div className="grid g-main-side mt-12 cd-grid">
         <div className="col gap-12 cd-main">
-          {!can('provider') && <GateCard c={c} gates={gates} canAct={canAct} />}
-          {!can('provider') && <TransitionPanel c={c} services={services.data || []} people={people.data || []} items={items.data || []} canAct={canAct && open} can={can} profile={profile} />}
+          {!can('provider') && <GateCard c={c} gates={gates} canAct={canAct} onRaiseException={() => setModal({ k: 'esc', type: 'operational', text: 'Closure exception: Pending service or payment justification for supervisor approval.' })} />}
+          {!can('provider') && <TransitionPanel c={c} services={services.data || []} people={people.data || []} items={items.data || []} canAct={canAct && open} can={can} profile={profile} templates={tpl} />}
           <ServicesQuote c={c} items={items} services={services.data || []} templates={tpl} approvals={appr.data || []} canAct={canAct} band={workspace?.discount_band_pct} />
           {can('supervisor', 'coordinator') && (items.data || []).length > 0 && <CaseMargins c={c} />}
           {phase >= 2 && <Booking c={c} coordinators={(people.data || []).filter((p) => p.role === 'coordinator')} templates={tpl} canAct={canAct} me={profile} />}
           {phase >= 2 && <FieldPanel c={c} items={items.data || []} asg={asg} staff={(people.data || []).filter((p) => p.role === 'field_staff')} canDispatch={canDispatch && open} />}
           {(phase >= 3 || (samples.data || []).length > 0) && <LabPanel c={c} samples={samples} canAct={canAct && open} />}
-          {(phase >= 2 || (pays.data || []).length > 0) && <PaymentPanel c={c} pays={pays} canAct={canAct && open} canReconcile={can('supervisor', 'coordinator')} allowCash={!!workspace?.settings?.allow_cash} />}
+          {(phase >= 2 || (pays.data || []).length > 0) && <PaymentPanel c={c} pays={pays} canAct={canAct && open} canReconcile={can('supervisor', 'coordinator')} allowCash={!!workspace?.settings?.allow_cash} templates={tpl} />}
           {(c.stage === 'closure' || c.feedback_rating != null) && <Feedback c={c} canAct={canAct && c.stage === 'closure'} />}
-          <BottomTabs c={c} inter={inter} calls={calls} escs={escs} cmps={cmps} ids={[...(pays.data || []), ...(asg.data || []), ...(samples.data || []), ...(escs.data || []), ...(cmps.data || []), ...(appr.data || [])].map((x) => x.id)} canNote={canAct || can('provider')} />
+          <BottomTabs c={c} inter={inter} calls={calls} escs={escs} cmps={cmps} ids={[...(pays.data || []), ...(asg.data || []), ...(samples.data || []), ...(escs.data || []), ...(cmps.data || []), ...(appr.data || [])].map((x) => x.id)} canNote={canAct || can('provider')} templates={tpl} />
         </div>
 
         <div className="col gap-12 cd-side">
@@ -196,7 +202,7 @@ export default function CaseDetail() {
       </div>
 
       {/* ---------- modals */}
-      {modal?.k === 'esc' && <EscalationModal onClose={() => setModal(null)} onSave={async (type, text) => { const r = await run(() => insertEsc(type, text), `Escalation raised · ${type} · L1`); if (r !== undefined) setModal(null); }} busy={busy} />}
+      {modal?.k === 'esc' && <EscalationModal initialType={modal.type || 'delay'} initialText={modal.text || ''} onClose={() => setModal(null)} onSave={async (type, text) => { const r = await run(() => insertEsc(type, text), `Escalation raised · ${type} · L1`); if (r !== undefined) setModal(null); }} busy={busy} />}
       {modal?.k === 'complaint' && <ComplaintModal busy={busy} onClose={() => setModal(null)} onSave={async (f) => {
         const r = await run(() => q(db.from('complaints').insert({ workspace_id: profile.workspace_id, case_id: id, patient_id: c.patient_id, opened_by: profile.id, ...f })), 'Complaint logged · supervisor notified');
         if (r !== undefined) setModal(null);
@@ -255,7 +261,32 @@ function Stepper({ c, hist, loading, cancelledFrom }) {
   );
 }
 
-function GateCard({ c, gates, canAct }) {
+export function GateChecklist({ checks, stage, canAct, onRaiseException }) {
+  const hasPending = (checks || []).some((x) => !x.ok);
+  const isClosure = stage === 'closure';
+
+  return (
+    <div className="cd-gate-checklist">
+      <ul className="cd-checks">
+        {(checks || []).map((x) => (
+          <li key={x.label} className={x.ok ? 'ok' : 'no'}>
+            <span className="cd-check-icon"><Icon name={x.ok ? 'check' : 'x'} size={12} stroke={1.8} /></span>
+            <span className="grow">{x.label}</span>
+            <Badge kind={x.ok ? 'ok' : 'danger'}>{x.ok ? 'Met' : 'Pending'}</Badge>
+          </li>
+        ))}
+      </ul>
+      {isClosure && hasPending && canAct && onRaiseException && (
+        <div className="row wrap between gap-8 mt-12 pt-8" style={{ borderTop: '1px solid var(--line-2)' }}>
+          <span className="small muted">Pending balance or service unfulfilled? Document reasons for supervisor approval:</span>
+          <Button size="sm" kind="warn" icon="flag" onClick={onRaiseException}>Raise Closure Exception Escalation</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GateCard({ c, gates, canAct, onRaiseException }) {
   const [run, busy] = useAction();
   const [err, setErr] = useState(null);
   const [note, setNote] = useState('');
@@ -277,15 +308,9 @@ function GateCard({ c, gates, canAct }) {
       actions={g && <Badge kind={g.ready ? 'ok' : 'warn'}>{g.ready ? 'Ready' : `${g.checks.filter((x) => !x.ok).length} pending`}</Badge>}>
       {!g ? <Skeleton lines={3} /> : (
         <div className="cd-gate">
-          <ul className="cd-checks">
-            {g.checks.map((x) => (
-              <li key={x.label} className={x.ok ? 'ok' : 'no'}>
-                <span className="cd-check-icon"><Icon name={x.ok ? 'check' : 'x'} size={12} stroke={1.8} /></span>{x.label}
-              </li>
-            ))}
-          </ul>
+          <GateChecklist checks={g.checks} stage={c.stage} canAct={canAct} onRaiseException={onRaiseException} />
           {canAct && next && (
-            <div className="cd-advance">
+            <div className="cd-advance mt-12">
               <Input className="sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for the stage history (optional)" aria-label="Stage note" />
               <Button kind="primary" icon="chevron" disabled={!g.ready || busy} onClick={advance}>{label}</Button>
             </div>
@@ -889,15 +914,37 @@ function CriticalModal({ c, samples, onClose }) {
 
 /* =========================================================== payment */
 
-function PaymentPanel({ c, pays, canAct, canReconcile, allowCash }) {
+function PaymentPanel({ c, pays, canAct, canReconcile, allowCash, templates = [] }) {
   const [run, busy] = useAction();
   const [modal, setModal] = useState(null);
   const rows = pays.data || [];
   const outstanding = Math.max(0, Number(c.total) - Number(c.amount_collected));
   const [pk, pl] = PAY_KIND[c.payment_status] || ['', c.payment_status];
+
+  const sendFinalReceipt = () => run(async () => {
+    let tplId = templates?.find((t) => t.code === 'T-10')?.id;
+    if (!tplId) {
+      const { data } = await q(db.from('templates').select('id').eq('code', 'T-10').eq('status', 'approved').single());
+      tplId = data?.id;
+    }
+    if (!tplId) throw new Error('Template T-10 not found');
+    await sendMessage(c.id, tplId);
+  }, 'Final bill & payment receipt sent on WhatsApp');
+
   return (
     <Panel title="Payment" sub="Digital collection, receipts and reconciliation"
-      actions={<><Badge kind={pk}>{pl}</Badge>{canAct && outstanding > 0 && <Button size="sm" kind="primary" icon="rupee" onClick={() => setModal({ k: 'pay' })}>Record payment</Button>}</>} tight>
+      actions={<>
+        <Badge kind={pk}>{pl}</Badge>
+        <Button size="sm" icon="report" onClick={() => setModal({ k: 'invoice' })}>
+          View / Print Final Bill
+        </Button>
+        {canAct && (
+          <Button size="sm" icon="chat" disabled={busy} onClick={sendFinalReceipt}>
+            Send Final Receipt on WhatsApp
+          </Button>
+        )}
+        {canAct && outstanding > 0 && <Button size="sm" kind="primary" icon="rupee" onClick={() => setModal({ k: 'pay' })}>Record payment</Button>}
+      </>} tight>
       <div className="cd-money">
         <div><span className="l">Total</span><span className="v mono">{inr(c.total)}</span></div>
         <div><span className="l">Collected</span><span className="v mono">{inr(c.amount_collected)}</span></div>
@@ -931,6 +978,7 @@ function PaymentPanel({ c, pays, canAct, canReconcile, allowCash }) {
           <p className="small">The payment stays unreconciled and is listed in the MIS exceptions.</p>
         </Confirm>
       )}
+      {modal?.k === 'invoice' && <FinalInvoiceModal c={c} onClose={() => setModal(null)} />}
     </Panel>
   );
 }
@@ -980,7 +1028,7 @@ function Feedback({ c, canAct }) {
 
 /* =========================================================== tabs */
 
-function BottomTabs({ c, inter, calls, escs, cmps, ids, canNote }) {
+function BottomTabs({ c, inter, calls, escs, cmps, ids, canNote, templates = [] }) {
   const { can, isOps } = useAuth();
   const canAudit = can('supervisor', 'client_manager');
   const [tab, setTab] = useState('timeline');
@@ -993,56 +1041,11 @@ function BottomTabs({ c, inter, calls, escs, cmps, ids, canNote }) {
     <Panel>
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'timeline' && <Timeline c={c} inter={inter} canNote={canNote} />}
-      {tab === 'whatsapp' && <WhatsAppCaseTab c={c} rows={waRows} loading={inter.loading} canAct={isOps} />}
+      {tab === 'whatsapp' && <WhatsAppChat c={c} rows={waRows} loading={inter.loading} canAct={isOps} templates={templates} />}
       {tab === 'calls' && <CallsTab calls={calls} />}
       {tab === 'esc' && <EscTab escs={escs} cmps={cmps} />}
       {tab === 'audit' && canAudit && <AuditTab c={c} ids={ids} />}
     </Panel>
-  );
-}
-
-function WhatsAppCaseTab({ c, rows, loading, canAct }) {
-  const [text, setText] = useState('');
-  const [run, busy] = useAction();
-  const nav = useNavigate();
-  const ordered = [...rows].sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
-  const send = async (e) => {
-    if (e) e.preventDefault();
-    if (!text.trim() || busy) return;
-    const r = await run(() => sendWhatsAppChat({ case_id: c.id, patient_id: c.patient_id, text: text.trim() }), 'WhatsApp reply sent');
-    if (r !== undefined) setText('');
-  };
-  return (
-    <div className="col gap-12">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <span className="tiny muted">WhatsApp Business (WABA) thread for {c.patient_name} · {c.case_no}</span>
-        <Button size="xs" icon="chat" onClick={() => nav(`/whatsapp?patient=${c.patient_id}`)}>Open full WhatsApp inbox</Button>
-      </div>
-      {loading ? <Skeleton lines={4} /> : ordered.length ? (
-        <div className="wa-messages" style={{ maxHeight: 320, border: '1px solid var(--line)', borderRadius: 3 }}>
-          {ordered.map((m) => {
-            const outbound = m.direction === 'outbound';
-            return (
-              <div key={m.id} className={`wa-bubble-row ${outbound ? 'outbound' : 'inbound'}`}>
-                <div className={`wa-bubble ${outbound ? 'outbound' : 'inbound'}`}>
-                  <div className="wa-bubble-meta">
-                    <span className="strong">{outbound ? (m.actor_label || 'CareDesk') : (c.patient_name || 'Patient')}</span>
-                    <span className="mono">{dateTime(m.occurred_at)}</span>
-                  </div>
-                  <div className="wa-bubble-body">{m.body || m.summary || DASH}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : <Empty title="No WhatsApp messages on this case yet" />}
-      {canAct && (
-        <form className="row gap-8" onSubmit={send}>
-          <Input className="grow" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Reply to ${c.patient_name} on WhatsApp…`} />
-          <Button kind="primary" type="submit" icon="send" disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send WhatsApp'}</Button>
-        </form>
-      )}
-    </div>
   );
 }
 
@@ -1240,18 +1243,23 @@ function AuditTab({ c, ids }) {
 
 /* =========================================================== header modals */
 
-function EscalationModal({ onClose, onSave, busy }) {
-  const [type, setType] = useState('delay');
-  const [text, setText] = useState('');
+function EscalationModal({ onClose, onSave, busy, initialType = 'delay', initialText = '' }) {
+  const [type, setType] = useState(initialType);
+  const [text, setText] = useState(initialText);
+  const isClosureException = type === 'operational' || type === 'billing';
   return (
-    <Modal title="Raise escalation" onClose={onClose}
+    <Modal title={isClosureException ? 'Raise closure exception escalation' : 'Raise escalation'} onClose={onClose}
       footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!text.trim() || busy} onClick={() => onSave(type, text.trim())}>Raise L1 escalation</Button></>}>
       <div className="form-grid">
         <Field label="Type"><Select value={type} onChange={(e) => setType(e.target.value)} options={ESC_TYPES} /></Field>
         <Field label="Level"><Input value="Level 1 · first owner per matrix" disabled /></Field>
         <Field label="What happened" className="span2"><Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Technician running 40 min late, patient fasting since 10 pm" autoFocus /></Field>
       </div>
-      <p className="tiny muted mt-8">Clinical and emergency escalations notify the medical desk and Hinduja clinical. The matrix levels up automatically if not acknowledged.</p>
+      <p className="tiny muted mt-8">
+        {isClosureException
+          ? 'Operational and billing exceptions must be reviewed and resolved by a supervisor with resolution notes to permit closure.'
+          : 'Clinical and emergency escalations notify the medical desk and Hinduja clinical. The matrix levels up automatically if not acknowledged.'}
+      </p>
     </Modal>
   );
 }

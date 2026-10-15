@@ -29,6 +29,7 @@ const Audit = lazy(() => import('./pages/Audit.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Find = lazy(() => import('./pages/Find.jsx'));
 const Checklist = lazy(() => import('./pages/Checklist.jsx'));
+const Invoice = lazy(() => import('./pages/Invoice.jsx'));
 
 function Boot({ children }) {
   const [ready, setReady] = useState(false);
@@ -87,6 +88,8 @@ function Routed() {
           <Route path="settings" element={g('/settings', <Settings />)} />
           <Route path="find" element={g('/patients', <Find />)} />
           <Route path="checklist" element={g('/checklist', <Checklist />)} />
+          <Route path="invoice" element={g('/cases', <Invoice />)} />
+          <Route path="invoice/:id" element={g('/cases', <Invoice />)} />
           <Route path="*" element={<Navigate to={homeFor(profile.role, profile.provider_id)} replace />} />
         </Route>
       </Routes>

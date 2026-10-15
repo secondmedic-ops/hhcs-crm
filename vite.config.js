@@ -22,7 +22,8 @@ function whatsappBridgePlugin() {
 const BACKEND = process.env.BACKEND_URL || 'http://127.0.0.1:8787';
 export default defineConfig({
   plugins: [react(), whatsappBridgePlugin()],
-  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 1500 },
+  // The audio worklet stays a real file: the Content-Security-Policy does not allow data: scripts.
+  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 1500, assetsInlineLimit: (file) => (file.includes('pcm-worklet') ? false : undefined) },
   optimizeDeps: { exclude: ['@electric-sql/pglite'] },
   server: {
     port: 3000,

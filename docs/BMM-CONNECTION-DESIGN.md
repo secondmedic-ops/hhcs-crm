@@ -6,6 +6,8 @@
 
 **Publication validation:** the isolated release based on `3af8698d342ab63362858ac04c86e07c33743f3c` passed backend and frontend TypeScript checks, all 43 existing tests in 9 files, the disposable Worker rehearsal with 308 API checks, frontend production build, API contract check and deployment lint. It excludes the concurrent WhatsApp/closure/catalogue work described in the historical findings. These checks validate publication against the existing application; they do not implement or verify this document's proposed BMM extensions, BMM sandbox compatibility or live exchange.
 
+**Implementation update (15 October 2026, later):** `20261015170200_bmm_release_scope.sql` makes `bmm_leads()` honour the provider chosen on each case line (`case_item_costs.provider_id`) before category routing, and return the agreed case-line unit instead of the current rate-card unit. BMM's categories include the catch-all `other` since `20261015140000`, so explicit item assignment (section 11) remains a prerequisite before activation. The closure-gate migrations referred to below as `20261015122000` / `20261015123000` were renumbered `20261015170000` / `20261015170100` so they apply after production's latest migration; the focused BMM tests now pass on that tree.
+
 This is a proposed HHCS design grounded in the inspected repository. It is not BMM's API specification or evidence of a working connection. BMM documentation remains the dependency for selecting and implementing the actual transport. The existing [HHCS-side contract](BMM-INTEGRATION.md) describes the prepared first slice. The [information request](BMM-INFORMATION-REQUEST.md) is a draft for internal review, not a message sent to BMM.
 
 ## 1. Evidence and current implementation

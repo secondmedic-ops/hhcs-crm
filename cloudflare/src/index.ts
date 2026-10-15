@@ -18,6 +18,7 @@ import { liveToken, notifyLive, openLive } from './services/live';
 import { runScheduled } from './services/cron';
 import { handleEmail } from './services/email';
 import { resolveStaffSession, logStaffRequest } from './services/staff-session';
+import { httpsRedirect, secure } from './security';
 
 export { LiveHub } from './services/live';
 export type { Env };
@@ -128,16 +129,20 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
   }
 }
 
+async function route(req: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
+  if (url.pathname === '/webhooks/myoperator' && req.method === 'POST') {
+    try { return await handleMyOperatorWebhook(req, env, ctx); } catch (e) { return toResponse(e); }
+  }
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+    try { return await api(req, env, ctx); } catch (e) { return toResponse(e); }
+  }
+  return env.ASSETS.fetch(req);
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
-    if (url.pathname === '/webhooks/myoperator' && req.method === 'POST') {
-      try { return await handleMyOperatorWebhook(req, env, ctx); } catch (e) { return toResponse(e); }
-    }
-    if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
-      try { return await api(req, env, ctx); } catch (e) { return toResponse(e); }
-    }
-    return env.ASSETS.fetch(req);
+    return httpsRedirect(req, url) ?? secure(await route(req, env, ctx, url), url, env);
   },
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runScheduled(event.cron, env, ctx));

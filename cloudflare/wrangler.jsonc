@@ -17,7 +17,9 @@
     "directory": "../dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/webhooks/*"]
+    // Pages run the Worker first (HTTPS redirect + security headers, src/security.ts); hashed /assets/* files are
+    // served directly with headers from public/_headers. One Worker request per page load, within the free plan.
+    "run_worker_first": ["/*", "!/assets/*"]
   },
 
   // SLA scan every minute; MIS packs at 04:30 UTC = 10:00 IST. (Workers Free allows 5 cron triggers per account.)

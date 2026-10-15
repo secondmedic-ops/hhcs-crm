@@ -1333,6 +1333,12 @@
       "supervisor",
       "medical_desk"
     ],
+    "advance_stage": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
     "cancel_case": [
       "agent",
       "coordinator",

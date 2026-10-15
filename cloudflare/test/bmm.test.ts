@@ -22,6 +22,7 @@ test('BMM provider isolation, sign-off, workflow, idempotency and closure', asyn
     for (const f of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) await db.exec(readFileSync(join(dir,f),'utf8'));
     // The migration remains safe to rerun.
     await db.exec(readFileSync(join(dir,'20261014100000_bmm_partner_api.sql'),'utf8'));
+    await db.exec(readFileSync(join(dir,'20261015170200_bmm_release_scope.sql'),'utf8'));
     const ws = (await db.query<any>("select id from workspaces where code='HHC'")).rows[0].id;
     const ids = {sup:'31000000-0000-4000-8000-000000000001',agent:'31000000-0000-4000-8000-000000000002',
       bmm:'31000000-0000-4000-8000-000000000003',other:'31000000-0000-4000-8000-000000000004',foreign:'31000000-0000-4000-8000-000000000005'};
@@ -56,6 +57,18 @@ test('BMM provider isolation, sign-off, workflow, idempotency and closure', asyn
     expect(JSON.stringify(snapshot)).not.toContain('unit_price');
     const next = await fn('bmm','select bmm_leads(1,1) v');expect(next.leads[0].referral_id).not.toBe(snapshot.leads[0].referral_id);
     await expect(fn('bmm','select bmm_leads(101,0) v')).rejects.toThrow('pagination');
+    // The unit is the one agreed on the case line; a line given to another provider on the case is not BMM's.
+    const [nurse] = (await db.query<any>('select id from case_items where case_id=$1',[second.case_id])).rows;
+    const items = async () => (await fn('bmm','select bmm_leads(1,1) v')).leads[0].items;
+    await db.exec("select set_config('request.jwt.claim.role','service_role',false); select rpc_on();");
+    await db.exec("set session_replication_role = replica; update case_items set unit = 'per 12-hour shift' where id = '" + nurse.id + "'; set session_replication_role = origin;");
+    expect((await items())[0].unit).toBe('per 12-hour shift');
+    await db.exec("select set_config('request.jwt.claim.role','service_role',false); select rpc_on();");
+    await db.query(`insert into case_item_costs(case_item_id,case_id,workspace_id,provider_id,source) values($1,$2,$3,$4,'selected')
+      on conflict (case_item_id) do update set provider_id = excluded.provider_id`,[nurse.id,second.case_id,ws,providers.SM]);
+    expect(await items()).toEqual([]);
+    await db.query('update case_item_costs set provider_id=$1 where case_item_id=$2',[providers.BMM,nurse.id]);
+    expect((await items()).map((i:any) => i.case_item_id)).toEqual([nurse.id]);
     const event='32000000-0000-4000-8000-000000000001';
     const apply = (ref: string,eventId: string,expected: string,status: string,note: string|null = null,when: string|null = null) =>
       fn('bmm','select bmm_apply_status($1,$2,$3,$4,$5,$6::timestamptz) v',[ref,eventId,expected,status,note,when]);

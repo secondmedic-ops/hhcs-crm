@@ -416,6 +416,8 @@
 | acknowledged_at | timestamp with time zone | YES |
 | resolved_at | timestamp with time zone | YES |
 | auto_raised | boolean | NO |
+| resolution_notes | text | YES |
+| resolved_by | uuid | YES |
 
 ## inbound_emails
 | column | type | nullable |
@@ -1156,6 +1158,8 @@
 | acknowledged_at | timestamp with time zone | YES |
 | resolved_at | timestamp with time zone | YES |
 | auto_raised | boolean | YES |
+| resolution_notes | text | YES |
+| resolved_by | uuid | YES |
 | case_no | text | YES |
 | patient_name | text | YES |
 | raised_by_name | text | YES |

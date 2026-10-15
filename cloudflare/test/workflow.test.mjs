@@ -432,5 +432,109 @@ const admEdit = await as('administrator', `update profiles set agent_code = 'A-9
 const [{ c: newCode }] = (await db.query(`select agent_code c from profiles where id = $1`, [users.agent2])).rows;
 supEdit.length === 0 && admEdit.length === 1 && newCode === 'A-99' ? ok('administrator manages logins; a supervisor still cannot') : fail(JSON.stringify({ supEdit, admEdit, newCode }));
 
+console.log('\nCommunication templates: S-02, T-09, T-10 rendering and variables');
+const [{ count: tplCount }] = (await db.query(`select count(*)::int from templates where code in ('S-02', 'T-09', 'T-10') and status = 'approved'`)).rows;
+tplCount === 3 ? ok('approved templates S-02, T-09, T-10 inserted') : fail(`templates missing: found ${tplCount}`);
+
+const [{ id: t09Id }] = (await db.query(`select id from templates where code = 'T-09'`)).rows;
+const [{ r: t09Text }] = await as('agent', `select render_template($1, $2) r`, [t09Id, pd.case_id]);
+!t09Text.includes('{{') && t09Text.includes('Hinduja-Certified Nurse Home Assessment')
+  ? ok('T-09 renders with all tokens replaced: ' + t09Text.slice(0, 50) + '...')
+  : fail('T-09 unrendered tokens: ' + t09Text);
+
+await as('coord', `select record_payment($1, 10000, 'upi', 'UPI-TEST-123')`, [pd.case_id]);
+const [{ id: t10Id }] = (await db.query(`select id from templates where code = 'T-10'`)).rows;
+const [{ r: t10Text }] = await as('agent', `select render_template($1, $2) r`, [t10Id, pd.case_id]);
+!t10Text.includes('{{') && t10Text.includes('Total Billed:') && t10Text.includes('Receipt No: RCPT-')
+  ? ok('T-10 renders with balance, amount_collected, receipt_no: ' + t10Text.slice(0, 60) + '...')
+  : fail('T-10 unrendered tokens: ' + t10Text);
+
+const [{ id: s02Id }] = (await db.query(`select id from templates where code = 'S-02'`)).rows;
+const [{ r: s02Text }] = await as('agent', `select render_template($1, $2) r`, [s02Id, pd.case_id]);
+!s02Text.includes('{{') && s02Text.includes('EXPLAIN HOME ASSESSMENT')
+  ? ok('S-02 renders with greeting_time, agent_name: ' + s02Text.slice(0, 50) + '...')
+  : fail('S-02 unrendered tokens: ' + s02Text);
+
+console.log('\nCase Closure Stage Gates & Exception Escalation Rule');
+const [{ create_enquiry: enqClosure }] = await as('agent', `select create_enquiry($1::jsonb)`, [JSON.stringify({
+  patient: { full_name: 'Closure Gate Test', mobile: '9820099887', address: '42 Hill Rd', pincode: '400050' },
+  caller_name: 'Test Caller', services_requested: 'General', consent: true, service_ids: [svc['VISIT-STD']],
+})]);
+const clId = enqClosure.case_id;
+
+await db.exec(`select rpc_on(); update cases set stage = 'closure', service_completed_at = null, amount_collected = 0, total = 1500, payment_status = 'unpaid' where id = '${clId}';`);
+
+const [{ g: clGates }] = await as('agent', `select case_gates($1) g`, [clId]);
+const clSvcCheck = clGates.checks.find((x) => x.label === 'Service completion');
+const clPayCheck = clGates.checks.find((x) => x.label === 'Payment settled or waived');
+const clZeroRefCheck = clGates.checks.find((x) => x.label === 'Zero pending referrals');
+const clDepCheck = clGates.checks.find((x) => x.label === 'Equipment returned / active handover');
+const clExcCheck = clGates.checks.find((x) => x.label === 'Pending payment/service documented & supervisor approved');
+
+!clGates.ready && !clSvcCheck.ok && !clPayCheck.ok && clZeroRefCheck.ok && clDepCheck.ok && !clExcCheck.ok
+  ? ok('closure gate flags uncompleted service and unpaid balance')
+  : fail('closure gate initial state: ' + JSON.stringify(clGates));
+
+await expectError('agent', `select advance_stage($1, null)`, [clId],
+  'Stage gate not met: All provider leads must be completed and payment reconciled before closure (or documented via supervisor escalation).');
+
+const [bmmProv] = (await db.query(`select id from providers where code = 'BMM'`)).rows;
+const [refRow] = (await db.query(`insert into case_referrals (workspace_id, case_id, provider_id, status) values ($1, $2, $3, 'scheduled') returning id`, [ws, clId, bmmProv.id])).rows;
+const [{ g: clGatesWithRef }] = await as('agent', `select case_gates($1) g`, [clId]);
+!clGatesWithRef.checks.find((x) => x.label === 'Zero pending referrals').ok
+  ? ok('referral in scheduled status blocks Zero pending referrals')
+  : fail('scheduled referral did not block gate: ' + JSON.stringify(clGatesWithRef));
+
+await db.query(`update case_referrals set status = 'completed' where id = $1`, [refRow.id]);
+const [{ g: clGatesRefDone }] = await as('agent', `select case_gates($1) g`, [clId]);
+clGatesRefDone.checks.find((x) => x.label === 'Zero pending referrals').ok
+  ? ok('completed referral satisfies Zero pending referrals')
+  : fail('completed referral failed gate: ' + JSON.stringify(clGatesRefDone));
+
+const [depRow] = (await db.query(`insert into partner_deployments (workspace_id, case_id, referral_id, resource_type, status) values ($1, $2, $3, 'equipment', 'dispatched') returning id`, [ws, clId, refRow.id])).rows;
+const [{ g: clGatesWithDep }] = await as('agent', `select case_gates($1) g`, [clId]);
+!clGatesWithDep.checks.find((x) => x.label === 'Equipment returned / active handover').ok
+  ? ok('deployment in dispatched status blocks Equipment returned / active handover')
+  : fail('dispatched deployment did not block gate: ' + JSON.stringify(clGatesWithDep));
+
+await db.query(`update partner_deployments set status = 'returned' where id = $1`, [depRow.id]);
+const [{ g: clGatesDepDone }] = await as('agent', `select case_gates($1) g`, [clId]);
+clGatesDepDone.checks.find((x) => x.label === 'Equipment returned / active handover').ok
+  ? ok('returned deployment satisfies Equipment returned / active handover')
+  : fail('returned deployment failed gate: ' + JSON.stringify(clGatesDepDone));
+
+await expectError('agent', `select advance_stage($1, null)`, [clId],
+  'Stage gate not met: All provider leads must be completed and payment reconciled before closure (or documented via supervisor escalation).');
+
+await db.query(`update cases set report_status = 'delivered', feedback_rating = 5 where id = $1`, [clId]);
+
+// The coordinator raises and resolves the exception: not a waiver (it needs a senior resolver who did not raise it).
+const [{ id: escId }] = await as('coord', `insert into escalations (workspace_id, case_id, type, level, trigger_text, raised_by)
+  values ($1, $2, 'operational', 1, 'Client requested early discharge before full plan completion', $3) returning id`, [ws, clId, users.sup]);
+await as('coord', `update escalations set status = 'resolved', resolution_notes = 'Remaining visits waived', outcome = 'Remaining visits waived' where id = $1`, [escId]);
+const [{ g: clGatesSelf }] = await as('agent', `select case_gates($1) g`, [clId]);
+const [escRow] = (await db.query(`select raised_by, resolved_by from escalations where id = $1`, [escId])).rows;
+escRow.raised_by === users.coord && escRow.resolved_by === users.coord
+  ? ok('raised_by / resolved_by come from the signed-in user, not the screen')
+  : fail('escalation people: ' + JSON.stringify(escRow));
+!clGatesSelf.ready && !clGatesSelf.checks.find((x) => x.label === 'Pending payment/service documented & supervisor approved').ok
+  ? ok('coordinator-resolved exception does not waive payment / service')
+  : fail('self-resolved exception waived closure: ' + JSON.stringify(clGatesSelf));
+
+// The supervisor approves it by confirming the resolution text.
+await as('sup', `update escalations set resolution_notes = 'Supervisor approved closure with remaining visits waived', outcome = 'Waived' where id = $1`, [escId]);
+
+const [{ g: clGatesApproved }] = await as('agent', `select case_gates($1) g`, [clId]);
+const clExcApproved = clGatesApproved.checks.find((x) => x.label === 'Pending payment/service documented & supervisor approved');
+clGatesApproved.ready && clExcApproved?.ok
+  ? ok('supervisor escalation approves closure exception waiver')
+  : fail('approved escalation did not make gates ready: ' + JSON.stringify(clGatesApproved));
+
+await as('agent', `select advance_stage($1, 'Closed with approved supervisor exception')`, [clId]);
+const [closedCase] = (await db.query(`select stage, closed_at from cases where id = $1`, [clId])).rows;
+closedCase.stage === 'closed' && closedCase.closed_at
+  ? ok('advance_stage advanced case to closed')
+  : fail('case not closed: ' + JSON.stringify(closedCase));
+
 expect(problems).toEqual([]);
 }, 120000);

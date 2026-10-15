@@ -9,8 +9,8 @@ import {
   PageHead, Panel, Badge, Button, Modal, Field as F, Input, Select, Textarea, Segmented, Countdown, Empty, TableSkeleton, Skeleton, Confirm, useAction,
 } from '../components/ui.jsx';
 
-const TYPES = ['clinical', 'emergency', 'delay', 'complaint', 'privacy', 'sla'];
-const TYPE_LABEL = { clinical: 'Clinical', emergency: 'Emergency', delay: 'Field delay', complaint: 'Complaint', privacy: 'Privacy', sla: 'SLA breach' };
+const TYPES = ['clinical', 'emergency', 'delay', 'complaint', 'privacy', 'sla', 'operational', 'billing'];
+const TYPE_LABEL = { clinical: 'Clinical', emergency: 'Emergency', delay: 'Field delay', complaint: 'Complaint', privacy: 'Privacy', sla: 'SLA breach', operational: 'Operational', billing: 'Billing' };
 const typeKind = (t) => (['clinical', 'emergency'].includes(t) ? 'danger' : t === 'privacy' ? 'plum' : 'warn');
 const ACTORS = ['supervisor', 'coordinator', 'medical_desk', 'client_manager', 'client_clinical'];
 const fmtTarget = (m) => (m == null ? 'per DPA' : m === 0 ? 'Immediate' : m < 120 ? `${m} min` : m < 1440 ? `${m / 60} h` : `${m / 1440} d`);
@@ -135,7 +135,7 @@ export default function Escalations() {
       )}
       {modal?.kind === 'resolve' && (
         <Confirm title="Resolve escalation" confirmLabel="Resolve" needReason reasonLabel="Outcome (what was done, who confirmed)" busy={busy} onClose={() => setModal(null)}
-          onConfirm={(outcome) => patch(modal.e.id, { status: 'resolved', resolved_at: new Date().toISOString(), outcome, ...(modal.e.acknowledged_at ? {} : { acknowledged_by: profile.id, acknowledged_at: new Date().toISOString() }) }, 'Resolved and logged')}>
+          onConfirm={(outcome) => patch(modal.e.id, { status: 'resolved', resolved_at: new Date().toISOString(), outcome, resolution_notes: outcome, ...(modal.e.acknowledged_at ? {} : { acknowledged_by: profile.id, acknowledged_at: new Date().toISOString() }) }, 'Resolved and logged')}>
           <div className="small">{modal.e.trigger_text}</div>
         </Confirm>
       )}

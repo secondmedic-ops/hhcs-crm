@@ -59,7 +59,7 @@ export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert'
 
 /** Business actions and who may call them (each function checks again inside the database). */
 export const RPC: Record<string, readonly Role[]> = {
-  create_enquiry: OPS, advance_case: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
+  create_enquiry: OPS, advance_case: OPS, advance_stage: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
   record_consent: OPS, callback_update: OPS, set_my_availability: OPS,
   set_autodial: ['supervisor', 'admin', 'client_manager'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
   cleanup_whatsapp_autogen: ['admin', 'supervisor'],

@@ -11,6 +11,7 @@ import { db, q, rpc } from '../lib/db.js';
 import { useLoad } from '../lib/hooks.js';
 import { inr, date, dateTime, toLocalInput, fromLocalInput, istDateStr } from '../lib/fmt.js';
 import { Panel, Button, Badge, Modal, Field, Input, Select, Textarea, Segmented, Check, Skeleton, useAction } from '../components/ui.jsx';
+import { sendMessage } from '../lib/api.js';
 
 export const DISPOSITIONS = [
   ['requirement_captured', 'Requirement captured'], ['information_only', 'Information only'], ['price_enquiry', 'Price enquiry'],
@@ -29,17 +30,28 @@ export const JOURNEY = [['intake_logged', 'Intake logged'], ['onsite_assessed', 
   ['partner_dispatched', 'Partner dispatched'], ['setup_installed', 'Setup installed'], ['active_care', 'Active care'], ['closed', 'Discharge / closure']];
 const PAY_STATUS = { due: ['', 'Due'], overdue: ['danger', 'Overdue'], part_paid: ['warn', 'Part paid'], paid: ['ok', 'Paid'], waived: ['info', 'Waived'] };
 
-export function TransitionPanel({ c, services, people, items, canAct, can, profile }) {
+export function TransitionPanel({ c, services, people, items, canAct, can, profile, templates = [] }) {
   const pd = c.care_type === 'post_discharge';
   const assess = useLoad(() => (pd ? q(db.from('v_assessments').select('*').eq('case_id', c.id).order('created_at', { ascending: false }).limit(5)) : []),
     [c.id, pd, c.validation_status], ['discharge_assessments']);
   const [edit, setEdit] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [waRun, waBusy] = useAction();
   const latest = (assess.data || [])[0];
   const early = ['enquiry', 'pricing'].includes(c.stage);
   const canSchedule = can('coordinator', 'supervisor', 'medical_desk') && early;
   const canRecord = early && (can('coordinator', 'supervisor', 'medical_desk') || (can('field_staff') && latest?.nurse_id === profile?.id && latest.status === 'scheduled'));
   const [vk, vl] = VAL[c.validation_status] || ['', c.validation_status];
+
+  const sendAssessmentConfirmation = () => waRun(async () => {
+    let tplId = templates?.find((t) => t.code === 'T-09')?.id;
+    if (!tplId) {
+      const { data } = await q(db.from('templates').select('id').eq('code', 'T-09').eq('status', 'approved').single());
+      tplId = data?.id;
+    }
+    if (!tplId) throw new Error('Template T-09 not found or not approved');
+    await sendMessage(c.id, tplId);
+  }, 'Assessment confirmation sent on WhatsApp · T-09');
 
   if (!pd && !c.intake_disposition && !canAct) return null;
   return (
@@ -53,7 +65,14 @@ export function TransitionPanel({ c, services, people, items, canAct, can, profi
         <div className="col gap-12 mt-16">
           <div className="section-title">On-site clinical validation</div>
           {assess.loading ? <Skeleton lines={3} /> : latest ? <AssessmentView a={latest} /> : <div className="small muted">No hospital visit yet.</div>}
-          {canSchedule && c.validation_status !== 'done' && <ScheduleForm c={c} people={people} current={latest} onDone={assess.reload} />}
+          {latest?.status === 'scheduled' && (
+            <div className="row wrap gap-8">
+              <Button kind="primary" size="sm" icon="chat" disabled={waBusy} onClick={sendAssessmentConfirmation}>
+                {waBusy ? 'Sending…' : 'Send Assessment Confirmation WhatsApp'}
+              </Button>
+            </div>
+          )}
+          {canSchedule && c.validation_status !== 'done' && <ScheduleForm c={c} people={people} current={latest} onDone={assess.reload} templates={templates} onSendWhatsApp={sendAssessmentConfirmation} waBusy={waBusy} />}
           {canRecord && <div><Button size="sm" kind={c.validation_status === 'scheduled' ? 'primary' : ''} onClick={() => setRecording(true)}>
             {c.validation_status === 'done' ? 'Update validation and item list' : 'Record validation visit'}</Button></div>}
           {recording && <ValidationModal c={c} services={services} items={items} onClose={() => setRecording(false)} onDone={() => { setRecording(false); assess.reload(); }} />}
@@ -153,7 +172,7 @@ function AssessmentView({ a }) {
   );
 }
 
-function ScheduleForm({ c, people, current, onDone }) {
+function ScheduleForm({ c, people, current, onDone, templates = [], onSendWhatsApp, waBusy = false }) {
   const nurses = people.filter((p) => ['coordinator', 'field_staff'].includes(p.role));
   const [type, setType] = useState(current?.assessment_type || c.assessment_type || 'hospital_bedside');
   const [nurse, setNurse] = useState(current?.status === 'scheduled' ? current.nurse_id : '');
@@ -164,12 +183,30 @@ function ScheduleForm({ c, people, current, onDone }) {
     await rpc('schedule_validation', { p_case: c.id, p_nurse: nurse, p_when: fromLocalInput(when), p_type: type });
     onDone();
   }, `${isHome ? 'Home visit' : 'Hospital visit'} scheduled · nurse notified`);
+
+  const scheduleAndSendWa = () => run(async () => {
+    await rpc('schedule_validation', { p_case: c.id, p_nurse: nurse, p_when: fromLocalInput(when), p_type: type });
+    let tplId = templates?.find((t) => t.code === 'T-09')?.id;
+    if (!tplId) {
+      const { data } = await q(db.from('templates').select('id').eq('code', 'T-09').eq('status', 'approved').single());
+      tplId = data?.id;
+    }
+    if (tplId) {
+      await sendMessage(c.id, tplId);
+    }
+    onDone();
+  }, `${isHome ? 'Home visit' : 'Hospital visit'} scheduled & assessment confirmation sent on WhatsApp`);
+
   return (
     <div className="row wrap gap-8" style={{ alignItems: 'flex-end' }}>
       <Field label="Visit Location"><Select value={type} onChange={(e) => setType(e.target.value)} options={VISIT_LOCATIONS} /></Field>
       <Field label="Care coordinator (nurse)"><Select value={nurse} onChange={(e) => setNurse(e.target.value)} placeholder="Choose" options={nurses.map((p) => [p.id, p.full_name])} /></Field>
       <Field label={isHome ? 'Visit at home (IST)' : 'Visit at Hinduja (IST)'}><Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></Field>
       <Button disabled={!nurse || !when || busy} onClick={go}>{current?.status === 'scheduled' ? 'Reschedule' : 'Schedule visit'}</Button>
+      <Button kind="primary" disabled={!nurse || !when || busy} onClick={scheduleAndSendWa}>Schedule & Send WhatsApp</Button>
+      {current?.status === 'scheduled' && onSendWhatsApp && (
+        <Button kind="ghost" icon="chat" disabled={waBusy || busy} onClick={onSendWhatsApp}>Send Assessment Confirmation WhatsApp</Button>
+      )}
     </div>
   );
 }

@@ -1083,7 +1083,7 @@ function BmmIntegration() {
       <Check label="BMM has confirmed the connection format" checked={f.confirmed} onChange={e => setF({...f,confirmed:e.target.checked,enabled:e.target.checked && f.enabled})} />
       <Check label="Enable BMM system access" checked={f.enabled} disabled={!f.confirmed || !d.provider_logins || !d.provider_active} onChange={e => setF({...f,enabled:e.target.checked})} />
       <div><Button kind="primary" disabled={busy} onClick={save}>Save BMM settings</Button></div>
-      <div className="small">Only BMM-assigned services are shared. Patient details stay on hold until family sign-off. Calls, recordings, clinical validation and buying prices are excluded.</div>
+      <div className="small">Only service lines that are BMM's are shared: the provider chosen on the case line, otherwise the BMM service categories, in the unit agreed on the booking. Post-discharge patient details stay on hold until family sign-off. Calls, recordings, clinical validation and buying prices are excluded.</div>
       <dl className="kv"><dt>Retrieve leads</dt><dd className="mono small">GET /api/v1/bmm/leads</dd><dt>Update progress</dt><dd className="mono small">POST /api/v1/bmm/leads/&#123;id&#125;/status</dd></dl>
       <div className="tiny muted">Existing Provider leads and Excel status sync remain available while this connection is disabled.</div>
     </div>}
