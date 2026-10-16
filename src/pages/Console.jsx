@@ -140,6 +140,7 @@ export default function Console() {
   const [aiKeys, setAiKeys] = useState({});
   const [mode, setMode] = useState('known'); // known patient on file vs a different patient for this caller
   const [serviceCategory, setServiceCategory] = useState('');
+  const [diagnosticType, setDiagnosticType] = useState('');
   const [servicePick, setServicePick] = useState(''); // known patient on file vs a different patient for this caller
   const [paste, setPaste] = useState('');
   const [extracted, setExtracted] = useState(null);
@@ -170,7 +171,7 @@ export default function Console() {
   const cls = (k) => (aiKeys[k] ? 'ai-filled' : '');
 
   // fresh form per call
-  useEffect(() => { setF(BLANK); setAiKeys({}); setExtracted(null); setPaste(''); setMode('known'); setServiceCategory(''); setServicePick(''); }, [linkedId]);
+  useEffect(() => { setF(BLANK); setAiKeys({}); setExtracted(null); setPaste(''); setMode('known'); setServiceCategory(''); setDiagnosticType(''); setServicePick(''); }, [linkedId]);
   // visit address defaults to the address on file
   useEffect(() => {
     const p = known.data;
@@ -209,13 +210,19 @@ export default function Console() {
   const svcById = useMemo(() => Object.fromEntries((services.data || []).map((s) => [s.id, s])), [services.data]);
   const svcGroups = useMemo(() => {
     const g = {};
-    (services.data || []).forEach((s) => { (g[s.category] = g[s.category] || []).push(s); });
-    const order = ['ecg', 'xray', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'equipment', 'icu', 'consumables', 'visit', 'other'];
+    (services.data || []).forEach((s) => {
+      const cat = ['ecg', 'xray'].includes(s.category) ? 'diagnostic' : s.category;
+      (g[cat] = g[cat] || []).push(s);
+    });
+    const order = ['diagnostic', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'equipment', 'icu', 'consumables', 'visit', 'other'];
     return Object.entries(g).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
   }, [services.data]);
+  const categoryServices = svcGroups.find(([cat]) => cat === serviceCategory)?.[1] || [];
+  const diagnosticOptions = [['ecg', 'ECG'], ['xray', 'X-ray']]
+    .filter(([cat]) => categoryServices.some((s) => s.category === cat));
   const selectedServices = f.service_ids.map((id) => svcById[id]).filter(Boolean);
-  const availableServices = (svcGroups.find(([cat]) => cat === serviceCategory)?.[1] || [])
-    .filter((s) => !f.service_ids.includes(s.id));
+  const availableServices = categoryServices
+    .filter((s) => (serviceCategory !== 'diagnostic' || s.category === diagnosticType) && !f.service_ids.includes(s.id));
   const canDownloadQuote = selectedServices.length > 0
     && selectedServices.length === f.service_ids.length
     && selectedServices.every((s) => Number(s.price) > 0);
@@ -320,7 +327,7 @@ export default function Console() {
           toast.ok(`Case ${out.case_no} created`);
         }
         setF(BLANK); setAiKeys({});
-        setServiceCategory(''); setServicePick('');
+        setServiceCategory(''); setDiagnosticType(''); setServicePick('');
         if (!sharePdf) nav(`/cases/${out.case_id}`);
       }
     } finally {
@@ -513,14 +520,21 @@ export default function Console() {
                     <div className="col gap-12">
                       <div className="form-grid">
                         <Field label="Service category">
-                          <Select value={serviceCategory} onChange={(e) => { setServiceCategory(e.target.value); setServicePick(''); }}
-                            options={svcGroups.map(([cat]) => [cat, `${CATEGORY[cat] || cat}${providerFor(cat) ? ` · ${providerFor(cat)}` : ''}`])}
+                          <Select value={serviceCategory} onChange={(e) => { setServiceCategory(e.target.value); setDiagnosticType(''); setServicePick(''); }}
+                            options={svcGroups.map(([cat]) => [cat, cat === 'diagnostic' ? 'Diagnostic' : `${CATEGORY[cat] || cat}${providerFor(cat) ? ` · ${providerFor(cat)}` : ''}`])}
                             placeholder="Choose a category" aria-label="Rate card service category" />
                         </Field>
+                        {serviceCategory === 'diagnostic' && (
+                          <Field label="Diagnostic service">
+                            <Select value={diagnosticType} onChange={(e) => { setDiagnosticType(e.target.value); setServicePick(''); }}
+                              options={diagnosticOptions.map(([cat, label]) => [cat, label + (providerFor(cat) ? ' · ' + providerFor(cat) : '')])}
+                              placeholder="Choose ECG or X-ray" aria-label="Diagnostic service" />
+                          </Field>
+                        )}
                         <Field label="Rate-card product">
                           <Select value={servicePick} onChange={(e) => setServicePick(e.target.value)}
                             options={availableServices.map((s) => [s.id, `${s.name} · ${Number(s.price) > 0 ? inr(s.price) : 'quote required'}${s.unit && s.unit !== 'unit' ? ` per ${s.unit}` : ''}`])}
-                            placeholder={serviceCategory ? 'Choose a product' : 'Choose a category first'} aria-label="Rate card product"
+                            placeholder={!serviceCategory ? 'Choose a category first' : serviceCategory === 'diagnostic' && !diagnosticType ? 'Choose a diagnostic service first' : 'Choose a product'} aria-label="Rate card product"
                             disabled={!serviceCategory || !availableServices.length} />
                         </Field>
                         <div className="row" style={{ alignItems: 'flex-end' }}>
