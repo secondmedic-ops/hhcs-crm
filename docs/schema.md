@@ -717,6 +717,23 @@
 | critical_note | text | YES |
 | file_url | text | YES |
 
+## service_knowledge
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| service_id | uuid | YES |
+| category | text | YES |
+| summary | text | YES |
+| who_needs | text | YES |
+| ask_caller | text | YES |
+| includes | text | YES |
+| excludes | text | YES |
+| prep | text | YES |
+| faq | text | YES |
+| updated_by | uuid | YES |
+| updated_at | timestamp with time zone | NO |
+
 ## service_price_history
 | column | type | nullable |
 |---|---|---|

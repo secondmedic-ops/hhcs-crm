@@ -1054,6 +1054,16 @@
       "client_clinical",
       "admin"
     ],
+    "service_knowledge": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin"
+    ],
     "v_cases": [
       "agent",
       "coordinator",
@@ -1635,6 +1645,14 @@
       "admin"
     ],
     "end_provider_rate": [
+      "supervisor",
+      "admin"
+    ],
+    "save_service_knowledge": [
+      "supervisor",
+      "admin"
+    ],
+    "import_service_knowledge": [
       "supervisor",
       "admin"
     ],
