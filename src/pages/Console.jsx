@@ -587,7 +587,14 @@ export default function Console() {
                       </Field>
                     )}
                     <Field label="Request note" hint="as the caller said it" className="span2"><Input value={f.services_requested} onChange={set('services_requested')} placeholder="e.g. Fasting blood sugar, doctor's prescription on WhatsApp" /></Field>
-                    <Field label="Preferred slot" hint="IST"><Input type="datetime-local" className={cls('preferred_slot')} value={f.preferred_slot} onChange={set('preferred_slot')} /></Field>
+                    <div className="span2">
+                      <div className="section-title mb-8">Discharge and service start</div>
+                      <div className="form-grid">
+                        <Field label="Expected discharge date" hint="when the family expects discharge, not confirmed"><Input type="date" value={f.expected_discharge_on} onChange={set('expected_discharge_on')} /></Field>
+                        <Field label="Requested service start date" hint="when the family wants home care to begin"><Input type="date" value={f.requested_service_start_on} onChange={set('requested_service_start_on')} /></Field>
+                      </div>
+                      <div className="tiny faint mt-8">Optional. Saving these books nothing and starts nothing. Callbacks are scheduled in the callback queue; the preferred slot is the visit time.</div>
+                    </div>
                     <Field label="Priority">
                       <div className="btn-group">
                         {[['routine', 'Routine'], ['urgent', 'Urgent']].map(([v, l]) => (
@@ -601,12 +608,9 @@ export default function Console() {
                 </section>
 
                 <section>
-                  <div className="section-title mb-8">Discharge and service start</div>
                   <div className="form-grid">
-                    <Field label="Expected discharge date" hint="when the family expects discharge, not confirmed"><Input type="date" value={f.expected_discharge_on} onChange={set('expected_discharge_on')} /></Field>
-                    <Field label="Requested service start date" hint="when the family wants home care to begin"><Input type="date" value={f.requested_service_start_on} onChange={set('requested_service_start_on')} /></Field>
+                    <Field label="Preferred slot" hint="IST"><Input type="datetime-local" className={cls('preferred_slot')} value={f.preferred_slot} onChange={set('preferred_slot')} /></Field>
                   </div>
-                  <div className="tiny faint mt-8">Optional. Saving these books nothing and starts nothing. Callbacks are scheduled in the callback queue; the preferred slot is the visit time.</div>
                 </section>
 
                 <div className={`consent-box ${f.consent ? 'on' : ''}`}>
