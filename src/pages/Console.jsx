@@ -21,7 +21,7 @@ const BLANK = {
   full_name: '', age: '', gender: '', mobile: '', email: '',
   address: '', landmark: '', locality: '', pincode: '',
   services_requested: '', preferred_slot: '', priority: 'routine', source_channel: 'phone', referral_subtype: '', clinical_notes: '',
-  service_ids: [], consent: false, confirm_mobile: '', branch: '', additional_info: '',
+  nursing_shift: '', service_ids: [], consent: false, confirm_mobile: '', branch: '', additional_info: '',
   expected_discharge_on: '', requested_service_start_on: '',
 };
 const RELATIONS = [['self', 'Self'], ['son', 'Son'], ['daughter', 'Daughter'], ['wife', 'Wife'], ['husband', 'Husband'], ['parent', 'Parent'], ['relative', 'Relative'], ['caregiver', 'Caregiver'], ['doctor', 'Doctor / clinic'], ['other', 'Other']];
@@ -29,6 +29,7 @@ const GENDERS = [['M', 'Male'], ['F', 'Female'], ['O', 'Other']];
 const CHANNELS = [['phone', 'Phone'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['chat', 'Chat'], ['walkin', 'Walk-in'], ['referral', 'Referral']];
 const CATEGORY = { lab: 'Blood tests · sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy',
   beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home healthcare', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
+const NURSING_SHIFTS = [['day', 'Day Shift'], ['night', 'Night Shift']];
 const PATIENT_KEYS = ['full_name', 'age', 'gender', 'mobile'];
 const FALLBACK_CONSENT = 'This call is recorded for quality and your records. May we record and use these details to arrange your service?';
 
@@ -221,17 +222,22 @@ export default function Console() {
   const diagnosticOptions = [['ecg', 'ECG'], ['xray', 'X-ray']]
     .filter(([cat]) => categoryServices.some((s) => s.category === cat));
   const selectedServices = f.service_ids.map((id) => svcById[id]).filter(Boolean);
+  const hasNursing = selectedServices.some((s) => s.category === 'nursing');
+  const nursingShiftLabel = NURSING_SHIFTS.find(([value]) => value === f.nursing_shift)?.[1];
   const availableServices = categoryServices
     .filter((s) => (serviceCategory !== 'diagnostic' || s.category === diagnosticType) && !f.service_ids.includes(s.id));
   const canDownloadQuote = selectedServices.length > 0
     && selectedServices.length === f.service_ids.length
     && selectedServices.every((s) => Number(s.price) > 0);
   const addSvc = () => {
-    if (!servicePick || f.service_ids.includes(servicePick)) return;
+    if (!servicePick || f.service_ids.includes(servicePick) || (svcById[servicePick]?.category === 'nursing' && !nursingShiftLabel)) return;
     setF((x) => ({ ...x, service_ids: [...x.service_ids, servicePick] }));
     setServicePick('');
   };
-  const removeSvc = (id) => setF((x) => ({ ...x, service_ids: x.service_ids.filter((i) => i !== id) }));
+  const removeSvc = (id) => setF((x) => {
+    const ids = x.service_ids.filter((i) => i !== id);
+    return { ...x, service_ids: ids, nursing_shift: ids.some((i) => svcById[i]?.category === 'nursing') ? x.nursing_shift : '' };
+  });
 
   const scriptVars = (body) => body
     .replaceAll('{{brand}}', workspace?.brand_name || 'Hinduja Home Care Services')
@@ -255,6 +261,7 @@ export default function Console() {
   if (!f.address.trim()) problems.push('address');
   if (f.pincode && !/^\d{6}$/.test(f.pincode)) problems.push('6-digit pincode');
   if (!f.service_ids.length && !f.services_requested.trim()) problems.push('services');
+  if (hasNursing && !nursingShiftLabel) problems.push('nursing shift');
   if (f.caller_mobile && !normMobile(f.caller_mobile)) problems.push('valid caller mobile');
   if (branches.length && !f.branch) problems.push('branch');
   if (!c && f.source_channel === 'referral' && !f.referral_subtype) problems.push('referring source');
@@ -290,7 +297,7 @@ export default function Console() {
           source_channel: c ? 'phone' : f.source_channel,
           referral_subtype: !c && f.source_channel === 'referral' ? (f.referral_subtype || null) : null,
           priority: f.priority,
-          services_requested: f.services_requested, clinical_notes: f.clinical_notes, branch: f.branch || null, additional_info: f.additional_info.trim() || null,
+          services_requested: f.services_requested, clinical_notes: f.clinical_notes, branch: f.branch || null, additional_info: [f.additional_info.trim(), hasNursing ? `Nursing shift: ${nursingShiftLabel}` : ''].filter(Boolean).join('\n') || null,
           preferred_slot: fromLocalInput(f.preferred_slot),
           expected_discharge_on: f.expected_discharge_on || null, requested_service_start_on: f.requested_service_start_on || null,
           consent: true, call_id: c?.id || null, service_ids: f.service_ids,
@@ -531,6 +538,12 @@ export default function Console() {
                               placeholder="Choose ECG or X-ray" aria-label="Diagnostic service" />
                           </Field>
                         )}
+                        {(serviceCategory === 'nursing' || hasNursing) && (
+                          <Field label="Nursing shift" hint="applies to Nursing products in this enquiry">
+                            <Select value={f.nursing_shift} onChange={set('nursing_shift')} options={NURSING_SHIFTS}
+                              placeholder="Choose a shift" aria-label="Nursing shift" />
+                          </Field>
+                        )}
                         <Field label="Rate-card product">
                           <Select value={servicePick} onChange={(e) => setServicePick(e.target.value)}
                             options={availableServices.map((s) => [s.id, `${s.name} · ${Number(s.price) > 0 ? inr(s.price) : 'quote required'}${s.unit && s.unit !== 'unit' ? ` per ${s.unit}` : ''}`])}
@@ -538,7 +551,7 @@ export default function Console() {
                             disabled={!serviceCategory || !availableServices.length} />
                         </Field>
                         <div className="row" style={{ alignItems: 'flex-end' }}>
-                          <Button icon="plus" disabled={!servicePick} onClick={addSvc}>Add product</Button>
+                          <Button icon="plus" disabled={!servicePick || (svcById[servicePick]?.category === 'nursing' && !nursingShiftLabel)} onClick={addSvc}>Add product</Button>
                         </div>
                       </div>
                       {selectedServices.length > 0 && (
@@ -547,7 +560,7 @@ export default function Console() {
                             <div key={s.id} className="list-row">
                               <div className="grow">
                                 <div className="small"><strong>{s.name}</strong></div>
-                                <div className="tiny muted">{CATEGORY[s.category] || s.category} · {Number(s.price) > 0 ? inr(s.price) : 'provider quote required'}</div>
+                                <div className="tiny muted">{CATEGORY[s.category] || s.category}{s.category === 'nursing' && nursingShiftLabel ? ` · ${nursingShiftLabel}` : ''} · {Number(s.price) > 0 ? inr(s.price) : 'provider quote required'}</div>
                               </div>
                               <Button size="xs" kind="ghost" icon="x" aria-label={`Remove ${s.name}`} onClick={() => removeSvc(s.id)} />
                             </div>
