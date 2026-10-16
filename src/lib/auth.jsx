@@ -20,6 +20,7 @@ export const NAV = [
   { to: '/field', label: 'Dispatch board', icon: 'pin', roles: ['coordinator', 'supervisor', 'client_manager'] },
   { to: '/my-visits', label: 'My visits', icon: 'pin', roles: ['field_staff'] },
   { to: '/checklist', label: 'Assessment checklist', icon: 'list', roles: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/knowledge', label: 'Product knowledge', icon: 'note', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical', 'admin'] },
   { to: '/approvals', label: 'Approvals', icon: 'stamp', roles: ['client_manager', 'supervisor', 'coordinator', 'admin'], badge: 'approvals' },
   { to: '/escalations', label: 'Escalations', icon: 'flag', roles: ['coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'escalations' },
   { to: '/complaints', label: 'Complaints', icon: 'alert', roles: ['agent', 'coordinator', 'supervisor', 'client_manager', 'client_clinical', 'medical_desk'] },

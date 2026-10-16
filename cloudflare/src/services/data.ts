@@ -36,6 +36,7 @@ export const READ: Record<string, readonly Role[]> = {
   // buying rates and imports: SecondMedic rate managers (and coordinators for the buying card); RLS narrows again.
   // Booking costs and margins are not tables here: only case_margins / margin_report return them.
   provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
+  service_knowledge: ALL,
   v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
 };
 
@@ -90,6 +91,7 @@ export const RPC: Record<string, readonly Role[]> = {
   dashboard_kpis: ALL,
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   rate_import_check: RATE_MANAGERS, submit_rate_import: RATE_MANAGERS, set_provider_rate: RATE_MANAGERS, end_provider_rate: RATE_MANAGERS,
+  save_service_knowledge: RATE_MANAGERS, import_service_knowledge: RATE_MANAGERS,
   refresh_case_prices: OPS, set_item_provider: COMMERCIAL, case_margins: COMMERCIAL, margin_report: COMMERCIAL,
 };
 /** Read-only actions that may ride in a batch. */

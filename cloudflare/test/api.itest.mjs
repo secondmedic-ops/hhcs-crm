@@ -70,6 +70,10 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await rpc('client', 'create_enquiry', { p: {} })).status === 403, 'Hinduja management cannot create enquiries');
   check((await rpc('agent', 'decide_approval', { p_id: ws, p_approve: true, p_note: 'x' })).status === 403, 'agent cannot decide approvals');
   check((await rpc('agent', 'sla_scan')).status === 403, 'system-only function not callable');
+  check((await rpc('agent', 'save_service_knowledge', { p: { category: 'lab', summary: 'x' } })).status === 403, 'agent cannot edit product knowledge');
+  check((await rpc('agent', 'import_service_knowledge', { p_rows: [] })).status === 403, 'agent cannot import product knowledge');
+  check((await batch('agent', [sel('service_knowledge')])).status === 200, 'agent reads product knowledge');
+  check((await rpc('sup', 'save_service_knowledge', { p: { category: 'lab', faq: 'Reports on WhatsApp.' } })).status === 200, 'supervisor edits product knowledge');
   check((await data('agent', 'workspaces', { op: 'update', patch: { brand_name: 'x' }, filters: [{ col: 'id', op: 'eq', val: ws }] })).status === 403, 'agent cannot change workspace settings');
   check((await batch('agent', [sel('audit_log')])).status === 403, 'agent cannot read the audit log');
   check((await batch('sup', [sel('webhook_events')])).status === 403, 'webhook events not readable as a table');

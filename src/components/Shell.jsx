@@ -10,7 +10,7 @@ import { Avatar, Button, Badge, useToast } from './ui.jsx';
 import { DEMO_USERS } from '../demo/seed.js';
 
 const GROUPS = [
-  ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits', '/checklist']],
+  ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits', '/checklist', '/knowledge']],
   ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
   ['Configure', ['/settings']],
 ];

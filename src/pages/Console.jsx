@@ -14,6 +14,7 @@ import {
 } from '../components/ui.jsx';
 import { LiveCallBar, useCalls } from '../components/CallCenter.jsx';
 import Icon from '../components/icons.jsx';
+import { KnowledgePanel } from '../components/ProductKnowledge.jsx';
 
 const BLANK = {
   caller_name: '', caller_relation: '', caller_mobile: '',
@@ -620,6 +621,8 @@ export default function Console() {
               </div>
             )}
           </Panel>
+
+          <KnowledgePanel onOpenAll={() => nav('/knowledge')} />
 
           <Panel title="Callbacks due" sub="Missed and abandoned calls · 10 min target" actions={<a className="small" href="/callbacks" onClick={(e) => { e.preventDefault(); nav('/callbacks'); }}>Queue</a>} tight>
             {callbacks.loading ? <div className="panel-body"><TableSkeleton rows={3} cols={2} /></div> : !callbacks.data?.length ? <Empty title="No callbacks waiting" /> : callbacks.data.map((cb) => (
