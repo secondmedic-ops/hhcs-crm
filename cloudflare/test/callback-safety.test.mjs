@@ -96,3 +96,77 @@ test('callback eligibility, retry boundaries, reservations, reconciliation and w
     await expect(db.query('select autodial_claim()')).rejects.toThrow('System only');
   } finally { await db.close(); }
 }, 120000);
+
+test('initial callback delay: eligibility from the original call end time, retry window untouched', async () => {
+  const db = new PGlite();
+  try {
+    const dir = join(import.meta.dirname, '../../supabase/migrations');
+    for (const f of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) await db.exec(readFileSync(join(dir,f),'utf8'));
+    const one = async (sql, params = []) => (await db.query(sql,params)).rows[0];
+    const ws = (await one("select id from workspaces where code='HHC'")).id;
+    const agent = '11111111-1111-4111-8111-111111111111';
+    await db.query("insert into profiles(id,workspace_id,full_name,role,myoperator_user_id,available,available_since) values ($1,$2,'Test agent','agent','mo-a',true,now())", [agent,ws]);
+    await db.exec("select set_config('request.jwt.claim.role','service_role',false)");
+    const claim = async () => (await one('select autodial_claim() c')).c;
+    const clean = async () => { await db.exec("delete from callbacks; delete from calls; update profiles set available=true,active=true"); };
+    const setCfg = async (delay, buffer, attempts, enabled) => db.query("update workspaces set settings = settings || jsonb_build_object('autodial',jsonb_build_object('enabled',$4::boolean,'initial_delay_minutes',$1::int,'buffer_minutes',$2::int,'max_attempts',$3::int)) where id=$5",[delay,buffer,attempts,enabled,ws]);
+    const missedCall = async (endedMinutesAgo) => (await one(
+      "insert into calls(workspace_id,direction,customer_number,status,started_at,ended_at) values ($1,'inbound','+919800000002','missed',now() - ($2::int * interval '1 minute') - interval '1 minute', now() - ($2::int * interval '1 minute')) returning *",
+      [ws, endedMinutesAgo]));
+    const queueFromCall = async (call) => (await one(
+      "insert into callbacks(workspace_id,call_id,number,due_at) values ($1,$2,'+919800000002',now()+interval '30 minutes') returning *",[ws,call.id]));
+    // 1. Eligibility matrix: delay 0/30/45/60 against how long ago the original missed call ended.
+    //    30-min delay + call ended 15 min ago must NOT dial (the 10:00 call must not dial at 10:15);
+    //    the same delay with the call ended 30 min ago must dial at the first eligible minute.
+    for (const [delay, endedAgo, expectDial] of [[0, 0, true], [30, 15, false], [30, 30, true], [45, 30, false], [45, 60, true], [60, 59, false], [30, 120, true]]) {
+      await clean(); await setCfg(delay, 30, 3, true);
+      const call = await missedCall(endedAgo);
+      const cb = await queueFromCall(call);
+      const expectedEligible = new Date(Math.max(new Date(call.ended_at).getTime() + delay*60000, new Date(cb.created_at).getTime()));
+      expect(Math.abs(new Date(cb.eligible_at) - expectedEligible)).toBeLessThan(2000);
+      // the retry window starts at first eligibility, so the delay does not consume it
+      expect(Math.abs(new Date(cb.due_at) - (new Date(cb.eligible_at).getTime() + 30*60000))).toBeLessThan(2000);
+      const out = await claim();
+      expect(out.length === 1).toBe(expectDial);
+      if (!expectDial) {
+        expect((await one('select status from callbacks where id=$1',[cb.id])).status).toBe('pending');
+        // after eligibility, an available advisor is dialled on the next scheduler run
+        await db.query("update callbacks set eligible_at = now() - interval '1 minute', next_attempt_at = now() - interval '1 minute' where id=$1",[cb.id]);
+        expect((await claim()).length).toBe(1);
+      }
+    }
+    // 2. Fallback: no original call end time available -> eligible at callback creation.
+    await clean(); await setCfg(30, 30, 3, true);
+    const fallback = await one("insert into callbacks(workspace_id,number,due_at) values ($1,'+919800000002',now()+interval '30 minutes') returning *",[ws]);
+    expect(Math.abs(new Date(fallback.eligible_at) - new Date(fallback.created_at))).toBeLessThan(2000);
+    expect((await claim()).length).toBe(1);
+    // 3. Busy / no eligible agent while eligible: nothing dialled; dialled once one frees up.
+    await clean(); await setCfg(30, 30, 3, true);
+    const busyCall = await missedCall(60);
+    const busyCb = await queueFromCall(busyCall);
+    await db.query("update profiles set available=false where id=$1",[agent]);
+    expect((await claim()).length).toBe(0);
+    await db.query("update profiles set available=true where id=$1",[agent]);
+    expect((await claim()).length).toBe(1);
+    // duplicate delivery of the same missed call is one callback row per original call (app guard covered elsewhere)
+    expect((await one('select count(*) n from callbacks where call_id=$1',[busyCall.id])).n).toBe(1);
+    // 4. Failed attempt after a delayed start: retry spacing from the attempt, deadline still eligible_at + window.
+    await clean(); await setCfg(60, 30, 3, true);
+    const retryCall = await missedCall(70);
+    const retryCb = await queueFromCall(retryCall);
+    const [k] = await claim();
+    await db.query("update calls set status='failed',ended_at=now() where id=$1",[k.call_id]);
+    expect((await one("select callback_retry($1,'customer did not answer') r",[retryCb.id])).r).toBe('pending');
+    const after = await one('select * from callbacks where id=$1',[retryCb.id]);
+    expect(new Date(after.due_at) > new Date(after.next_attempt_at)).toBe(true);
+    // customer connection closes it as reached; a recorded outcome would then close it as done (covered above)
+    await db.query("update calls set status='answered',answered_at=now() where id=$1",[k.call_id]);
+    await one('select callback_connected($1)',[k.call_id]);
+    expect((await one('select status from callbacks where id=$1',[retryCb.id])).status).toBe('reached');
+    // 5. Immediate default unchanged when the delay setting is absent.
+    await clean(); await db.exec("update workspaces set settings = settings - 'autodial' || jsonb_build_object('autodial',jsonb_build_object('enabled',true,'buffer_minutes',30,'max_attempts',3))");
+    const imm = await one("insert into callbacks(workspace_id,number,due_at) values ($1,'+919800000002',now()+interval '30 minutes') returning *",[ws]);
+    expect(Math.abs(new Date(imm.eligible_at) - new Date(imm.created_at))).toBeLessThan(2000);
+    expect((await claim()).length).toBe(1);
+  } finally { await db.close(); }
+}, 120000);

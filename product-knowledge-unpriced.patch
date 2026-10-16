@@ -1,0 +1,56 @@
+diff --git a/src/components/ProductKnowledge.jsx b/src/components/ProductKnowledge.jsx
+index f74b676..39ae2cc 100644
+--- a/src/components/ProductKnowledge.jsx
++++ b/src/components/ProductKnowledge.jsx
+@@ -44,6 +44,8 @@ export function useCatalogue() {
+ }
+ 
+ const norm = (s) => String(s || '').toLowerCase();
++/** Rate-card price for agents: a price of 0 is a placeholder, never a price to read out. */
++export const priceText = (price) => (Number(price) > 0 ? inr(price) : 'Not priced, quote after assessment');
+ export function matches(row, term) {
+   const t = norm(term).trim();
+   if (!t) return true;
+@@ -56,7 +58,7 @@ export function KnowledgeBody({ row }) {
+   return (
+     <div className="col gap-12">
+       {row.price != null && <div className="row wrap gap-4 small">
+-        <strong>{inr(row.price)}</strong><span className="muted">per {row.unit || 'unit'}</span>
++        <strong>{priceText(row.price)}</strong>{Number(row.price) > 0 && <span className="muted">per {row.unit || 'unit'}</span>}
+         {row.tat_hours ? <span className="muted">· report / start within {row.tat_hours} h</span> : null}
+         <span className="muted">· delivered by {row.delivered.length ? row.delivered.join(', ') : 'not routed yet'}</span>
+       </div>}
+@@ -91,7 +93,7 @@ export function KnowledgePanel({ onOpenAll }) {
+           <div key={r.id} className="list-row click" style={{ display: 'block' }} onClick={() => setOpen(open === r.id ? null : r.id)}>
+             <div className="row between gap-12">
+               <div className="small grow"><span className="mono">{r.code}</span> · {r.name}</div>
+-              <span className="small">{inr(r.price)}<span className="tiny muted"> / {r.unit || 'unit'}</span></span>
++              <span className="small">{priceText(r.price)}{Number(r.price) > 0 && <span className="tiny muted"> / {r.unit || 'unit'}</span>}</span>
+             </div>
+             <div className="tiny muted truncate">{CAT_LABEL[r.category] || r.category}{r.delivered.length ? ` · ${r.delivered.join(', ')}` : ''}{r.kbSource === 'none' ? ' · no notes yet' : ''}</div>
+             {open === r.id && <div className="mt-12" onClick={(e) => e.stopPropagation()}><KnowledgeBody row={r} /></div>}
+diff --git a/src/pages/Knowledge.jsx b/src/pages/Knowledge.jsx
+index 91bea91..cac97e8 100644
+--- a/src/pages/Knowledge.jsx
++++ b/src/pages/Knowledge.jsx
+@@ -4,9 +4,9 @@ import { useMemo, useState } from 'react';
+ import * as XLSX from 'xlsx';
+ import { db, q, rpc } from '../lib/db.js';
+ import { useAuth, roleAllows } from '../lib/auth.jsx';
+-import { inr, num, ago } from '../lib/fmt.js';
++import { num, ago } from '../lib/fmt.js';
+ import { PageHead, Panel, Kpi, Tabs, Segmented, Button, Input, Field, Textarea, Drawer, Empty, ErrorNote, TableSkeleton, useAction, useToast } from '../components/ui.jsx';
+-import { useCatalogue, matches, KnowledgeBody, KB_FIELDS, CAT_LABEL, kbBadge } from '../components/ProductKnowledge.jsx';
++import { useCatalogue, matches, KnowledgeBody, KB_FIELDS, CAT_LABEL, kbBadge, priceText } from '../components/ProductKnowledge.jsx';
+ 
+ // Standard interaction reasons (cases.intake_disposition) with when to use each, for agent training.
+ const DISPOSITION_GUIDE = [
+@@ -71,7 +71,7 @@ export default function Knowledge() {
+                 <tr key={r.id} className="click" onClick={() => setOpen({ kind: 'service', row: r })}>
+                   <td><span className="mono small">{r.code}</span><div>{r.name}</div></td>
+                   <td className="small">{CAT_LABEL[r.category] || r.category}</td>
+-                  <td className="num">{inr(r.price)}<div className="tiny muted">per {r.unit || 'unit'}</div></td>
++                  <td className="num">{priceText(r.price)}{Number(r.price) > 0 && <div className="tiny muted">per {r.unit || 'unit'}</div>}</td>
+                   <td className="small">{r.delivered.join(', ') || <span className="muted">not routed</span>}</td>
+                   <td>{kbBadge(r.kbSource)}</td>
+                 </tr>

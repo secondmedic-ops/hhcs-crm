@@ -5,7 +5,7 @@ import { db, q, rpc, isDemo } from '../lib/db.js';
 import { useLoad, useDebounced } from '../lib/hooks.js';
 import { roleAllows, useAuth } from '../lib/auth.jsx';
 import { aiCall, recordingUrl } from '../lib/api.js';
-import { num, pct, dur, time, date, dateTime, istDayRange } from '../lib/fmt.js';
+import { num, pct, dur, time, date, dateTime, istDayRange, toLocalInput, fromLocalInput } from '../lib/fmt.js';
 import {
   PageHead, Panel, Kpi, Segmented, Button, Badge, TableSkeleton, Skeleton, Empty, ErrorNote, AiTag, Drawer, Field, Input, Select, Textarea, Check, useAction,
 } from '../components/ui.jsx';
@@ -129,10 +129,26 @@ function CallDrawer({ id, onClose }) {
   const [recBusy, setRecBusy] = useState(false);
   const [showTx, setShowTx] = useState(false);
   const [analysing, setAnalysing] = useState(false);
+  const [wrapEditing, setWrapEditing] = useState(false);
+  const [wrapDisp, setWrapDisp] = useState('');
+  const [wrapAct, setWrapAct] = useState('');
+  const [wrapNotes, setWrapNotes] = useState('');
+  const [needFollowup, setNeedFollowup] = useState(false);
+  const [wrapFollowupAt, setWrapFollowupAt] = useState('');
   const c = call.data;
 
   useEffect(() => { setSrc(null); setShowTx(false); }, [id]);
   useEffect(() => () => { if (src) URL.revokeObjectURL(src); }, [src]);
+  useEffect(() => {
+    if (c) {
+      setWrapDisp(c.disposition || '');
+      setWrapAct(c.action_taken || '');
+      setWrapNotes(c.notes || '');
+      setNeedFollowup(!!c.followup_at);
+      setWrapFollowupAt(c.followup_at ? toLocalInput(c.followup_at) : '');
+      setWrapEditing(false);
+    }
+  }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadRecording = async () => {
     setRecBusy(true);
@@ -149,6 +165,22 @@ function CallDrawer({ id, onClose }) {
     await run(() => aiCall(id), 'AI summary ready');
     setAnalysing(false);
     call.reload(); qa.reload();
+  };
+
+  const saveWrapup = async () => {
+    await run(async () => {
+      await rpc('wrap_up_call', {
+        p_call: id,
+        p: {
+          disposition: wrapDisp || null,
+          action_taken: wrapAct.trim() || null,
+          notes: wrapNotes.trim() || null,
+          followup_at: needFollowup && wrapFollowupAt ? fromLocalInput(wrapFollowupAt) : null,
+        },
+      });
+      setWrapEditing(false);
+      call.reload();
+    }, 'Call wrap-up saved');
   };
 
   const ex = c?.ai_extracted || {};
@@ -169,9 +201,56 @@ function CallDrawer({ id, onClose }) {
             <dt>Started</dt><dd className="mono">{dateTime(c.started_at)}</dd>
             <dt>Ring · talk</dt><dd className="mono">{c.ring_seconds ?? '–'} s · {dur(c.talk_seconds)}</dd>
             {c.disposition && <><dt>Disposition</dt><dd>{c.disposition}</dd></>}
+            {c.action_taken && <><dt>Action taken</dt><dd>{c.action_taken}</dd></>}
+            {c.followup_at && <><dt>Follow-up</dt><dd className="mono">{dateTime(c.followup_at)}</dd></>}
             {c.notes && <><dt>Notes</dt><dd>{c.notes}</dd></>}
             <dt>Provider</dt><dd className="small muted">{c.provider} · {c.did_number ? `${c.line_label || 'Line'} · ${c.did_number}` : 'click-to-call'}</dd>
           </dl>
+
+          {can('agent', 'coordinator', 'supervisor', 'medical_desk') && (
+            <section>
+              <div className="row between mb-8">
+                <div className="section-title">Call wrap-up</div>
+                {!wrapEditing && (
+                  <Button size="xs" kind="ghost" icon="edit" onClick={() => setWrapEditing(true)}>
+                    {c.disposition || c.action_taken ? 'Edit wrap-up' : 'Record wrap-up'}
+                  </Button>
+                )}
+              </div>
+              {wrapEditing ? (
+                <div className="col gap-12 panel" style={{ padding: 12 }}>
+                  <Field label="Enquiry disposition">
+                    <Select value={wrapDisp} onChange={(e) => setWrapDisp(e.target.value)} placeholder="Choose interaction reason"
+                      options={[
+                        ['requirement_captured', 'Requirement captured'], ['information_only', 'Information only'], ['price_enquiry', 'Price enquiry'],
+                        ['follow_up_requested', 'Follow-up requested'], ['not_interested', 'Not interested'], ['already_arranged', 'Already arranged elsewhere'],
+                        ['wrong_number', 'Wrong number'], ['duplicate', 'Duplicate enquiry'],
+                      ]} />
+                  </Field>
+                  <Field label="Action taken" hint="e.g. Enquiry created, Quote discussed, Advice given, Follow-up scheduled">
+                    <Input value={wrapAct} onChange={(e) => setWrapAct(e.target.value)} placeholder="Action taken on this call" />
+                  </Field>
+                  <Field label="Call notes">
+                    <Textarea rows={2} value={wrapNotes} onChange={(e) => setWrapNotes(e.target.value)} placeholder="Summary notes for this interaction" />
+                  </Field>
+                  <div className="col gap-8">
+                    <Check label="Schedule follow-up" checked={needFollowup} onChange={(e) => setNeedFollowup(e.target.checked)} />
+                    {needFollowup && (
+                      <Field label="Follow-up time (IST)">
+                        <Input type="datetime-local" value={wrapFollowupAt} onChange={(e) => setWrapFollowupAt(e.target.value)} />
+                      </Field>
+                    )}
+                  </div>
+                  <div className="row gap-8">
+                    <Button size="sm" kind="primary" disabled={busy || (!wrapDisp && !wrapAct.trim() && !wrapNotes.trim())} onClick={saveWrapup}>Save wrap-up</Button>
+                    <Button size="sm" onClick={() => setWrapEditing(false)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : !c.disposition && !c.action_taken ? (
+                <div className="small muted">No wrap-up recorded yet.</div>
+              ) : null}
+            </section>
+          )}
 
           <section>
             <div className="section-title mb-8">Recording</div>

@@ -136,7 +136,7 @@ export default function CaseDetail() {
             {c.requested_service_start_on && <span><span className="muted">Service start requested</span> {dayLong(c.requested_service_start_on)}</span>}
             <span className="muted">{c.zone_name || 'Zone not mapped'}</span>
             <span><span className="muted">Owner</span> {c.owner_name || DASH}{c.owner_code ? <span className="mono muted"> {c.owner_code}</span> : null}</span>
-            <span><span className="muted">Coordinator</span> {c.coordinator_name || DASH}</span>
+            <span><span className="muted">Coordinator</span> {c.coordinator_name || DASH}{can('supervisor', 'coordinator') && open && <Button size="xs" kind="ghost" icon="edit" onClick={() => setModal({ k: 'coordinator' })} style={{ marginLeft: 4 }} title="Assign Care Coordinator SPOC" />}</span>
             <span className="muted" title={dateTime(c.created_at)}>Created {dateTime(c.created_at)} · {ago(c.created_at, now)} · via {CHANNEL_LABEL[c.source_channel] || c.source_channel}{c.source_channel === 'referral' && c.referral_subtype ? ` (${c.referral_subtype})` : ''}</span>
           </div>
         </div>
@@ -223,7 +223,29 @@ export default function CaseDetail() {
           <p className="small">The case returns to the stage it was in before it was {c.stage}. The reason is kept in the audit trail.</p>
         </Confirm>
       )}
+      {modal?.k === 'coordinator' && (
+        <AssignCoordinatorModal c={c} people={people.data || []} onClose={() => setModal(null)}
+          onSave={async (coordId) => {
+            await run(() => rpc('assign_coordinator', { p_case: id, p_coordinator: coordId }), 'Care Coordinator assigned');
+            cs.reload();
+            setModal(null);
+          }} busy={busy} />
+      )}
     </div>
+  );
+}
+
+function AssignCoordinatorModal({ c, people, onClose, onSave, busy }) {
+  const coordinators = (people || []).filter((p) => p.role === 'coordinator');
+  const [picked, setPicked] = useState(c.coordinator_id || '');
+  return (
+    <Modal title={`Assign Care Coordinator SPOC · ${c.case_no}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!picked || busy} onClick={() => onSave(picked)}>Save</Button></>}>
+      <Field label="Care Coordinator" hint="Designated SecondMedic SPOC who monitors the service journey end to end">
+        <Select value={picked} onChange={(e) => setPicked(e.target.value)} placeholder="Choose Coordinator"
+          options={coordinators.map((p) => [p.id, p.full_name])} />
+      </Field>
+    </Modal>
   );
 }
 

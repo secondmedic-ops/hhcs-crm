@@ -79,6 +79,10 @@ State in `rate_imports`: `buy_status` none / applied; `sell_status` none / await
 - Aggregate margin % = aggregate margin / aggregate net selling, never an average of percentages.
 - The Excel download is logged in `access_log` (`export`, `margins`).
 
+## Rate card from the Hinduja price sheet
+
+Migration `20261016160000_rate_card_from_price_sheet.sql` puts every priced line of "Service & Pricing - Home Care Services (Marketing).xlsx" on the card: 61 services at the "Proposed Hinduja Patient Price", units through `unit_key()`, codes and categories as in the proposed import file, GST basis not confirmed, no buying rates. The three X-ray lines were already there (`20261016130000_diagnostic_xray_home.sql`). Existing services are matched by code or by name and unit; only rows still at 0 are priced, nothing set is overwritten. The older per-day / per-shift placeholders (VENT-HOME, OXY-CONC, NURSE-12H, ...) stay unpriced because the sheet prices those items per month or per 12 hours and units are never converted. `care_plan_sheet()` counts "12 hours" / "24 hours" nursing and attendant cover daily, session variants 3 a week and month items per started 30 days.
+
 ## Business inputs still open
 
 See the hand-over notes for this change. In short:

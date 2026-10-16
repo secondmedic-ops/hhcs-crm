@@ -77,7 +77,7 @@ export const RPC: Record<string, readonly Role[]> = {
   update_referral: ['provider', 'supervisor', 'client_manager', 'coordinator'],
   refer_case: [...OPS, 'client_manager'],
   import_cases: ['supervisor', 'client_manager'],
-  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS, set_case_requirements: OPS,
+  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS, set_case_requirements: OPS, wrap_up_call: OPS, assign_coordinator: ['coordinator', 'supervisor'],
   schedule_validation: ['coordinator', 'supervisor', 'medical_desk'],
   record_validation: ['coordinator', 'supervisor', 'medical_desk', 'field_staff'],
   import_referral_updates: ['provider', 'supervisor', 'client_manager'],

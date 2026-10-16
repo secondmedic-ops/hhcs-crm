@@ -10,7 +10,7 @@ import { dial } from '../lib/api.js';
 import { num, pct, ago, time, istDayRange } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Button, Badge, Countdown, TableSkeleton, Empty, ErrorNote, Confirm, Modal, Field, Select, Textarea, useAction, useToast } from '../components/ui.jsx';
 
-const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled,reached_at,outcome,outcome_note,notes';
+const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts,last_attempt_at,completed_at,created_at,patient_id,patient_name,number,open_case_id,next_attempt_at,auto_dialled,reached_at,outcome,outcome_note,notes,origin_call_at,eligible_at';
 const REASON = { missed: ['Missed', 'danger'], abandoned: ['Abandoned', 'warn'], requested: ['Requested', 'info'], followup: ['Follow-up', ''] };
 const OUTCOMES = [['resolved', 'Resolved'], ['follow_up', 'Follow-up needed'], ['wrong_number', 'Wrong number'], ['not_needed', 'No longer needed']];
 const OUTCOME = Object.fromEntries(OUTCOMES);
@@ -137,7 +137,7 @@ export default function Callbacks() {
                     {cb.notes && <div className="tiny muted" style={{ maxWidth: 280, whiteSpace: 'normal' }}>{cb.notes}</div>}
                     {cb.status === 'in_progress' && <> <Badge kind="info">{cb.auto_dialled ? `Auto-dialling${cb.assignee_name ? ' · ' + cb.assignee_name : ''}` : 'Dialling'}</Badge></>}
                     {cb.status === 'pending' && cb.next_attempt_at && (
-                      <div className="tiny muted">{ad?.calling_configured === false ? 'Waiting for calling configuration' : !ad?.enabled ? 'Automatic calling is off' : new Date(cb.next_attempt_at) <= now ? 'Eligible: waiting for scheduler and a free agent' : `Next eligible ${time(cb.next_attempt_at)}`}</div>
+                      <div className="tiny muted">{ad?.calling_configured === false ? 'Waiting for calling configuration' : !ad?.enabled ? 'Automatic calling is off' : new Date(cb.due_at) <= now ? 'Retry window over' : new Date(cb.next_attempt_at) <= now ? (cb.eligible_at && new Date(cb.eligible_at) > now ? `Scheduled first attempt ${time(cb.eligible_at)}` : 'Eligible: waiting for scheduler and a free agent') : `Next eligible ${time(cb.next_attempt_at)}`}{cb.origin_call_at && <> · from call {time(cb.origin_call_at)}</>}{cb.eligible_at && <> · deadline {time(cb.due_at)}</>}{cb.attempts > 0 && <> · {cb.attempts} attempt(s)</>}</div>
                     )}
                   </td>
                   <td className="num">{cb.attempts}</td>

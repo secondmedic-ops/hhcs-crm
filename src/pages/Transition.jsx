@@ -95,6 +95,7 @@ function IntakeView({ c }) {
   return (
     <dl className="kv">
       {dl('Reason', DISP_LABEL[c.intake_disposition] || c.intake_disposition)}
+      {c.action_taken && dl('Action taken', c.action_taken)}
       {dl('Spoke with', SPOKE_LABEL[c.spoke_with])}
       {c.care_type === 'post_discharge' && <>
         {dl('Decision-maker', [c.decision_maker_name, c.decision_maker_relation, c.decision_maker_mobile_display].filter(Boolean).join(', '))}
@@ -111,6 +112,7 @@ function IntakeView({ c }) {
 function IntakeForm({ c, onDone }) {
   const [f, setF] = useState({
     care_type: c.care_type || 'standard', intake_disposition: c.intake_disposition || '', spoke_with: c.spoke_with || '',
+    action_taken: c.action_taken || '',
     decision_maker_name: c.decision_maker_name || '', decision_maker_relation: c.decision_maker_relation || '', decision_maker_mobile: '',
     hospital_room: c.hospital_room || '',
     hospital_name: c.hospital_name || 'P. D. Hinduja Hospital', hospital_ward: c.hospital_ward || '', treating_doctor: c.treating_doctor || '',
@@ -131,6 +133,9 @@ function IntakeForm({ c, onDone }) {
       <div className="grid g2" style={{ gap: 12 }}>
         <Field label="Interaction reason"><Select value={f.intake_disposition} onChange={set('intake_disposition')} placeholder="Choose" options={DISPOSITIONS} /></Field>
         <Field label="Spoke with"><Select value={f.spoke_with} onChange={set('spoke_with')} placeholder="Choose" options={SPOKE} /></Field>
+        <Field label="Action taken" className="span2" hint="Action taken on enquiry, e.g. Bedside visit scheduled, Quote discussed, Escalation raised">
+          <Input value={f.action_taken} onChange={set('action_taken')} placeholder="Action taken on enquiry" />
+        </Field>
         {pd && <>
           <Field label="Decision-maker name"><Input value={f.decision_maker_name} onChange={set('decision_maker_name')} /></Field>
           <Field label="Relation to patient"><Input value={f.decision_maker_relation} onChange={set('decision_maker_relation')} placeholder="Son, spouse, daughter" /></Field>
@@ -235,7 +240,7 @@ function ValidationModal({ c, services, items, onClose, onDone }) {
   const unpriced = rows.filter((r) => Number(svc[r.service_id]?.price || 0) === 0).length;
   const isHome = f.assessment_type === 'home_visit';
   const ready = f.readiness === 'ready';
-  const ok = !ready || (isHome ? f.met_family : (f.met_doctor && f.met_family));
+  const ok = !ready || (isHome ? f.met_family : (f.met_doctor && f.met_ward_staff && f.met_family));
   const save = () => run(async () => {
     await rpc('record_validation', {
       p_case: c.id,
@@ -270,7 +275,7 @@ function ValidationModal({ c, services, items, onClose, onDone }) {
           <Field label="Discharge readiness"><Select value={f.readiness} onChange={set('readiness')} options={READY} /></Field>
           {ready && !ok && (
             <div className="tiny warn-text">
-              {isHome ? 'Meet the family before confirming readiness.' : 'Meet the treating doctor and the family before confirming readiness.'}
+              {isHome ? 'Meet the family before confirming readiness.' : 'Meet the treating doctor, ward nurse or staff, and the family before confirming readiness.'}
             </div>
           )}
           <Field label="Revised discharge date" hint="if it changed"><Input type="date" value={f.revised_discharge_on} onChange={set('revised_discharge_on')} /></Field>
