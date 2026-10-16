@@ -44,6 +44,8 @@ export function useCatalogue() {
 }
 
 const norm = (s) => String(s || '').toLowerCase();
+/** Rate-card price for agents: a price of 0 is a placeholder, never a price to read out. */
+export const priceText = (price) => (Number(price) > 0 ? inr(price) : 'Not priced, quote after assessment');
 export function matches(row, term) {
   const t = norm(term).trim();
   if (!t) return true;
@@ -56,7 +58,7 @@ export function KnowledgeBody({ row }) {
   return (
     <div className="col gap-12">
       {row.price != null && <div className="row wrap gap-4 small">
-        <strong>{inr(row.price)}</strong><span className="muted">per {row.unit || 'unit'}</span>
+        <strong>{priceText(row.price)}</strong>{Number(row.price) > 0 && <span className="muted">per {row.unit || 'unit'}</span>}
         {row.tat_hours ? <span className="muted">· report / start within {row.tat_hours} h</span> : null}
         <span className="muted">· delivered by {row.delivered.length ? row.delivered.join(', ') : 'not routed yet'}</span>
       </div>}
@@ -91,7 +93,7 @@ export function KnowledgePanel({ onOpenAll }) {
           <div key={r.id} className="list-row click" style={{ display: 'block' }} onClick={() => setOpen(open === r.id ? null : r.id)}>
             <div className="row between gap-12">
               <div className="small grow"><span className="mono">{r.code}</span> · {r.name}</div>
-              <span className="small">{inr(r.price)}<span className="tiny muted"> / {r.unit || 'unit'}</span></span>
+              <span className="small">{priceText(r.price)}{Number(r.price) > 0 && <span className="tiny muted"> / {r.unit || 'unit'}</span>}</span>
             </div>
             <div className="tiny muted truncate">{CAT_LABEL[r.category] || r.category}{r.delivered.length ? ` · ${r.delivered.join(', ')}` : ''}{r.kbSource === 'none' ? ' · no notes yet' : ''}</div>
             {open === r.id && <div className="mt-12" onClick={(e) => e.stopPropagation()}><KnowledgeBody row={r} /></div>}

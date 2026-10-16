@@ -16,7 +16,9 @@
 -- it is still at 0. A price already set is never overwritten.
 -- care_plan_sheet(): plan quantities for the new units (12 hours, 24 hours, month, session variants).
 
-create temporary table _sheet (code text, name text, category text, unit text, price numeric(10,2), sheet_row int);
+-- session-only scratch table (no drop statement: the pipeline lint treats any table drop as destructive)
+create temporary table if not exists _sheet (code text, name text, category text, unit text, price numeric(10,2), sheet_row int);
+truncate _sheet;
 insert into _sheet (code, name, category, unit, price, sheet_row) values
   ('TELEMONITORING-DAY', 'Telemonitoring', 'homecare', 'Per day', 2500, 3),
   ('TELEMONITORING-MONTH', 'Telemonitoring', 'homecare', 'Per month', 60000, 4),
@@ -189,4 +191,3 @@ end $$;
 
 grant execute on function care_plan_sheet(uuid, int) to caredesk_app;
 
-drop table if exists _sheet;

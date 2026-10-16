@@ -4,9 +4,9 @@ import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { db, q, rpc } from '../lib/db.js';
 import { useAuth, roleAllows } from '../lib/auth.jsx';
-import { inr, num, ago } from '../lib/fmt.js';
+import { num, ago } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Segmented, Button, Input, Field, Textarea, Drawer, Empty, ErrorNote, TableSkeleton, useAction, useToast } from '../components/ui.jsx';
-import { useCatalogue, matches, KnowledgeBody, KB_FIELDS, CAT_LABEL, kbBadge } from '../components/ProductKnowledge.jsx';
+import { useCatalogue, matches, KnowledgeBody, KB_FIELDS, CAT_LABEL, kbBadge, priceText } from '../components/ProductKnowledge.jsx';
 
 // Standard interaction reasons (cases.intake_disposition) with when to use each, for agent training.
 const DISPOSITION_GUIDE = [
@@ -71,7 +71,7 @@ export default function Knowledge() {
                 <tr key={r.id} className="click" onClick={() => setOpen({ kind: 'service', row: r })}>
                   <td><span className="mono small">{r.code}</span><div>{r.name}</div></td>
                   <td className="small">{CAT_LABEL[r.category] || r.category}</td>
-                  <td className="num">{inr(r.price)}<div className="tiny muted">per {r.unit || 'unit'}</div></td>
+                  <td className="num">{priceText(r.price)}{Number(r.price) > 0 && <div className="tiny muted">per {r.unit || 'unit'}</div>}</td>
                   <td className="small">{r.delivered.join(', ') || <span className="muted">not routed</span>}</td>
                   <td>{kbBadge(r.kbSource)}</td>
                 </tr>
