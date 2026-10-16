@@ -6,11 +6,11 @@ import { db, q, rpc } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
 import { dial, aiExtract } from '../lib/api.js';
-import { downloadQuotationPdf } from '../lib/pdf.js';
+import { downloadQuotationPdf, generateQuotationPdfBytes } from '../lib/pdf.js';
 import { inr, num, pct, dur, time, ago, istDayRange, istDateStr, toLocalInput, fromLocalInput, isDay, REFERRAL_SOURCES } from '../lib/fmt.js';
 import {
   PageHead, Panel, Kpi, Button, Badge, StageBadge, PriorityBadge, Countdown, TableSkeleton, Skeleton, Empty, AiTag,
-  Field, Input, Select, Textarea, Tabs, useToast, useAction,
+  Field, Input, Select, Textarea, Tabs, Modal, useToast, useAction,
 } from '../components/ui.jsx';
 import { LiveCallBar, useCalls } from '../components/CallCenter.jsx';
 import Icon from '../components/icons.jsx';
@@ -145,6 +145,7 @@ export default function Console() {
   const [scriptTab, setScriptTab] = useState(null);
   const [run, busy] = useAction();
   const [extracting, setExtracting] = useState(false);
+  const [quotation, setQuotation] = useState(null);
   const firstRef = useRef(null);
   const formRef = useRef(null);
   const submittingRef = useRef(false);
@@ -156,6 +157,12 @@ export default function Console() {
       ...x,
       [k]: v,
       ...(k === 'source_channel' && v !== 'referral' ? { referral_subtype: '' } : {}),
+      ...(k === 'caller_relation' && v === 'self' ? {
+        full_name: x.caller_name || x.full_name,
+        mobile: x.caller_mobile || x.mobile,
+      } : {}),
+      ...(x.caller_relation === 'self' && k === 'caller_name' ? { full_name: v } : {}),
+      ...(x.caller_relation === 'self' && k === 'caller_mobile' ? { mobile: v } : {}),
     }));
     setAiKeys((a) => (a[k] ? { ...a, [k]: false } : a));
   };
@@ -247,7 +254,7 @@ export default function Console() {
   if (f.requested_service_start_on && !isDay(f.requested_service_start_on)) problems.push('valid requested service start date');
   if (!f.consent) problems.push('consent');
 
-  const submit = async (e, downloadPdf = false) => {
+  const submit = async (e, downloadPdf = false, sharePdf = false) => {
     e?.preventDefault();
     if (submittingRef.current || busy) return;
     if (problems.length) { toast.error(`Still needed: ${problems.join(', ')}`); return; }
@@ -300,17 +307,20 @@ export default function Console() {
               p_entity_id: out.case_id,
               p_meta: { what: 'quotation_pdf' },
             });
-            downloadQuotationPdf({ k: caseRecord, patient: null, items: activeItems, workspace });
-            toast.ok(`Case ${out.case_no} created and quotation PDF downloaded`);
+            const details = { k: caseRecord, patient: null, items: activeItems, workspace };
+            if (sharePdf) setQuotation(details);
+            else downloadQuotationPdf(details);
+            toast.ok(`Case ${out.case_no} created${sharePdf ? ': quotation ready to share' : ' and quotation PDF downloaded'}`);
           } catch (err) {
             toast.error(`Case ${out.case_no} created, but quotation PDF could not be generated: ${err.message || String(err)}`);
+            if (sharePdf) nav(`/cases/${out.case_id}`);
           }
         } else {
           toast.ok(`Case ${out.case_no} created`);
         }
         setF(BLANK); setAiKeys({});
         setServiceCategory(''); setServicePick('');
-        nav(`/cases/${out.case_id}`);
+        if (!sharePdf) nav(`/cases/${out.case_id}`);
       }
     } finally {
       submittingRef.current = false;
@@ -330,6 +340,24 @@ export default function Console() {
 
   return (
     <>
+      {quotation && <Modal title="Share quotation PDF" onClose={() => nav(`/cases/${quotation.k.id}`)} footer={<Button onClick={() => nav(`/cases/${quotation.k.id}`)}>Open case</Button>}>
+        <p>Quotation for {quotation.k.case_no} is ready. Choose a patient conversation in your device's share menu, or download the PDF and attach it to your message.</p>
+        <div className="row wrap gap-8">
+          <Button icon="print" onClick={() => downloadQuotationPdf(quotation)}>Download PDF</Button>
+          <Button kind="primary" onClick={async () => {
+            try {
+              const file = new File([generateQuotationPdfBytes(quotation)], `Quotation-${quotation.k.case_no}.pdf`, { type: 'application/pdf' });
+              if (!navigator.canShare?.({ files: [file] })) {
+                toast.error('File sharing is unavailable in this browser. Download the PDF and attach it to your message.');
+                return;
+              }
+              await navigator.share({ files: [file], title: `Quotation ${quotation.k.case_no}` });
+            } catch (err) {
+              if (err.name !== 'AbortError') toast.error('Could not open sharing. Download the PDF and attach it to your message.');
+            }
+          }}>Choose recipient and share</Button>
+        </div>
+      </Modal>}
       <PageHead title="Agent console" sub={<>{workspace?.name || 'Hinduja Home Care Services'} · ECG, X-ray and blood tests by SecondMedic; nursing, physiotherapy, beds and elder care by Book My Medicare</>}>
         {(callParam || f !== BLANK) && <Button size="sm" icon="refresh" onClick={() => { setF(BLANK); setAiKeys({}); setExtracted(null); if (callParam) setSp({}); }}>Clear form</Button>}
       </PageHead>
@@ -514,6 +542,11 @@ export default function Console() {
                       {f.service_ids.length > 0 && !canDownloadQuote && (
                         <div className="tiny warn-text">A quotation PDF is available when every selected product has an approved rate. Provider-quoted services need pricing first.</div>
                       )}
+                      <div className="row wrap gap-8" aria-label="Quotation PDF actions">
+                        <Button icon="print" disabled={busy || !canDownloadQuote} onClick={(e) => submit(e, true)}>Download quotation PDF</Button>
+                        <Button disabled={busy || !canDownloadQuote} onClick={(e) => submit(e, true, true)}>Share quotation PDF</Button>
+                      </div>
+                      <div className="tiny muted">Complete the patient details, branch and consent below. These actions create the enquiry using confirmed prices before preparing the PDF.</div>
                       <div className="tiny faint">Prices are locked to the approved rate card. "quote" = priced by the provider after assessment. Each service goes to its provider automatically.</div>
                     </div>
                   )}
