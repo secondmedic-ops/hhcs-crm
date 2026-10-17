@@ -307,7 +307,8 @@ function ImportRates() {
   const [run, busy] = useAction();
   const [file, setFile] = useState(null);        // { name, wb, sheet, grid, head }
   const [map, setMap] = useState({});
-  const [opts, setOpts] = useState({ buy_tax_basis: '', sell_tax_basis: '', effective_from: '', provider_code: '', buy_pct_of_sell: '' });
+  // Effective From starts at today (IST), visible and editable; the GST basis is never assumed
+  const [opts, setOpts] = useState({ buy_tax_basis: '', sell_tax_basis: '', effective_from: istDateStr(0), provider_code: '', buy_pct_of_sell: '' });
   const [resolve, setResolve] = useState({});    // file row -> { service_id } | { new_service } | { provider_id }
   const [check, setCheck] = useState(null);      // server preview
   const [stale, setStale] = useState(false);
@@ -376,6 +377,19 @@ function ImportRates() {
   const hasB2b = (map.b2b !== '' && map.b2b != null) || opts.buy_pct_of_sell.trim() !== '';
   const routing = (provs.data || []).filter((p) => p.active && p.categories?.length).map((p) => `${p.code}: ${p.categories.map((c) => CAT[c] || c).join(', ')}`).join(' · ');
   const hasB2c = map.b2c !== '' && map.b2c != null;
+  const mapped = (k) => map[k] !== '' && map[k] != null;
+  // What the server would refuse for the whole file, caught before the check (a raw price sheet has no codes, dates or GST basis)
+  const blockers = [
+    hasB2b && !opts.buy_tax_basis && 'Choose whether the B2B rates include GST.',
+    hasB2c && !opts.sell_tax_basis && 'Choose whether the B2C rates include GST.',
+    !mapped('effective_from') && !opts.effective_from && 'Set Effective From (no date column in this file).',
+    hasB2b && !mapped('provider_code') && !opts.provider_code && 'Choose the Provider (or "By category"): B2B rates need the provider they are paid to.',
+    !hasB2b && !hasB2c && 'Match a B2B Rate or B2C Rate column.',
+  ].filter(Boolean);
+  const notes = [
+    !mapped('service_code') && 'No Service Code column: after the check, review the rows as new services in one list (codes are suggested), or upload the prepared import file that has the codes.',
+    hasB2c && !hasB2b && 'No B2B rates: only selling prices are submitted. Set "B2B = % of B2C" to derive buying rates.',
+  ].filter(Boolean);
 
   const template = async () => {
     const [svc, prov] = await Promise.all([q(db.from('services').select('code,name,category,unit,price,tax_basis,active').order('code')), q(db.from('providers').select('code,name,active').order('code'))]);
@@ -428,7 +442,7 @@ function ImportRates() {
 
       {file && (
         <Panel title={`${file.name} · ${file.sheet} · ${dataRows.length} rows`} sub="Match each field to a column. Only exact template headings are matched for you."
-          actions={<Button kind="primary" disabled={busy || !dataRows.length} onClick={runCheck}>{check ? 'Check again' : 'Check file'}</Button>}>
+          actions={<Button kind="primary" disabled={busy || !dataRows.length || blockers.length > 0} onClick={runCheck}>{check ? 'Check again' : 'Check file'}</Button>}>
           <div className="grid g4" style={{ gap: 10 }}>
             {FIELDS.map(([k, label]) => (
               <Field key={k} label={label}>
@@ -449,6 +463,8 @@ function ImportRates() {
           <div className="tiny faint mt-8">The GST basis is never assumed. Margins are shown only where the buying and selling rates have the same basis.
             {opts.buy_pct_of_sell.trim() !== '' && ` B2B on rows without one = ${opts.buy_pct_of_sell.trim()}% of their B2C, computed by the server to the paisa (SecondMedic keeps the rest).`}
             {opts.provider_code === BY_CATEGORY && routing && ` By category: ${routing}.`}</div>
+          {blockers.length > 0 && <div className="small danger-text mt-8">Before checking: {blockers.join(' ')}</div>}
+          {notes.map((n) => <div key={n} className="small warn-text mt-4">{n}</div>)}
           {stale && check && <div className="small warn-text mt-8">Changed since the last check. Check again before submitting.</div>}
         </Panel>
       )}
