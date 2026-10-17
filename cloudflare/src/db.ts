@@ -149,7 +149,7 @@ export const SCHEMA: Record<string, string[]> = {
   escalations: ['id', 'workspace_id', 'case_id', 'type', 'level', 'trigger_text', 'status', 'auto_raised'],
   webhook_events: ['event_id', 'source', 'event_type', 'payload', 'processed', 'error', 'received_at'],
   inbound_emails: ['workspace_id', 'message_id', 'from_address', 'to_address', 'subject', 'text_body', 'patient_id', 'case_id'],
-  mis_snapshots: ['id', 'workspace_id', 'period', 'period_start', 'data', 'narrative'],
+  mis_snapshots: ['id', 'workspace_id', 'period', 'period_start', 'data', 'narrative', 'email_status', 'email_attempted_at', 'emailed_at', 'email_error'],
   access_log: ['workspace_id', 'user_id', 'action', 'entity', 'entity_id', 'meta'],
   integration_settings: ['provider', 'settings', 'updated_at', 'updated_by'],
   deployments: ['id', 'at', 'sha', 'subject', 'author', 'areas', 'status', 'run_url'],

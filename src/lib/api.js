@@ -21,6 +21,9 @@ export const aiStatus = () => (isDemo ? Promise.resolve({ enabled: true, auto: t
 export const aiSettings = () => (isDemo ? Promise.resolve({ demo: true, key: { set: false, source: null, value: null }, model: 'gemini-2.5-flash', live_model: 'gemini-3.5-transcribe-live', model_source: 'default', auto: true, stats: { done: 0, failed: 0, skipped: 0, waiting: 0 }, last_error: null }) : server.aiSettings());
 export const saveAiSettings = (body) => (isDemo ? Promise.reject(new Error('Demo mode: AI is simulated in the browser')) : server.saveAiSettings(body));
 export const testAi = () => (isDemo ? Promise.resolve({ ok: true, message: 'Demo mode: AI is simulated in the browser' }) : server.testAi());
+// Outbound e-mail (Gmail SMTP). The demo sends nothing.
+export const emailStatus = () => (isDemo ? Promise.resolve({ demo: true, ready: false, missing: [], last_mis: null }) : server.emailStatus());
+export const testEmail = (debug) => (isDemo ? Promise.resolve({ ok: false, message: 'Demo mode: e-mail is sent only from the live site' }) : server.testEmail(debug));
 export const createUser = (u) => (isDemo ? demo('/admin/users', u) : server.createUser(u));
 export const webhookEvents = () => (isDemo ? demo('/admin/webhooks', {}) : server.webhookEvents());
 export const integrations = () => (isDemo ? demo('/health', {}) : server.integrations());

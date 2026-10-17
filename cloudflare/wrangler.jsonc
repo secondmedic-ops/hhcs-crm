@@ -30,14 +30,18 @@
     "DEFAULT_WORKSPACE_CODE": "HHC",
     "GEMINI_MODEL": "gemini-2.5-flash",
     "AI_AUTO_PROCESS_CALLS": "true",
-    "MYOPERATOR_REGION": ""
+    "MYOPERATOR_REGION": "",
+    // Outbound e-mail (Gmail SMTP, smtp.gmail.com:465 implicit TLS). The app password is the secret SMTP_PASSWORD.
+    "SMTP_USERNAME": "customer.support@secondmedic.com",
+    "SMTP_FROM": "customer.support@secondmedic.com",
+    "SMTP_FROM_NAME": "Second Medic"
   },
   // Supabase Postgres through Hyperdrive. The pipeline (scripts/hyperdrive.mjs) creates / updates the Hyperdrive
   // config "hhcs-caredesk-db" from the GitHub secret SUPABASE_DB_URL and deploys with its real id; the id below is
   // only a stand-in for local runs, which use CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE instead.
   "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000" }],
   // Secrets (never in git) are uploaded by the pipeline with wrangler deploy --secrets-file: MyOperator keys,
-  // GEMINI_API_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY / MIS_RECIPIENTS (see .github/workflows/ship.yml).
+  // GEMINI_API_KEY, SUPABASE_SERVICE_ROLE_KEY, SMTP_PASSWORD / MIS_RECIPIENTS (see .github/workflows/ship.yml).
 
   // Live-updates hub: a SQLite Durable Object (allowed on the Workers Free plan), hibernating WebSockets.
   "durable_objects": {

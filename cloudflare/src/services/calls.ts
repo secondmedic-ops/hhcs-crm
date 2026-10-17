@@ -8,6 +8,7 @@ import { asSystem, asUser, normMobile, readAsUser } from '../db';
 import { clickToCall, recordingUrl, sendWhatsApp } from './myoperator';
 import { missingCallingSettings, moEnv } from './myoperator-config';
 import { dbMessage } from './data';
+import { isAddress, safeSmtpError, sendMail, smtpReady, SmtpError } from './smtp';
 
 type J = Record<string, any>;
 const wrap = (e: unknown): never => { throw dbMessage(e) ?? e; };
@@ -114,7 +115,29 @@ export async function recording(c: Ctx): Promise<Response> {
   return new Response(audio.body, { headers: { 'Content-Type': audio.headers.get('content-type') || 'audio/mpeg', 'Cache-Control': 'private, no-store' } });
 }
 
-async function deliver(c: Ctx, caseId: string, out: { text: string; channel: string; provider_template_name?: string | null }) {
+/** E-mail template -> the patient's address on the case, through Gmail SMTP. "accepted" is not proof of inbox delivery. */
+async function deliverEmail(c: Ctx, caseId: string, out: { text: string; subject?: string | null }) {
+  if (!smtpReady(c.env)) return { skipped: 'Outbound e-mail is not configured' };
+  const to = await readAsUser(c.sql, c.user.id, async (tx) => {
+    const [k] = await tx`select p.email from cases c join patients p on p.id = c.patient_id where c.id = ${caseId}`; // RLS decides visibility
+    return String(k?.email || '').trim();
+  }).catch(wrap);
+  if (!to || !isAddress(to)) return { skipped: 'No valid e-mail address on the patient' };
+  let meta: J;
+  try {
+    const r = await sendMail(c.env, { to: [to], subject: out.subject || 'Hinduja Home Care Services', text: out.text });
+    meta = { delivery_status: 'accepted', via: 'smtp', attempts: r.attempts };
+  } catch (e) {
+    meta = { delivery_status: e instanceof SmtpError && e.ambiguous ? 'unknown' : 'failed', via: 'smtp', error: safeSmtpError(e) };
+  }
+  const { changed } = await asSystem(c.sql, (tx) => tx`update interactions set meta = coalesce(meta, '{}'::jsonb) || ${tx.json(meta)}
+    where id = (select id from interactions where case_id = ${caseId}::uuid and channel = 'email' and direction = 'outbound' order by occurred_at desc limit 1)`);
+  c.changed.push(...changed);
+  return meta.delivery_status === 'accepted' ? { accepted: true, note: 'Accepted by Gmail for delivery (not proof of inbox delivery)' } : { error: meta.error, status: meta.delivery_status };
+}
+
+async function deliver(c: Ctx, caseId: string, out: { text: string; channel: string; provider_template_name?: string | null; subject?: string | null }) {
+  if (out.channel === 'email') return deliverEmail(c, caseId, out);
   if (out.channel !== 'whatsapp') return { skipped: `${out.channel} delivery handled by mailbox / SMS gateway` };
   try {
     const [k] = await c.sql`select c.caller_mobile, p.mobile from cases c join patients p on p.id = c.patient_id where c.id = ${caseId}`;
@@ -157,7 +180,7 @@ export async function sendMessage(c: Ctx, body: J) {
     values (${m.k.workspace_id}, ${caseId}, ${m.k.patient_id}, ${m.t.kind}, 'outbound', ${c.user.id}, ${c.user.agentCode || c.user.fullName},
       ${`${m.t.title} sent (template ${m.t.code})`}, ${m.text}, 'Message copy', ${m.t.id})`);
   c.changed.push(...changed);
-  return { text: m.text, delivery: await deliver(c, caseId, { text: m.text, channel: m.t.kind, provider_template_name: m.t.provider_template_name }) };
+  return { text: m.text, delivery: await deliver(c, caseId, { text: m.text, channel: m.t.kind, provider_template_name: m.t.provider_template_name, subject: m.t.title }) };
 }
 
 export async function sendWhatsAppChat(c: Ctx, body: J) {

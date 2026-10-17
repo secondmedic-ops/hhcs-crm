@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi } from '../lib/api.js';
+import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi, emailStatus, testEmail } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { homeFor, roleAllows, useAuth } from '../lib/auth.jsx';
 import { dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
@@ -1009,6 +1009,33 @@ function AiSummaries({ onSaved }) {
   );
 }
 
+function OutboundEmail() {
+  const s = useLoad(() => emailStatus(), []);
+  const [test, setTest] = useState(null);
+  const [run, busy] = useAction();
+  const d = s.data;
+  const runTest = (debug) => run(async () => { setTest(await testEmail(debug)); s.reload(); });
+  return (
+    <Panel title="Outbound e-mail" sub="MIS and e-mail templates are sent from the Second Medic Gmail account (smtp.gmail.com, port 465, TLS). The app password is a Worker secret, never shown here."
+      actions={<Button size="sm" kind="ghost" icon="refresh" onClick={() => runTest()} disabled={busy || !d?.ready}>Send test e-mail</Button>}>
+      <ErrorNote error={s.error} />
+      {s.loading ? <Skeleton lines={2} /> : d && (
+        <div className="col gap-8">
+          <div className="row wrap gap-8">
+            {d.ready ? <Badge kind="ok" dot>Ready, sender {d.sender}</Badge> : <Badge kind="warn" dot>{d.demo ? 'Demo mode' : `Not configured: ${(d.missing || []).join(', ')}`}</Badge>}
+            {!d.demo && <Badge kind="outline">MIS recipients: {d.mis_recipients}</Badge>}
+            {d.last_mis && <Badge kind={d.last_mis.email_status === 'accepted' ? 'ok' : 'warn'} dot>Last MIS: {d.last_mis.email_status}{d.last_mis.email_error ? `, ${d.last_mis.email_error}` : ''}</Badge>}
+          </div>
+          <div className="tiny muted">The test goes only to the sender address. Accepted by Gmail means queued for delivery: confirm it arrived in that mailbox.</div>
+          {test && <div className="row gap-8">{okBadge(test)}<span className="small">{test.message}</span></div>}
+          {test?.transcript && <pre className="tiny">{test.transcript.join('\n')}</pre>}
+          {d.ready && <div><Button size="sm" kind="ghost" onClick={() => runTest(2)} disabled={busy}>Test with redacted SMTP log</Button></div>}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function TelephonyTab() {
   const { profile } = useAuth();
   const isAdmin = roleAllows(['admin', 'supervisor'], profile?.role);   // supervisors run the call centre: they connect MyOperator too
@@ -1017,7 +1044,7 @@ function TelephonyTab() {
   const [openId, setOpenId] = useState(null);
   const st = (v) => (v === true ? <Badge kind="ok" dot>Connected</Badge> : typeof v === 'string' ? <Badge kind="info" dot>{v[0].toUpperCase() + v.slice(1)}</Badge> : <Badge kind="warn" dot>Not configured</Badge>);
   const items = [['supabase', 'Database & sign-in', 'Supabase Postgres + Auth'], ['telephony', 'Click-to-call', 'MyOperator OBD'], ['recordings', 'Recordings & call logs', 'MyOperator API'],
-    ['whatsapp', 'WhatsApp', 'MyOperator WABA'], ['ai', 'AI assist', 'Gemini']];
+    ['whatsapp', 'WhatsApp', 'MyOperator WABA'], ['ai', 'AI assist', 'Gemini'], ['email', 'Outbound e-mail', 'Gmail SMTP'], ['mis_email', 'MIS e-mail', 'Daily 10:00 IST']];
   return (
     <div className="col gap-12">
       <Panel title="Integration status" actions={<Button size="sm" kind="ghost" icon="refresh" onClick={h.reload}>Recheck</Button>}>
@@ -1039,6 +1066,7 @@ function TelephonyTab() {
         <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}
       {isAdmin && <AiSummaries onSaved={h.reload} />}
+      {isAdmin && <OutboundEmail />}
       <Panel title="Mailbox">
         <div className="small">In Cloudflare <strong>Email Routing</strong>, route the HHCS support address to the CareDesk Worker (action: Send to a Worker). Each e-mail becomes a ticket on the patient timeline, matched by the case number in the subject or the sender address, and starts the 5-minute acknowledgement SLA.</div>
       </Panel>

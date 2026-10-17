@@ -10,7 +10,7 @@ import { whatsappSession, whatsappSessionAction } from '../services/myoperator';
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
 import { bmmLeads, bmmStatus } from '../services/bmm';
-import { aiSettings, createUser, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testMo, webhookEvents } from '../services/admin';
+import { aiSettings, createUser, emailStatus, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testEmail, testMo, webhookEvents } from '../services/admin';
 
 export type Access = 'public' | 'login' | readonly Role[];
 export interface Route {
@@ -73,6 +73,8 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/admin/ai', access: TECH, handler: (c) => aiSettings(c), summary: 'AI call summaries: key set, model, auto switch, last 14 days' },
   { method: 'POST', path: '/api/v1/admin/ai', access: TECH, handler: (c, b) => saveAiSettings(c, b ?? {}), summary: 'Save the Gemini key, model and auto-summary switch' },
   { method: 'POST', path: '/api/v1/admin/ai/test', access: TECH, handler: (c) => testAi(c), summary: 'Test the Gemini key' },
+  { method: 'GET', path: '/api/v1/admin/email', access: TECH, handler: (c) => emailStatus(c), summary: 'Outbound e-mail (Gmail SMTP): settings present, last MIS send' },
+  { method: 'POST', path: '/api/v1/admin/email/test', access: TECH, handler: (c, b) => testEmail(c, b ?? {}), summary: 'Send a test e-mail to the configured sender address only' },
   { method: 'POST', path: '/api/v1/admin/myoperator/test', access: TECH, handler: (c) => testMo(c), summary: 'Test the MyOperator connection' },
   { method: 'GET', path: '/api/v1/admin/myoperator/users', access: TECH, handler: (c) => moUsers(c), summary: 'MyOperator users and the CRM logins linked to them' },
   { method: 'POST', path: '/api/v1/admin/users/telephony', access: TECH, handler: (c, b) => setTelephony(c, b ?? {}), summary: 'Set a user\'s MyOperator user id, extension and phone' },

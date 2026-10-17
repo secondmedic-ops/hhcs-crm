@@ -79,6 +79,12 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await batch('sup', [sel('webhook_events')])).status === 403, 'webhook events not readable as a table');
   check((await call('agent', 'GET', '/api/v1/admin/integrations')).status === 403, 'agent cannot see integration settings');
   check((await call('sup', 'GET', '/api/v1/admin/integrations')).status === 200, 'supervisor sees integration settings');
+  check((await call('agent', 'POST', '/api/v1/admin/email/test', {})).status === 403 && (await call('agent', 'GET', '/api/v1/admin/email')).status === 403, 'agent cannot test or see outbound e-mail');
+  check((await call('bmm', 'POST', '/api/v1/admin/email/test', {})).status === 403, 'provider cannot send a test e-mail');
+  const mailSt = await call('sup', 'GET', '/api/v1/admin/email');
+  check(mailSt.status === 200 && mailSt.body?.port === 465 && mailSt.body?.host === 'smtp.gmail.com' && !JSON.stringify(mailSt.body).includes('PASSWORD='), 'supervisor sees e-mail readiness (names only, no secret values)', JSON.stringify(mailSt.body));
+  const mailTest = await call('sup', 'POST', '/api/v1/admin/email/test', {});
+  check(mailTest.status === 200 && mailTest.body?.ok === false && /not configured/.test(mailTest.body?.message), 'e-mail test without SMTP_PASSWORD fails safely, nothing marked sent', JSON.stringify(mailTest.body));
   check((await call('sup', 'POST', '/api/v1/admin/users', { email: 'x@y.z', password: 'longenough1', full_name: 'X', role: 'agent' })).status === 403, 'only admin creates users');
 
   // ---- 4. names are checked, values are parameters

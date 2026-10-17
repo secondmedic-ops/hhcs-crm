@@ -92,6 +92,8 @@ export const api = {
   aiSettings: () => request<Record<string, any>>('/api/v1/admin/ai'),
   saveAiSettings: (body: { api_key?: string; model?: string; auto?: boolean; retry_failed?: boolean }) => request<Record<string, any>>('/api/v1/admin/ai', { method: 'POST', body }),
   testAi: () => request<{ ok: boolean; message: string }>('/api/v1/admin/ai/test', { method: 'POST', body: {} }),
+  emailStatus: () => request<Record<string, any>>('/api/v1/admin/email'),
+  testEmail: (debug?: 2) => request<{ ok: boolean; message: string; attempts?: number; transcript?: string[] }>('/api/v1/admin/email/test', { method: 'POST', body: debug ? { debug } : {} }),
   moUsers: () => request<{ users: Record<string, any>[]; profiles: Record<string, any>[] }>('/api/v1/admin/myoperator/users'),
   linkMoUsers: (body: { links?: { profile_id: string; myoperator_user_id: string | null }[]; auto?: boolean }) => request<{ linked: number; unlinked: number }>('/api/v1/admin/myoperator/users', { method: 'POST', body }),
 };

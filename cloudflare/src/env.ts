@@ -36,14 +36,19 @@ export interface Env {
   MYOPERATOR_API_URL?: string;
   MYOPERATOR_WABA_URL?: string;
 
-  // AI (Google AI Studio key) and MIS e-mail
+  // AI (Google AI Studio key) and e-mail
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   /** Gemini API base URL (rehearsal points it at a local stand-in). */
   GEMINI_API_URL?: string;
   AI_AUTO_PROCESS_CALLS?: string;
-  RESEND_API_KEY?: string;
+  /** Outbound e-mail through Gmail SMTP (services/smtp.ts): smtp.gmail.com:465, implicit TLS. */
+  SMTP_USERNAME?: string;
+  SMTP_FROM?: string;
+  SMTP_FROM_NAME?: string;
+  /** Secret: Gmail app password for SMTP_USERNAME (GitHub secret SMTP_PASSWORD, uploaded by the pipeline). */
+  SMTP_PASSWORD?: string;
+  /** Secret: comma-separated MIS recipients. */
   MIS_RECIPIENTS?: string;
-  MIS_FROM?: string;
   EMAIL_ARCHIVE_TO?: string;
 }

@@ -189,19 +189,17 @@ if (!secrets.includes("GEMINI_API_KEY")) {
 } else {
   console.log("GEMINI_API_KEY already set.");
 }
-// 4d. Optional: daily / weekly / monthly MIS by e-mail (Resend)
-if (!secrets.includes("RESEND_API_KEY")) {
-  console.log("MIS e-mail at 10:00 IST needs a Resend API key (resend.com, free tier) and the recipient list. Enter = skip.");
+// 4d. Optional: outbound e-mail (MIS, e-mail templates) through Gmail SMTP as customer.support@secondmedic.com
+if (!secrets.includes("SMTP_PASSWORD")) {
+  console.log("Outbound e-mail needs a Gmail app password for customer.support@secondmedic.com (Google Account > Security > App passwords). Enter = skip.");
   rl.pause();
-  const k = await askHidden("Resend API key (hidden, Enter = skip): ");
+  const k = await askHidden("Gmail app password (hidden, Enter = skip): ");
   rl.resume();
-  if (k) {
-    setSecret("RESEND_API_KEY", k);
-    const to = await ask("MIS recipients (comma separated e-mails)");
-    if (to) setSecret("MIS_RECIPIENTS", to);
-    const from = await ask("MIS sender (must be a domain verified in Resend)", "CareDesk MIS <mis@secondmedic.com>");
-    if (from) setSecret("MIS_FROM", from);
-  }
+  if (k) setSecret("SMTP_PASSWORD", k.replace(/\s+/g, ""));
+}
+if (!secrets.includes("MIS_RECIPIENTS")) {
+  const to = await ask("MIS recipients (comma separated e-mails, Enter = skip)");
+  if (to) setSecret("MIS_RECIPIENTS", to);
 }
 console.log("The database connection for the live API (Cloudflare Hyperdrive \"hhcs-caredesk-db\") is made by the pipeline from SUPABASE_DB_URL.");
 

@@ -94,17 +94,16 @@ jobs:
           MYOPERATOR_WABA_API_KEY: ${{ secrets.MYOPERATOR_WABA_API_KEY }}
           MYOPERATOR_WABA_PHONE_ID: ${{ secrets.MYOPERATOR_WABA_PHONE_ID }}
           MYOPERATOR_CALLER_ID: ${{ secrets.MYOPERATOR_CALLER_ID }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           MIS_RECIPIENTS: ${{ secrets.MIS_RECIPIENTS }}
-          MIS_FROM: ${{ secrets.MIS_FROM }}
         run: |
           if [ -z "$SUPABASE_URL" ]; then echo "GitHub variable VITE_SUPABASE_URL is not set - run START-HERE.bat"; exit 1; fi
           node scripts/hyperdrive.mjs
           SECRETS=()
           # Worker secrets (only the ones set in GitHub): MyOperator keys, Gemini (AI), Supabase service key (new logins
-          # from Settings > Users), MIS e-mail. Written to a private temp file, uploaded with the deploy, then deleted.
+          # from Settings > Users), Gmail SMTP app password and MIS recipients. Written to a private temp file, uploaded with the deploy, then deleted.
           umask 077
-          node -e 'const e = process.env, o = {}; for (const k of ["GEMINI_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "MYOPERATOR_WEBHOOK_KEY", "MYOPERATOR_COMPANY_ID", "MYOPERATOR_SECRET_TOKEN", "MYOPERATOR_OBD_API_KEY", "MYOPERATOR_PUBLIC_IVR_ID", "MYOPERATOR_API_TOKEN", "MYOPERATOR_WABA_API_KEY", "MYOPERATOR_WABA_PHONE_ID", "MYOPERATOR_CALLER_ID", "RESEND_API_KEY", "MIS_RECIPIENTS", "MIS_FROM"]) if (e[k]) o[k] = e[k]; process.stdout.write(JSON.stringify(o))' > "$RUNNER_TEMP/worker-secrets.json"
+          node -e 'const e = process.env, o = {}; for (const k of ["GEMINI_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "MYOPERATOR_WEBHOOK_KEY", "MYOPERATOR_COMPANY_ID", "MYOPERATOR_SECRET_TOKEN", "MYOPERATOR_OBD_API_KEY", "MYOPERATOR_PUBLIC_IVR_ID", "MYOPERATOR_API_TOKEN", "MYOPERATOR_WABA_API_KEY", "MYOPERATOR_WABA_PHONE_ID", "MYOPERATOR_CALLER_ID", "SMTP_PASSWORD", "MIS_RECIPIENTS"]) if (e[k]) o[k] = e[k]; process.stdout.write(JSON.stringify(o))' > "$RUNNER_TEMP/worker-secrets.json"
           if [ "$(cat "$RUNNER_TEMP/worker-secrets.json")" != "{}" ]; then SECRETS=(--secrets-file "$RUNNER_TEMP/worker-secrets.json"); fi
           cd cloudflare
           npx wrangler deploy --config wrangler.deploy.jsonc --var "BUILD_SHA:$(git rev-parse HEAD)" --var "SUPABASE_URL:$SUPABASE_URL" --var "APP_URL:$APP_URL" "${SECRETS[@]}"

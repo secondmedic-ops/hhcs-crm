@@ -9,6 +9,7 @@ import { loadWhatsAppQr } from './myoperator';
 import { syncCallLogs, syncState } from './mo-sync';
 import { aiEnv, aiPause, clearAiCache, clearAiPause, describeAi } from './ai-config';
 import { gemini, transcribeToken, LIVE_TRANSCRIBE_MODEL } from './ai';
+import { safeSmtpError, sendMail, smtpConfig, SMTP_HOST, SMTP_PORT } from './smtp';
 
 type J = Record<string, any>;
 
@@ -52,7 +53,7 @@ export async function integrations(c: Ctx) {
     supabase: !!(e.HYPERDRIVE || e.DATABASE_URL), auth: !!e.SUPABASE_URL, telephony: missingCallingSettings(e).length === 0,
     webhook: !!e.MYOPERATOR_WEBHOOK_KEY, recordings: !!e.MYOPERATOR_API_TOKEN,
     whatsapp: !!(e.MYOPERATOR_WABA_API_KEY && e.MYOPERATOR_WABA_PHONE_ID) || qr.status === 'connected',
-    ai: !!ai.GEMINI_API_KEY, mis_email: !!(e.RESEND_API_KEY && e.MIS_RECIPIENTS), user_admin: !!e.SUPABASE_SERVICE_ROLE_KEY,
+    ai: !!ai.GEMINI_API_KEY, email: smtpConfig(c.env).ok, mis_email: smtpConfig(c.env).ok && !!c.env.MIS_RECIPIENTS?.trim(), user_admin: !!e.SUPABASE_SERVICE_ROLE_KEY,
     webhook_url: (e.APP_URL || new URL(c.req.url).origin) + '/webhooks/myoperator', build: e.BUILD_SHA || 'dev',
   };
 }
@@ -299,4 +300,39 @@ export async function testAi(c: Ctx) {
   } catch (e) {
     return { ok: false, message: String((e as Error).message || e).slice(0, 300) };
   }
+}
+
+// ---------- Outbound e-mail (Gmail SMTP) ----------
+
+/** Readiness: what is set (names only, never values), the last MIS send. */
+export async function emailStatus(c: Ctx) {
+  const cfg = smtpConfig(c.env);
+  const [mis] = await c.sql`select period, period_start, email_status, email_error, emailed_at, email_attempted_at from mis_snapshots
+    where workspace_id = ${c.user.workspaceId}::uuid and email_status is not null order by email_attempted_at desc nulls last limit 1`;
+  return {
+    ready: cfg.ok, missing: cfg.ok ? [] : cfg.missing, host: SMTP_HOST, port: SMTP_PORT, security: 'implicit TLS, certificate verified',
+    sender: c.env.SMTP_FROM || null, mis_recipients: (c.env.MIS_RECIPIENTS || '').split(',').filter((x) => x.trim()).length,
+    last_mis: mis ?? null,
+  };
+}
+
+/** Send one test message to the configured sender address only. body.debug = 2 returns a redacted SMTP transcript. */
+export async function testEmail(c: Ctx, b: J) {
+  const cfg = smtpConfig(c.env);
+  if (!cfg.ok) return { ok: false, message: `E-mail is not configured (missing ${cfg.missing.join(', ')})` };
+  const debug = b?.debug === 2 || b?.debug === '2' ? 2 : 0;
+  let out: J;
+  try {
+    const r = await sendMail(c.env, {
+      to: [cfg.cfg.from], subject: 'CareDesk e-mail test',
+      text: 'Test message from CareDesk (Gmail SMTP). No patient data.',
+      html: '<p>Test message from CareDesk (Gmail SMTP). No patient data.</p>',
+    }, { debug });
+    out = { ok: true, message: `Gmail accepted the test message for ${cfg.cfg.from} (accepted for delivery, not yet proof it reached the inbox: check the mailbox).`, attempts: r.attempts, transcript: r.transcript };
+  } catch (e) {
+    out = { ok: false, message: safeSmtpError(e) };
+  }
+  await asSystem(c.sql, (tx) => tx`insert into access_log (workspace_id, user_id, action, entity, meta)
+    values (${c.user.workspaceId}::uuid, ${c.user.id}::uuid, 'email_test', 'smtp', ${tx.json({ ok: out.ok, message: out.message })})`);
+  return out;
 }
