@@ -51,3 +51,79 @@ export function secure(res: Response, url: URL, env: Pick<Env, 'SUPABASE_URL'>):
   h.set('Permissions-Policy', 'microphone=(self), geolocation=(self), camera=(), payment=(), usb=()');
   return out;
 }
+
+/** Detects automated scanner probes and exploit attempts trying to discover sensitive files, CMS backdoors or config. */
+export function isScannerProbe(pathname: string): boolean {
+  const p = pathname.toLowerCase();
+  // Hidden / dotfiles (e.g. /.env, /.git, /.svn, /.aws, /.DS_Store)
+  if (p.startsWith('/.') && !p.startsWith('/.well-known/')) return true;
+  // Script / server backdoors outside normal app assets
+  if (/\.(php|asp|aspx|jsp|cgi|env|git|bak|old|sql|ini|yml|yaml|config|sh|bat)$/i.test(p)) return true;
+  // Common automated scanner exploit endpoints
+  if (/^\/(wp-admin|wp-login|xmlrpc|phpmyadmin|adminer|solr|cgi-bin|etc\/passwd)/i.test(p)) return true;
+  // Unmapped actuator endpoints (only /api/actuator/health* are valid in this API)
+  if (/^\/actuator(\/|$)/i.test(p) || (/^\/api\/actuator\//i.test(p) && !/^\/api\/actuator\/health(\/|$)/i.test(p))) return true;
+  return false;
+}
+
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+
+const rateLimitMap = new Map<string, RateLimitBucket>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const MAX_UNAUTH_PER_MINUTE = 120;
+
+/** Client IP resolver */
+export function clientIp(req: Request): string {
+  return (
+    req.headers.get('cf-connecting-ip') ||
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    '127.0.0.1'
+  );
+}
+
+/** Rate limiter for unauthenticated requests and public endpoints.
+ * Returns null if allowed, or a 429 Response if rate limit is exceeded. */
+export function checkPublicRateLimit(req: Request, url: URL): Response | null {
+  const ip = clientIp(req);
+  if (LOCAL.test(ip) || LOCAL.test(url.hostname)) return null;
+
+  const now = Date.now();
+  const bucket = rateLimitMap.get(ip);
+  if (!bucket || now > bucket.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    if (rateLimitMap.size > 2000) {
+      for (const [k, v] of rateLimitMap.entries()) {
+        if (now > v.resetAt) rateLimitMap.delete(k);
+      }
+    }
+    return null;
+  }
+
+  bucket.count++;
+  if (bucket.count > MAX_UNAUTH_PER_MINUTE) {
+    const retrySecs = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    return new Response(
+      JSON.stringify({ status: 429, error: 'Too Many Requests', message: 'Too many requests. Please slow down.' }),
+      {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(retrySecs),
+          'X-RateLimit-Limit': String(MAX_UNAUTH_PER_MINUTE),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.ceil(bucket.resetAt / 1000)),
+        },
+      }
+    );
+  }
+  return null;
+}
+
+/** Reset rate limit buckets (for testing) */
+export function resetRateLimitsForTesting() {
+  rateLimitMap.clear();
+}
+

@@ -18,7 +18,7 @@ import { liveToken, notifyLive, openLive } from './services/live';
 import { runScheduled } from './services/cron';
 import { handleEmail } from './services/email';
 import { resolveStaffSession, logStaffRequest } from './services/staff-session';
-import { httpsRedirect, secure } from './security';
+import { checkPublicRateLimit, httpsRedirect, isScannerProbe, secure } from './security';
 
 export { LiveHub } from './services/live';
 export type { Env };
@@ -27,14 +27,19 @@ const UNAUTHORIZED = 'Please log in again (missing or expired session).';
 const FORBIDDEN = 'Your role does not allow this action. Ask a supervisor.';
 const unauthorized = () => json({ status: 401, error: 'Unauthorized', message: UNAUTHORIZED }, 401);
 
+let dbStatusCache: { up: boolean; at: number } | null = null;
 async function databaseUp(env: Env, ctx: ExecutionContext): Promise<boolean> {
+  const now = Date.now();
+  if (dbStatusCache && now - dbStatusCache.at < 5000) return dbStatusCache.up;
   let sql: Sql | null = null;
   try {
     sql = connect(env);
     await Promise.race([sql`select 1`, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 5000))]);
+    dbStatusCache = { up: true, at: now };
     return true;
   } catch (e) {
     console.error('Health: database check failed', (e as Error).message);
+    dbStatusCache = { up: false, at: now };
     return false;
   } finally {
     if (sql) ctx.waitUntil(sql.end({ timeout: 2 }).catch(() => {}));
@@ -66,6 +71,8 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
 
   const found = match(req.method, path);
   if (typeof found !== 'number' && found.route.access === 'public') {
+    const limited = checkPublicRateLimit(req, url);
+    if (limited) return limited;
     switch (found.route.path) {
       case '/api/version':
         return new Response(env.BUILD_SHA || 'dev', { headers: { 'Content-Type': 'text/plain' } });
@@ -88,6 +95,7 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
   const who = off
     ? (localUserId(req, url) ? { id: localUserId(req, url)!, email: null } : pickList ? { id: '00000000-0000-0000-0000-000000000000', email: null } : null)
     : isLive ? await verifyJwt(liveToken(req), env) : await verifyToken(req, env);
+  if (!who && checkPublicRateLimit(req, url)) return checkPublicRateLimit(req, url)!;
   if (!who) return unauthorized();
   if (found === 404) return errorResponse(404, `No endpoint ${req.method} ${path}`);
   if (found === 405) return errorResponse(405, `${req.method} is not allowed on ${path}`);
@@ -130,6 +138,12 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
 }
 
 async function route(req: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
+  if (isScannerProbe(url.pathname)) {
+    return new Response('Not Found', {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
   if (url.pathname === '/webhooks/myoperator' && req.method === 'POST') {
     try { return await handleMyOperatorWebhook(req, env, ctx); } catch (e) { return toResponse(e); }
   }

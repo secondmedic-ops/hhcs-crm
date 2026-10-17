@@ -24,5 +24,7 @@ MY-SETUP-DETAILS.json
 
 # Never commit: backend/.env (old Spring setup) holds the Supabase DB password (covered by .env* above)
 
-# Excel / Office lock files
+# Excel / Office files
 ~$*
+*.xlsx
+*.pptx

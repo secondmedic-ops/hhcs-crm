@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 test('Audit requirements 3-7: intake, call wrap-up, hospital validation, commercial routing, central SPOC, provider fulfilment', async () => {
+
   const db = new PGlite();
   const dir = join(import.meta.dirname, '../../supabase/migrations');
   for (const f of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) {
@@ -422,8 +423,8 @@ test('Audit requirements 3-7: intake, call wrap-up, hospital validation, commerc
     case_item_id: bmmNurseItem.id,
     resource_type: 'staff',
     assigned_staff_id: users.bmm_field,
-    scheduled_at: new Date(Date.now() - 3600000).toISOString(),
-    scheduled_end: new Date(Date.now() + 3600000).toISOString()
+    scheduled_at: new Date(Date.now() - 7200000).toISOString(),
+    scheduled_end: new Date(Date.now() - 3600000).toISOString()
   })]);
   expect(nurseJob.id).toBeDefined();
 
@@ -462,39 +463,51 @@ test('Audit requirements 3-7: intake, call wrap-up, hospital validation, commerc
   await expect(moveJob('bmm_field', nurseJob.id, 'completed', {})).rejects.toThrow('confirmation');
 
   // Complete nursing job with confirmation
-  await moveJob('bmm_field', nurseJob.id, 'completed', { confirmed_with: 'Rajesh Mehta', note: '12h shift complete' });
+  await moveJob('bmm_field', nurseJob.id, 'completed', { confirmed_by: 'Rajesh Mehta', handover_confirmed: true, note: '12h shift complete' });
 
   // Partial fulfilment test: BMM referral cannot complete because bed job is not fulfilled
   await expect(fn('bmm_prov', "select update_referral($1, 'completed') v", [bmmLead])).rejects.toThrow('every included service unit');
 
-  // Problem reporting test on bed job
-  await moveJob('bmm_field', bedJob.id, 'problem', { problem_note: 'Lift not working; carrying ICU bed up stairs delayed' });
-  const [bedJobAfterProblem] = (await db.query('select status, problem_note from partner_deployments where id = $1', [bedJob.id])).rows;
-  expect(bedJobAfterProblem.status).toBe('problem');
-  expect(bedJobAfterProblem.problem_note).toBe('Lift not working; carrying ICU bed up stairs delayed');
+  // Issue reporting test on bed job
+  await moveJob('bmm_field', bedJob.id, 'report_issue', { note: 'Lift not working; carrying ICU bed up stairs delayed' });
+  const [bedJobAfterProblem] = (await db.query('select issue_open, issue_note from partner_deployments where id = $1', [bedJob.id])).rows;
+  expect(bedJobAfterProblem.issue_open).toBe(true);
+  expect(bedJobAfterProblem.issue_note).toBe('Lift not working; carrying ICU bed up stairs delayed');
 
-  // Resume and advance bed job: dispatched -> arrived -> active with asset tag / handover
-  await moveJob('bmm_prov', bedJob.id, 'dispatch');
-  await moveJob('bmm_field', bedJob.id, 'arrived');
-  await moveJob('bmm_field', bedJob.id, 'active', { asset_tag: 'BMM-BED-991', note: 'Assembled in patient room and demonstrated to family' });
+  // Manager/provider resolves issue
+  await moveJob('bmm_prov', bedJob.id, 'resolve_issue', { note: 'Service lift unlocked by building security' });
 
-  // Bed job requires return confirmation before completion because return_required is true
-  await expect(moveJob('bmm_field', bedJob.id, 'completed', { confirmed_with: 'Rajesh Mehta' })).rejects.toThrow('return');
+  // Advance bed job: dispatched -> delivered (with serial) -> active -> completed -> returned
+  await moveJob('bmm_field', bedJob.id, 'dispatched');
+  await moveJob('bmm_field', bedJob.id, 'delivered', { equipment_serial: 'BMM-BED-991' });
+  await moveJob('bmm_field', bedJob.id, 'installed', { note: 'Assembled in patient room' });
+  await moveJob('bmm_field', bedJob.id, 'active', { note: 'Demonstrated controls to family' });
 
-  // Complete bed job with return confirmation
-  await moveJob('bmm_field', bedJob.id, 'completed', {
-    confirmed_with: 'Rajesh Mehta',
-    return_confirmed: true,
+  // Bed job completion records handover
+  await moveJob('bmm_field', bedJob.id, 'completed', { confirmed_by: 'Rajesh Mehta', handover_confirmed: true });
+
+  // Referral cannot complete while equipment is deployed and return is required
+  await expect(fn('bmm_prov', "select update_referral($1, 'completed') v", [bmmLead])).rejects.toThrow('returns first');
+
+  // Record return of equipment
+  await moveJob('bmm_field', bedJob.id, 'returned', {
+    confirmed_by: 'Rajesh Mehta',
+    handover_confirmed: true,
     note: 'De-installed and returned in good condition'
   });
 
-  // Now all units are fulfilled; referral can be marked completed
-  const refComplete = await fn('bmm_prov', "select update_referral($1, 'completed') v", [bmmLead]);
-  expect(refComplete.status).toBe('completed');
+  // Now all units are fulfilled; referral is automatically marked completed
+  const [refFinal] = (await db.query('select status from case_referrals where id = $1', [bmmLead])).rows;
+  expect(refFinal.status).toBe('completed');
 
-  // Verify BMM-only case automatically transitioned journey_state to completed
-  const [bmmCaseFinal] = (await db.query('select journey_state from cases where id = $1', [bmmCaseId])).rows;
-  expect(bmmCaseFinal.journey_state).toBe('completed');
+  // Verify BMM-only case automatically transitioned stage to closed
+  const [bmmCaseFinal] = (await db.query('select stage, journey_state from cases where id = $1', [bmmCaseId])).rows;
+  expect(bmmCaseFinal.stage).toBe('closed');
+  expect(bmmCaseFinal.journey_state).toBe('closed');
+
+  // Verify mixed case remains open while SM diagnostic services are not completed
+  const [mixedCaseState] = (await db.query('select stage from cases where id = $1', [mixedCaseId])).rows;
+  expect(mixedCaseState.stage).not.toBe('closed');
 
   // =========================================================================
   // 5. EXTERNAL BMM INTEGRATION GATING & RECONCILIATION
@@ -505,4 +518,4 @@ test('Audit requirements 3-7: intake, call wrap-up, hospital validation, commerc
 
   // Calling machine API while disabled throws error
   await expect(fn('bmm_prov', 'select bmm_leads() v')).rejects.toThrow('disabled');
-});
+}, 60000);

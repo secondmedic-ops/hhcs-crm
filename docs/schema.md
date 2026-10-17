@@ -112,6 +112,8 @@
 | reached_call_id | uuid | YES |
 | outcome | text | YES |
 | outcome_note | text | YES |
+| origin_call_at | timestamp with time zone | YES |
+| eligible_at | timestamp with time zone | YES |
 
 ## calls
 | column | type | nullable |
@@ -156,6 +158,9 @@
 | live_transcript | text | YES |
 | live_transcript_started_at | timestamp with time zone | YES |
 | live_transcript_completed_at | timestamp with time zone | YES |
+| action_taken | text | YES |
+| followup_at | timestamp with time zone | YES |
+| followup_owner_id | uuid | YES |
 
 ## case_counters
 | column | type | nullable |
@@ -332,6 +337,7 @@
 | assessment_type | text | NO |
 | requested_service_start_on | date | YES |
 | referral_subtype | text | YES |
+| action_taken | text | YES |
 
 ## complaints
 | column | type | nullable |
@@ -970,6 +976,8 @@
 | outcome | text | YES |
 | outcome_note | text | YES |
 | notes | text | YES |
+| origin_call_at | timestamp with time zone | YES |
+| eligible_at | timestamp with time zone | YES |
 
 ## v_calls
 | column | type | nullable |
@@ -1014,6 +1022,9 @@
 | live_transcript | text | YES |
 | live_transcript_completed_at | timestamp with time zone | YES |
 | has_live_transcript | boolean | YES |
+| action_taken | text | YES |
+| followup_at | timestamp with time zone | YES |
+| followup_owner_id | uuid | YES |
 
 ## v_cases
 | column | type | nullable |
@@ -1112,6 +1123,7 @@
 | decision_maker_mobile_display | text | YES |
 | requested_service_start_on | date | YES |
 | referral_subtype | text | YES |
+| action_taken | text | YES |
 
 ## v_complaints
 | column | type | nullable |

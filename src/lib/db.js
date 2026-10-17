@@ -44,36 +44,46 @@ async function localWorker() {
   } catch { return false; }
 }
 
+let initPromise = null;
+
 export async function initDb(onStep) {
   if (db) return db;
-  if (mode === 'live') {
-    db = createApiClient();
-    return db;
-  }
-  onStep?.('Looking for the local test server');
-  if (await localWorker()) {
-    mode = 'local'; isLocal = true;
-    db = createApiClient();
-    return db;
-  }
-  mode = 'demo'; isDemo = true;
-  const { bootDemo } = await import('../demo/boot.js');
-  onStep?.('Starting demo database');
-  pg = await bootDemo(onStep);
-  db = createDemoClient(pg, demoSession);
-  // service-role runner for demo simulations (telephony / AI stand-ins)
-  db.service = async (sql, params = []) => {
-    const rows = await pg.transaction(async (tx) => {
-      await tx.query(`select set_config('request.jwt.claim.role', 'service_role', true), set_config('request.jwt.claim.sub', '', true)`);
-      return (await tx.query(sql, params)).rows;
-    });
-    emitChange('*');
-    return rows;
-  };
-  // the production Worker runs sla_scan() and activates approved prices whose date has come every minute; the demo does the same
-  const scan = () => db.service('select sla_scan(), activate_due_prices()').catch(() => {});
-  scan(); setInterval(scan, 60000);
-  return db;
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    try {
+      if (mode === 'live') {
+        db = createApiClient();
+        return db;
+      }
+      onStep?.('Looking for the local test server');
+      if (await localWorker()) {
+        mode = 'local'; isLocal = true;
+        db = createApiClient();
+        return db;
+      }
+      mode = 'demo'; isDemo = true;
+      const { bootDemo } = await import('../demo/boot.js');
+      onStep?.('Starting demo database');
+      pg = await bootDemo(onStep);
+      db = createDemoClient(pg, demoSession);
+      // service-role runner for demo simulations (telephony / AI stand-ins)
+      db.service = async (sql, params = []) => {
+        const rows = await pg.transaction(async (tx) => {
+          await tx.query(`select set_config('request.jwt.claim.role', 'service_role', true), set_config('request.jwt.claim.sub', '', true)`);
+          return (await tx.query(sql, params)).rows;
+        });
+        emitChange('*');
+        return rows;
+      };
+      // the production Worker runs sla_scan() and activates approved prices whose date has come every minute; the demo does the same
+      const scan = () => db.service('select sla_scan(), activate_due_prices()').catch(() => {});
+      scan(); setInterval(scan, 60000);
+      return db;
+    } finally {
+      initPromise = null;
+    }
+  })();
+  return initPromise;
 }
 
 export async function resetDemo() {

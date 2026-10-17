@@ -41,3 +41,48 @@ test('security headers on HTTPS responses; WebSocket upgrades untouched', async 
   Object.defineProperty(ws, 'webSocket', { value: {} });
   expect(secure(ws, url, env)).toBe(ws);
 });
+
+test('scanner probe detection blocks exploit endpoints and dotfiles but allows valid routes', async () => {
+  const { isScannerProbe } = await import('../src/security');
+  // Exploit probes blocked
+  expect(isScannerProbe('/.env')).toBe(true);
+  expect(isScannerProbe('/.git/config')).toBe(true);
+  expect(isScannerProbe('/.aws/credentials')).toBe(true);
+  expect(isScannerProbe('/wp-login.php')).toBe(true);
+  expect(isScannerProbe('/wp-admin/')).toBe(true);
+  expect(isScannerProbe('/xmlrpc.php')).toBe(true);
+  expect(isScannerProbe('/phpmyadmin/index.php')).toBe(true);
+  expect(isScannerProbe('/actuator/env')).toBe(true);
+  expect(isScannerProbe('/api/actuator/heapdump')).toBe(true);
+  expect(isScannerProbe('/server.php')).toBe(true);
+  expect(isScannerProbe('/backup.sql')).toBe(true);
+
+  // Normal routes allowed
+  expect(isScannerProbe('/')).toBe(false);
+  expect(isScannerProbe('/cases')).toBe(false);
+  expect(isScannerProbe('/cases/123')).toBe(false);
+  expect(isScannerProbe('/api/v1/health')).toBe(false);
+  expect(isScannerProbe('/api/v1/batch')).toBe(false);
+  expect(isScannerProbe('/api/actuator/health')).toBe(false);
+  expect(isScannerProbe('/api/actuator/health/liveness')).toBe(false);
+  expect(isScannerProbe('/assets/index.js')).toBe(false);
+});
+
+test('rate limiter blocks unauthenticated scanner flooding with 429', async () => {
+  const { checkPublicRateLimit, resetRateLimitsForTesting } = await import('../src/security');
+  resetRateLimitsForTesting();
+  const remoteUrl = new URL('https://hhcs-caredesk.secondmedic.workers.dev/api/v1/health');
+  const req = new Request(remoteUrl, { headers: { 'cf-connecting-ip': '198.51.100.42' } });
+
+  // First 120 requests allowed
+  for (let i = 0; i < 120; i++) {
+    expect(checkPublicRateLimit(req, remoteUrl)).toBeNull();
+  }
+
+  // 121st request rate-limited
+  const limited = checkPublicRateLimit(req, remoteUrl);
+  expect(limited?.status).toBe(429);
+  expect(limited?.headers.get('Retry-After')).toBeDefined();
+  expect(await limited?.json()).toMatchObject({ status: 429, error: 'Too Many Requests' });
+  resetRateLimitsForTesting();
+});

@@ -1517,6 +1517,16 @@
       "supervisor",
       "medical_desk"
     ],
+    "wrap_up_call": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "assign_coordinator": [
+      "coordinator",
+      "supervisor"
+    ],
     "schedule_validation": [
       "coordinator",
       "supervisor",

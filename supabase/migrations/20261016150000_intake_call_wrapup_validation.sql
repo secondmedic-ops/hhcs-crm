@@ -332,9 +332,9 @@ begin
   v_start := parse_day(p->>'requested_service_start_on', 'Requested service start date');
   v_source := coalesce(nullif(p->>'source_channel',''), 'phone');
   v_subtype := case when v_source = 'referral' then nullif(trim(p->>'referral_subtype'), '') else null end;
-  v_disp := coalesce(nullif(trim(p->>'intake_disposition'), ''), 'requirement_captured');
-  v_act := coalesce(nullif(trim(p->>'action_taken'), ''), 'Case created');
   v_care_type := coalesce(nullif(trim(p->>'care_type'), ''), 'standard');
+  v_disp := coalesce(nullif(trim(p->>'intake_disposition'), ''), case when v_care_type = 'post_discharge' then 'requirement_captured' else null end);
+  v_act := coalesce(nullif(trim(p->>'action_taken'), ''), 'Case created');
   v_dm_name := coalesce(nullif(trim(p->>'decision_maker_name'), ''), nullif(trim(p->>'caller_name'), ''));
   v_dm_rel := coalesce(nullif(trim(p->>'decision_maker_relation'), ''), nullif(trim(p->>'caller_relation'), ''));
   v_dm_mobile := coalesce(norm_mobile(nullif(p->>'decision_maker_mobile', '')), norm_mobile(nullif(p->>'caller_mobile', '')));
