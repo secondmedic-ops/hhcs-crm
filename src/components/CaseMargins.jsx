@@ -44,7 +44,8 @@ export default function CaseMargins({ c }) {
                 <tr key={l.item_id} className={l.included ? '' : 'muted'}>
                   <td><div style={l.included ? null : { textDecoration: 'line-through' }}>{l.service_name}</div>
                     <div className="tiny muted mono">{l.service_code}{l.price_version ? ` · v${l.price_version}` : ''}</div>
-                    {!l.included ? <div className="tiny">Dropped: not in the totals</div> : COST[l.cost_status] && <div className="tiny warn-text">{COST[l.cost_status]}</div>}</td>
+                    {!l.included ? <div className="tiny">Dropped: not in the totals</div> : COST[l.cost_status] && <div className="tiny warn-text">{COST[l.cost_status]}</div>}
+                    {l.included && l.cost_basis === 'default_share' && <div className="tiny warn-text">Assumed: no B2B rate yet, SecondMedic keeps {Number(l.default_share_pct)}% of B2C</div>}</td>
                   <td className="nowrap">{canPick
                     ? <Select className="sm" style={{ width: 'auto' }} value={l.provider_id || ''} disabled={busy} placeholder={opts.length ? 'Choose' : 'No provider has a rate'}
                         aria-label={`Provider for ${l.service_name}`} onChange={(e) => e.target.value && choose(l, e.target.value)} options={opts} />
@@ -76,6 +77,7 @@ export default function CaseMargins({ c }) {
             </tfoot>
           </table></div>
           <div className="panel-body col gap-4">
+            {d.lines.some((l) => l.included && l.cost_basis === 'default_share') && <div className="tiny muted">Lines marked Assumed have no B2B rate yet: their buying cost is the B2C rate less SecondMedic's default share, so the margin is that share of the B2C value (less any discount). The B2B rate replaces it once imported and the draft quote is refreshed or the provider chosen.</div>}
             {Number(d.case_discount) > 0 && <div className="tiny muted">Discount of {inr(d.case_discount)} spread over the lines in proportion to their value, rounded so the lines add up to the booking total ({inr(d.case_total)}).</div>}
             {!d.reconciles && <div className="tiny danger-text">The lines do not add up to the booking total. Refresh the page; if it stays, tell the supervisor.</div>}
             {d.frozen

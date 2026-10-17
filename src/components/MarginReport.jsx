@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc } from '../lib/db.js';
 import { useLoad } from '../lib/hooks.js';
+import { useAuth } from '../lib/auth.jsx';
 import { inr, num, pct, dateTime } from '../lib/fmt.js';
 import { Panel, Kpi, Badge, Button, Input, Select, TableSkeleton, Empty, ErrorNote, useAction } from './ui.jsx';
 
@@ -15,6 +16,8 @@ const mp = (v) => (v == null ? 'n/a' : pct(v, 2));
 
 export default function MarginReport({ from, to, periodId }) {
   const [run, busy] = useAction();
+  const { workspace } = useAuth();
+  const smShare = workspace?.settings?.sm_share_pct;
   const [provider, setProvider] = useState('');
   const [service, setService] = useState('');
   const [caseNo, setCaseNo] = useState('');
@@ -75,7 +78,7 @@ export default function MarginReport({ from, to, periodId }) {
         <Button icon="download" onClick={exportXlsx} disabled={!r || busy}>Excel</Button>
       </div>
       <ErrorNote error={rep.error} />
-      {r && <div className="small muted">{r.basis}</div>}
+      {r && <div className="small muted">{r.basis}{smShare != null && smShare !== '' && ` Lines without a B2B rate are costed at the B2C rate less SecondMedic's default share of ${Number(smShare)}% (B2C 1,000: buying 700, margin 300 before discount) until the B2B rates are imported.`}</div>}
       <div className="kpis">
         <Kpi label="Bookings" value={t && num(t.bookings)} detail={t && `${money(t.net_selling)} net selling`} />
         <Kpi label="Net selling (complete costs)" value={t && money(t.complete.net_selling)} detail={t && `${num(t.complete.bookings)} bookings`} />

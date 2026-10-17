@@ -45,6 +45,8 @@ const owner = async (sql, params = []) => (await db.query(sql, params)).rows;
 const [{ d: today }] = await owner(`select ws_today($1)::text d`, [ws]);
 const plus = (n) => new Date(Date.parse(today + 'T00:00:00Z') + n * 86400e3).toISOString().slice(0, 10);
 const svc = Object.fromEntries((await owner(`select code, id from services`)).map((r) => [r.code, r.id]));
+// The checks below are for real buying rates; the SecondMedic default share (HHCS 30%) is tested on its own at the end.
+await owner(`update workspaces set settings = settings - 'sm_share_pct' where id = $1`, [ws]);
 const OPT = { buy_tax_basis: 'no_gst', sell_tax_basis: 'no_gst' };
 const J = (v) => JSON.stringify(v);
 const preview = async (rows, opt = OPT, who = 'sup') => (await as(who, `select rate_import_check($1::jsonb, $2::jsonb) r`, [J(rows), J(opt)]))[0].r;
@@ -336,6 +338,30 @@ check(repCase.totals.bookings === 1, 'coordinator report covers the bookings the
 const [{ r: two }] = await as('sup', `select margin_report($1::date, $2::date) r`, [plus(-3), today]);
 check(Number(two.totals.complete.margin_pct) === Math.round(Number(two.totals.complete.margin) * 10000 / Number(two.totals.complete.net_selling)) / 100,
   'aggregate margin % from aggregate amounts', two.totals);
+
+console.log('\nSecondMedic default share: no B2B rate yet -> margin = 30% of B2C');
+const [{ p: hhcShare }] = await owner(`select ws_sm_share_pct(id) p from workspaces where code = 'HHC'`);
+check(hhcShare === null, 'share switched off for the checks above');
+await owner(`update workspaces set settings = settings || '{"sm_share_pct": 30}'::jsonb where id = $1`, [ws]);
+await owner(`update services set price = 1000 where id = $1`, [svc['ATTEND-12H']]);   // the example from the business: B2C 1,000
+const D = await enquiry('Margin test D', '9820011004');
+await as('agent', `insert into case_items(case_id, service_id, qty) values ($1, $2, 2), ($1, $3, 1)`, [D, svc['ATTEND-12H'], svc['NURSE-12H']]);
+m = await margins(D);
+let dl = byCode(m);
+const att = dl['ATTEND-12H'];
+const attBuy = Math.round(Number(att.sell_rate) * 70) / 100;
+check(Number(att.sell_rate) === 1000 && Number(att.buy_rate) === 700 && Number(att.margin) === 600, 'B2C 1,000 x 2: buying 700 each, SecondMedic margin 300 each', att);
+check(att.cost_status === 'ok' && att.cost_basis === 'default_share' && Number(att.default_share_pct) === 30 && Number(att.buy_rate) === attBuy
+  && Number(att.margin) === Math.round(Number(att.line_total) * 30) / 100 && Number(att.margin_pct) === 30, 'no B2B rate: buying = 70% of B2C, margin = 30%', att);
+check(dl['NURSE-12H'].cost_basis === 'rate' && Number(dl['NURSE-12H'].buy_rate) === 1600 && dl['NURSE-12H'].default_share_pct === null, 'a real B2B rate always wins', dl['NURSE-12H']);
+check(m.totals.status === 'complete' && m.reconciles, 'booking margin complete with the default share', m.totals);
+const legacyNow = (await margins(C)).lines.find((x) => x.service_code === 'VISIT-STD');
+check(legacyNow.cost_basis === 'default_share' && Number(legacyNow.margin) === Math.round(Number(legacyNow.net_selling) * 100 - Number(legacyNow.line_total) * 70) / 100,
+  'older line without a captured cost uses the share too', legacyNow);
+await owner(`update workspaces set settings = settings || '{"sm_share_pct": "abc"}'::jsonb where id = $1`, [ws]);
+check(byCode(await margins(D))['ATTEND-12H'].cost_status === 'no_provider', 'invalid share = no default, cost missing again');
+await owner(`update workspaces set settings = settings || '{"sm_share_pct": 30}'::jsonb where id = $1`, [ws]);
+await expectError('agent', `select ws_sm_share_pct($1)`, [ws], 'permission denied');
 
 console.log(`${checks} checks passed, ${problems.length} failed`);
 expect(problems).toEqual([]);
