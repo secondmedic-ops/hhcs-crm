@@ -587,6 +587,34 @@
         ]
       }
     },
+    "/api/v1/admin/email": {
+      "get": {
+        "summary": "Outbound e-mail (Gmail SMTP): settings present, last MIS send",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/email/test": {
+      "post": {
+        "summary": "Send a test e-mail to the configured sender address only",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/myoperator/test": {
       "post": {
         "summary": "Test the MyOperator connection",

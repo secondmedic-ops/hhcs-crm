@@ -483,6 +483,10 @@
 | data | jsonb | NO |
 | narrative | text | YES |
 | generated_at | timestamp with time zone | NO |
+| email_status | text | YES |
+| email_attempted_at | timestamp with time zone | YES |
+| emailed_at | timestamp with time zone | YES |
+| email_error | text | YES |
 
 ## notifications
 | column | type | nullable |
