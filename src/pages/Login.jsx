@@ -142,7 +142,7 @@ export default function Login({ next }) {
 
               {authMode === 'password' ? (
                 <form onSubmit={submit} className="col gap-12 mt-12">
-                  <p className="muted">Use your Supabase account issued by your administrator.</p>
+                  <p className="muted">Use the work email and password issued by your administrator.</p>
                   <Field label="Work email"><Input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
                   <Field label="Password"><Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
                   <ErrorNote error={err} />
@@ -231,7 +231,7 @@ export default function Login({ next }) {
                       ? 'Demo mode: In-browser database. Supervisors can select any department and sign in as any staff member.'
                       : isLocal
                       ? 'Local mode: Local Worker test database. Supervisors can select any department and sign in as any staff member.'
-                      : 'Supervisors can select any department and sign in as specific staff, or use Password tab for Supabase login.'}
+                      : 'Supervisors can select any department and sign in as specific staff, or use the Password tab to sign in with your work email.'}
                   </p>
                 </div>
               )}
