@@ -663,7 +663,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await rpc('sup','set_bmm_integration',{p_enabled:true,p_contract_confirmed:false})).status === 400,'BMM confirmation required before activation');
   check((await rpc('sup','set_bmm_integration',{p_enabled:true,p_contract_confirmed:true})).status === 200,'confirmed BMM interface enabled in disposable rehearsal');
   check((await call('bmm','GET','/api/v1/bmm/leads?limit=101')).status === 400,'BMM pagination validated');
-  const partnerCase=await rpc('agent','create_enquiry',{p:{patient:{full_name:'BMM API test',mobile:'9899002201',address:'Test address',pincode:'400058'},consent:true,service_ids:[svc['NURSE-12H']]}});
+  const partnerCase=await rpc('agent','create_enquiry',{p:{patient:{full_name:'BMM API test',mobile:'9899002201',address:'Test address',pincode:'400058'},consent:true,clinical_notes:'PRIVATE-ASSIGNED-CLINICAL-MARKER',service_ids:[svc['NURSE-12H']]}});
   const partnerId=partnerCase.body?.data?.case_id;
   const leadRow=await one('select id::text from case_referrals where case_id=$1 and provider_id=$2',partnerId,bmmProvider);
   const bmmList=await call('bmm','GET','/api/v1/bmm/leads');
@@ -676,7 +676,107 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((await call('bmm','POST',updatePath,{...partnerBody,status:'declined',note:'changed'})).status === 409,'BMM conflicting event rejected');
   check((await call('bmm','POST',updatePath,{...partnerBody,event_id:'33000000-0000-4000-8000-000000000002',status:'scheduled',scheduled_at:'2026-10-16T10:00:00Z'})).status === 409,'BMM stale expected status rejected');
   check((await call('bmm','POST',updatePath,{...partnerBody,event_id:'bad'})).status === 400,'BMM event ID validated');
+  // Phase 1: exercise the dedicated machine identity through the real Worker and RLS.
+  const machineId='b0000000-0000-4000-8000-000000000021';
+  await sql.begin(async tx => {
+    await tx`select set_config('request.jwt.claim.role','service_role',true)`;
+    await tx`insert into profiles(id,workspace_id,full_name,role,provider_id,integration_only)
+      values(${machineId},${ws},'Synthetic BMM machine','provider',${bmmProvider},true)`;
+  });
+  const machine=await token(machineId,'bmm-machine@rehearsal.test');
+  check((await call(machine,'GET','/api/v1/me')).body?.integrationOnly === true,'BMM machine receives minimal identity');
+  check((await call(machine,'GET','/api/v1/bmm/leads')).body?.leads?.some(r=>r.referral_id===leadRow.id),'BMM machine can retrieve its assigned lead');
+  for (const table of ['calls','v_calls','discharge_assessments','v_assessments']) {
+    check((await batch('bmm',[sel(table)])).status === 403, 'provider denied confidential table '+table);
+    check((await data('bmm',table,{op:'select',cols:'*'})).status === 403, 'provider denied direct confidential read '+table);
+  }
+  for (const table of ['cases','v_cases','case_referrals','v_referrals','patients','calls','v_calls','discharge_assessments','v_assessments']) {
+    check((await batch(machine,[sel(table)])).status === 403,'machine denied generic batch '+table);
+    check((await data(machine,table,{op:'select',cols:'*'})).status === 403,'machine denied generic data '+table);
+  }
+  // Changing an already cached human login into a machine identity takes effect immediately.
+  await sql.begin(async tx => {
+    await tx`select set_config('request.jwt.claim.role','service_role',true)`;
+    await tx`update profiles set integration_only=true where id=${U.bmm}`;
+  });
+  check((await batch('bmm',[sel('v_referrals')])).status===403,'fresh confinement overrides cached human access');
+  check((await call('bmm','GET','/api/v1/me')).body?.integrationOnly===true,'cached login receives minimal machine identity');
+  await sql.begin(async tx => {
+    await tx`select set_config('request.jwt.claim.role','service_role',true)`;
+    await tx`update profiles set integration_only=false where id=${U.bmm}`;
+  });
+  check((await rpc(machine,'provider_portal')).status === 403,'machine cannot enter human fulfilment portal');
+  check((await rpc(machine,'update_referral',{p_id:leadRow.id,p_status:'completed'})).status === 403,'machine cannot bypass validated status endpoint');
+  check((await call(machine,'GET','/api/v1/live',undefined,{'Sec-WebSocket-Protocol':'caredesk, '+machine})).status === 403,'machine cannot subscribe to unrestricted live updates');
+  check((await call(machine,'POST','/api/v1/staff-sessions/start',{staff_id:U.agent})).status === 403,'machine cannot impersonate staff');
+  check((await call(machine,'GET',`/api/v1/calls/${recCall}/recording`)).status === 403,'machine cannot access recordings');
+  check((await call(machine,'POST',`/api/v1/ai/calls/${recCall}`,{})).status === 403,'machine cannot use clinical AI');
+  // Query as the actual restricted DB role too: API allowlists are only the first wall.
+  const machineRows=await sql.begin(async tx => {
+    await tx`select set_config('request.jwt.claim.sub',${machineId},true), set_config('request.jwt.claim.role','authenticated',true), set_config('role','caredesk_app',true)`;
+    return Promise.all(['cases','patients','case_referrals','v_referrals','calls','discharge_assessments'].map(t=>tx.unsafe('select count(*)::int n from '+t)));
+  });
+  check(machineRows.every(rows=>rows[0].n===0),'machine RLS blocks generic patient/call/clinical rows');
+  const ownRows=await sql.begin(async tx => {
+    await tx`select set_config('request.jwt.claim.sub',${U.bmm},true), set_config('request.jwt.claim.role','authenticated',true), set_config('role','caredesk_app',true)`;
+    return { refs:await tx`select id,provider_id from case_referrals`, calls:await tx`select id from calls`, assessments:await tx`select id from discharge_assessments` };
+  });
+  check(ownRows.refs.length>0 && ownRows.refs.every(r=>r.provider_id===bmmProvider) && !ownRows.calls.length && !ownRows.assessments.length,'human provider RLS scopes referrals and hides calls/assessments');
+  check((await data('bmm','profiles',{op:'update',patch:{integration_only:true},filters:[{col:'id',op:'eq',val:U.bmm}]})).status===403,'provider cannot change its integration confinement');
+  const privateCase=await rpc('agent','create_enquiry',{p:{patient:{full_name:'BMM private fixture',mobile:'9899002202'},consent:true,clinical_notes:'PRIVATE-CLINICAL-MARKER',service_ids:[svc['ECG-12']]}});
+  const privateId=privateCase.body?.data?.case_id;
+  const privateRef=await one('select id::text from case_referrals where case_id=$1',privateId);
+  const safeSnapshot=await call(machine,'GET','/api/v1/bmm/leads');
+  check(!safeSnapshot.body.leads.some(r=>r.case_id===privateId) && !JSON.stringify(safeSnapshot.body).includes('PRIVATE-CLINICAL-MARKER') && !JSON.stringify(safeSnapshot.body).includes('PRIVATE-ASSIGNED-CLINICAL-MARKER'),'BMM excludes SM-only leads and confidential clinical content');
+  check((await call(machine,'POST',`/api/v1/bmm/leads/${privateRef.id}/status`,partnerBody)).status===400,'BMM cannot update another provider lead');
+  const foreignWs=(await sql`insert into workspaces(code,name,brand_name) values('BMM-API-TEST','Synthetic foreign','Synthetic foreign') returning id`)[0].id;
+  const foreignProvider=(await sql`insert into providers(workspace_id,code,name) values(${foreignWs},'BMM','Synthetic foreign BMM') returning id`)[0].id;
+  const foreignUser='b0000000-0000-4000-8000-000000000022';
+  await sql`insert into profiles(id,workspace_id,full_name,role,provider_id) values(${foreignUser},${foreignWs},'Foreign BMM','provider',${foreignProvider})`;
+  await sql`insert into bmm_integration_settings(workspace_id,enabled,contract_confirmed) values(${foreignWs},true,true)`;
+  const foreignToken=await token(foreignUser,'foreign@rehearsal.test');
+  check((await call(foreignToken,'GET','/api/v1/bmm/leads')).body?.total===0,'same-code BMM in another workspace sees no leads');
+  check((await call(foreignToken,'POST',updatePath,partnerBody)).status===400,'foreign BMM cannot replay another workspace event');
+  const otherUser='b0000000-0000-4000-8000-000000000023';
+  const smProvider=(await sql`select id from providers where workspace_id=${ws} and code='SM'`)[0].id;
+  await sql`insert into profiles(id,workspace_id,full_name,role,provider_id) values(${otherUser},${ws},'Other provider','provider',${smProvider})`;
+  const otherToken=await token(otherUser,'other-provider@rehearsal.test');
+  check((await call(otherToken,'GET','/api/v1/bmm/leads')).status===403,'non-BMM provider cannot retrieve BMM leads');
+  check((await call(otherToken,'POST',updatePath,partnerBody)).status===403,'non-BMM provider cannot update BMM leads');
+  for (const query of ['limit=0','limit=1.2','limit=-1','offset=-1','offset=1000001','offset=NaN'])
+    check((await call(machine,'GET','/api/v1/bmm/leads?'+query)).status===400,'BMM rejects pagination '+query);
+  for (const bad of [null,[],{}, {...partnerBody,status:'unknown'}, {...partnerBody,status:'cancelled'},
+    {...partnerBody,note:5}, {...partnerBody,note:'x'.repeat(2001)}, {...partnerBody,provider_id:smProvider},
+    {...partnerBody,status:'scheduled'}, {...partnerBody,status:'declined',note:' '},
+    {...partnerBody,scheduled_at:'2026-10-20T10:00:00'}, {...partnerBody,scheduled_at:'2026-02-30T10:00:00Z'}])
+    check((await call(machine,'POST',updatePath,bad)).status===400,'BMM rejects invalid event '+JSON.stringify(bad).slice(0,90));
+  check((await call(machine,'POST','/api/v1/bmm/leads/not-a-uuid/status',partnerBody)).status===400,'BMM validates lead UUID');
+  const beforeEvents=await one('select count(*)::int n from bmm_status_events');
+  const beforeTimeline=await one('select count(*)::int n from interactions where case_id=$1',partnerId);
+  // Concurrent HTTP retries must commit one event and one timeline entry.
+  const schedule={event_id:'33000000-0000-4000-8000-000000000003',expected_status:'accepted',status:'scheduled',scheduled_at:'2026-10-20T10:00:00+05:30'};
+  const retries=await Promise.all([call(machine,'POST',updatePath,schedule),call(machine,'POST',updatePath,schedule)]);
+  check(retries.every(r=>r.status===200) && retries.filter(r=>r.body?.duplicate===false).length===1,'concurrent BMM retries apply one status event');
+  check((await one('select count(*)::int n from bmm_status_events')).n===beforeEvents.n+1 && (await one('select count(*)::int n from interactions where case_id=$1',partnerId)).n===beforeTimeline.n+1,'duplicate retries do not repeat event or timeline side effects');
+  for (const [n,expected,status] of [[4,'scheduled','dispatched'],[5,'dispatched','in_progress'],[6,'in_progress','completed']]) {
+    const response=await call(machine,'POST',updatePath,{event_id:'33000000-0000-4000-8000-'+String(n).padStart(12,'0'),expected_status:expected,status});
+    check(response.status===200 && response.body?.status===status,'BMM applies '+status);
+  }
+  check((await call(machine,'POST',updatePath,partnerBody)).body?.duplicate===true,'old BMM event remains idempotent after completion');
+  const declineCase=await rpc('agent','create_enquiry',{p:{patient:{full_name:'BMM decline fixture',mobile:'9899002203'},consent:true,service_ids:[svc['NURSE-12H']]}});
+  const declineRef=await one('select id::text from case_referrals where case_id=$1 and provider_id=$2',declineCase.body?.data?.case_id,bmmProvider);
+  const declineEvent={event_id:'33000000-0000-4000-8000-000000000008',expected_status:'new',status:'declined',note:'No available staff'};
+  const declined=await call(machine,'POST',`/api/v1/bmm/leads/${declineRef.id}/status`,declineEvent);
+  check(declined.status===200 && declined.body?.status==='declined','BMM can decline with a reason');
+  check((await call(machine,'POST',`/api/v1/bmm/leads/${declineRef.id}/status`,declineEvent)).body?.duplicate===true,'decline retry is idempotent');
+  const declinePath=`/api/v1/bmm/leads/${lead.id}/status`;
+  // Previously completed leads cannot be declined, even with a new valid event.
+  check((await call(machine,'POST',declinePath,{event_id:'33000000-0000-4000-8000-000000000007',expected_status:'completed',status:'declined',note:'Unavailable'})).status===400,'terminal BMM lead cannot regress');
+  await sql`update providers set active=false where id=${bmmProvider}`;
+  check((await call(machine,'GET','/api/v1/bmm/leads')).status===403,'provider deactivation blocks BMM immediately despite token cache');
+  await sql`update providers set active=true where id=${bmmProvider}`;
   check((await rpc('sup','set_bmm_integration',{p_enabled:false,p_contract_confirmed:false})).status === 200,'BMM disabled again after rehearsal');
+  check((await call(machine,'POST',updatePath,partnerBody)).status===400,'disabled integration blocks status replay');
   // ---- Administrator: full access, creates staff of any role, opens staff workspaces under its own label
   const admRead = await batch('administrator', [sel('v_cases', { cols: 'id' }), sel('v_calls', { cols: 'id' }), sel('v_audit', { cols: 'id' })]);
   check(admRead.status === 200 && admRead.body.results.every((r) => (r.data || []).length > 0), 'administrator reads cases, calls and the audit trail', JSON.stringify(admRead.body).slice(0, 200));

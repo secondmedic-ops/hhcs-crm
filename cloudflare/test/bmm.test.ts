@@ -10,7 +10,8 @@ test('BMM contract validates status events before accessing data', () => {
   expect(bmmUpdate(event,id).status).toBe('in_progress');
   expect(bmmUpdate(event,id).note).toBe('Ready');
   for (const body of [null,[],{...event,event_id:'bad'},{...event,status:'unknown'},{...event,note:42},
-    {...event,scheduled_at:'2026-10-16T10:00:00'},{...event,scheduled_at:'bad'},{...event,note:'x'.repeat(2001)}]) {
+    {...event,scheduled_at:'2026-10-16T10:00:00'},{...event,scheduled_at:'bad'},{...event,note:'x'.repeat(2001)}, {...event,unexpected:true}, {...event,status:'scheduled'},
+    {...event,status:'declined',note:' '}, {...event,scheduled_at:'2026-02-30T10:00:00Z'}]) {
     expect(() => bmmUpdate(body,id)).toThrow();
   }
 });
@@ -23,6 +24,7 @@ test('BMM provider isolation, sign-off, workflow, idempotency and closure', asyn
     // The migration remains safe to rerun.
     await db.exec(readFileSync(join(dir,'20261014100000_bmm_partner_api.sql'),'utf8'));
     await db.exec(readFileSync(join(dir,'20261015170200_bmm_release_scope.sql'),'utf8'));
+    await db.exec(readFileSync(join(dir,'20261019090000_bmm_machine_confinement.sql'),'utf8'));
     const ws = (await db.query<any>("select id from workspaces where code='HHC'")).rows[0].id;
     const ids = {sup:'31000000-0000-4000-8000-000000000001',agent:'31000000-0000-4000-8000-000000000002',
       bmm:'31000000-0000-4000-8000-000000000003',other:'31000000-0000-4000-8000-000000000004',foreign:'31000000-0000-4000-8000-000000000005'};

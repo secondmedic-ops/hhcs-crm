@@ -110,6 +110,18 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
     if (path === '/api/v1/local/users') return errorResponse(404, 'Only available in the local test');
     const access = await accessOf(sql, who.id);
     const principal: User = { id: who.id, email: who.email, ...access, authMode: off ? 'off' : 'supabase' };
+    // Read confinement fresh, before special routes or staff impersonation; cached roles cannot widen a machine login.
+    const [identity] = await sql`select integration_only from profiles where id = ${who.id}::uuid`;
+    if (identity?.integration_only) {
+      const machinePath = found.route.path === '/api/v1/bmm/leads' || found.route.path === '/api/v1/bmm/leads/{id}/status';
+      if (!machinePath && found.route.path !== '/api/v1/me') return errorResponse(403, FORBIDDEN);
+      if (found.route.path === '/api/v1/me') {
+        const [p] = await sql`select id, role::text, workspace_id from profiles where id = ${who.id}::uuid and active`;
+        if (!p || p.role !== 'provider') return errorResponse(403, FORBIDDEN);
+        return json({ userId: p.id, role: p.role, workspaceId: p.workspace_id, integrationOnly: true });
+      }
+      if (req.headers.has('X-Staff-Session')) return errorResponse(403, FORBIDDEN);
+    }
     c.user = principal;
     const staffSession = path === '/api/v1/staff-sessions/end' ? null : await resolveStaffSession(c, principal);
     const user = c.user;

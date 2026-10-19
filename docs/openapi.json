@@ -800,8 +800,7 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin",
-      "provider"
+      "admin"
     ],
     "interactions": [
       "agent",
@@ -1122,8 +1121,7 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin",
-      "provider"
+      "admin"
     ],
     "v_callbacks": [
       "agent",

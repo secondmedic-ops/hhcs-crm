@@ -22,10 +22,10 @@ const COMMERCIAL_RATES: readonly Role[] = ['supervisor', 'coordinator', 'admin']
 const WITH_PROVIDER: readonly Role[] = [...ALL, 'provider'];
 
 /** Who may read a table / view (rows are then filtered by RLS per role). Not listed = nobody. Provider logins may query the
- *  case-page tables; Row Level Security returns them nothing from calls, assignments, payments, approvals, SLA timers, complaints. */
+ *  case-page tables; calls and clinical assessments are denied here, with RLS as a second wall. */
 export const READ: Record<string, readonly Role[]> = {
   workspaces: WITH_PROVIDER, zones: WITH_PROVIDER, profiles: WITH_PROVIDER, services: WITH_PROVIDER, templates: WITH_PROVIDER, sla_policies: WITH_PROVIDER, escalation_matrix: WITH_PROVIDER,
-  patients: WITH_PROVIDER, cases: WITH_PROVIDER, case_items: WITH_PROVIDER, case_stage_history: WITH_PROVIDER, calls: WITH_PROVIDER, interactions: WITH_PROVIDER, callbacks: WITH_PROVIDER,
+  patients: WITH_PROVIDER, cases: WITH_PROVIDER, case_items: WITH_PROVIDER, case_stage_history: WITH_PROVIDER, calls: ALL, interactions: WITH_PROVIDER, callbacks: WITH_PROVIDER,
   approvals: WITH_PROVIDER, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER,
   qa_reviews: WITH_PROVIDER, notifications: WITH_PROVIDER, inbound_emails: WITH_PROVIDER,
   providers: WITH_PROVIDER, case_referrals: WITH_PROVIDER, v_referrals: WITH_PROVIDER,
@@ -37,7 +37,7 @@ export const READ: Record<string, readonly Role[]> = {
   // Booking costs and margins are not tables here: only case_margins / margin_report return them.
   provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
   service_knowledge: ALL,
-  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: WITH_PROVIDER, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
+  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
 };
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */

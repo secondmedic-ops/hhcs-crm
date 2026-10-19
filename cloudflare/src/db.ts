@@ -131,7 +131,7 @@ export async function asSystem<T>(sql: Sql, fn: (tx: Tx) => Promise<T>): Promise
 export const SCHEMA: Record<string, string[]> = {
   staff_sessions: ['id', 'workspace_id', 'supervisor_id', 'staff_id', 'expires_at', 'ended_at'],
   workspaces: ['id', 'code', 'settings'],
-  profiles: ['id', 'workspace_id', 'full_name', 'email', 'phone', 'role', 'agent_code', 'myoperator_user_id', 'myoperator_extension', 'skills', 'active', 'provider_id',
+  profiles: ['id', 'workspace_id', 'full_name', 'email', 'phone', 'role', 'agent_code', 'myoperator_user_id', 'myoperator_extension', 'skills', 'active', 'provider_id', 'integration_only',
     'available', 'available_since', 'last_autodial_at'],
   payments: ['id', 'workspace_id', 'case_id', 'amount', 'collected_at', 'destination_account'],
   patients: ['id', 'workspace_id', 'mobile', 'email', 'full_name'],

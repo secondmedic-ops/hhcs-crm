@@ -623,6 +623,7 @@
 | available | boolean | NO |
 | available_since | timestamp with time zone | YES |
 | last_autodial_at | timestamp with time zone | YES |
+| integration_only | boolean | NO |
 
 ## provider_fulfilment_events
 | column | type | nullable |

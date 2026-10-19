@@ -30,11 +30,19 @@ if (db !== "UP") {
   process.exit(1);
 }
 
-for (const path of ["/api/v1/me", "/api/v1/admin/webhooks", "/api/v1/admin/integrations"]) {
+for (const path of ["/api/v1/bmm/leads", "/api/v1/me", "/api/v1/admin/webhooks", "/api/v1/admin/integrations"]) {
   const r = await fetch(url + path);
   if (r.status !== 401) {
     console.error(`SECURITY: live GET ${path} without login returned ${r.status}, expected 401. Roll back now (PROJECT.md > Rollback).`);
     process.exit(1);
   }
 }
+const bmmStatus = await fetch(url + "/api/v1/bmm/leads/00000000-0000-4000-8000-000000000000/status", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+});
+if (bmmStatus.status !== 401) {
+  console.error("SECURITY: live BMM status endpoint without login returned " + bmmStatus.status + ", expected 401.");
+  process.exit(1);
+}
+
 console.log(`Smoke OK: ${url} serves ${sha}; database up; API closed without login`);
