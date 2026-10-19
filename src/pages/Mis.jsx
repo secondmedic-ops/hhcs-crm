@@ -8,25 +8,10 @@ import { inr, num, pct, dur, date, dateLong, dateTime, istDateStr } from '../lib
 import { PageHead, Panel, Kpi, Segmented, Button, Badge, Input, TableSkeleton, Skeleton, Empty, ErrorNote, AiTag, useAction } from '../components/ui.jsx';
 import { Bars, HBars, Funnel, Line, Meter } from '../components/charts.jsx';
 import MarginReport from '../components/MarginReport.jsx';
+import { D, add, shiftMonth, rangeFor, selectMisPeriod } from '../lib/mis-period.js';
 
-// ---- IST calendar helpers on 'YYYY-MM-DD' strings
-const D = (s) => new Date(s + 'T00:00:00Z');
-const S = (d) => d.toISOString().slice(0, 10);
-const add = (s, n) => S(new Date(D(s).getTime() + n * 86400e3));
-const monday = (s) => add(s, -((D(s).getUTCDay() + 6) % 7));
-const monthStart = (s) => s.slice(0, 7) + '-01';
-const monthEnd = (s) => { const d = D(monthStart(s)); d.setUTCMonth(d.getUTCMonth() + 1); return add(S(d), -1); };
-const shiftMonth = (s, n) => { const d = D(monthStart(s)); d.setUTCMonth(d.getUTCMonth() + n); return S(d); };
 const label = (s) => date(s + 'T00:00:00+05:30');
 const longLabel = (s) => dateLong(s + 'T00:00:00+05:30');
-
-function rangeFor(mode, anchor, custom) {
-  if (mode === 'daily') return [anchor, anchor];
-  if (mode === 'weekly') { const m = monday(anchor); return [m, add(m, 6)]; }
-  if (mode === 'monthly') return [monthStart(anchor), monthEnd(anchor)];
-  return custom[0] <= custom[1] ? custom : [custom[1], custom[0]];
-}
-const defaultAnchor = (mode) => (mode === 'daily' ? istDateStr(-1) : mode === 'weekly' ? add(monday(istDateStr(0)), -7) : shiftMonth(istDateStr(0), -1));
 
 const MODES = [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['custom', 'Custom']];
 const CAT = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', other: 'Other' };
@@ -45,11 +30,12 @@ export default function Mis() {
   const canMargins = can('supervisor', 'coordinator');
   const [view, setView] = useState('pack');
   const margins = canMargins && view === 'margins';
-  const [mode, setModeRaw] = useState('daily');
-  const [anchor, setAnchor] = useState(defaultAnchor('daily'));
-  const [custom, setCustom] = useState([istDateStr(-7), istDateStr(-1)]);
+  const [period, setPeriod] = useState({ mode: 'daily', anchor: istDateStr(-1), custom: [istDateStr(-7), istDateStr(-1)] });
+  const { mode, anchor, custom } = period;
+  const setAnchor = (anchor) => setPeriod((p) => ({ ...p, anchor }));
+  const setCustom = (custom) => setPeriod((p) => ({ ...p, custom }));
   const [run, busy] = useAction();
-  const setMode = (m) => { setModeRaw(m); if (m !== 'custom') setAnchor(defaultAnchor(m)); };
+  const setMode = (m) => setPeriod((p) => selectMisPeriod(p, m));
   const [from, to] = rangeFor(mode, anchor, custom);
   const step = (n) => setAnchor(mode === 'daily' ? add(anchor, n) : mode === 'weekly' ? add(anchor, 7 * n) : shiftMonth(anchor, n));
   const today = istDateStr(0);
