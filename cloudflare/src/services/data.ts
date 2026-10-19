@@ -89,6 +89,7 @@ export const RPC: Record<string, readonly Role[]> = {
   care_plan_sheet: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'],
   case_gates: WITH_PROVIDER, render_template: ALL, log_access: WITH_PROVIDER,
   dashboard_kpis: ALL,
+  // SQL mis_report aggregates collections.by_account by destination_account; pass through unchanged.
   mis_report: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   rate_import_check: RATE_MANAGERS, submit_rate_import: RATE_MANAGERS, set_provider_rate: RATE_MANAGERS, end_provider_rate: RATE_MANAGERS,
   save_service_knowledge: RATE_MANAGERS, import_service_knowledge: RATE_MANAGERS,

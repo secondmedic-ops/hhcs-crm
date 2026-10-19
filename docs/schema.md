@@ -599,6 +599,7 @@
 | reconciled_at | timestamp with time zone | YES |
 | reconciled_by | uuid | YES |
 | exception | text | YES |
+| destination_account | text | NO |
 
 ## profiles
 | column | type | nullable |

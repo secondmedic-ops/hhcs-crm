@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "npm --prefix cloudflare test"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.0",

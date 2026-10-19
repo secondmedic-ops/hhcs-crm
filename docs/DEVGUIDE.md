@@ -43,7 +43,7 @@ await rpc('advance_case', { p_case: id, p_note: null });   // throws Error(messa
 | assign_staff | p_case, p_staff, p_task (phlebotomy/xray/ecg/visit), p_eta, p_backup_for | coordinator/supervisor |
 | field_update | p_assignment, p_action ('en_route','checkin','delay','complete'), p (jsonb: eta, lat, lng, reason, checklist{consent,id_check,procedure}, signoff) | |
 | upsert_sample | p (jsonb: case_id, barcode, kind, collected_at, handover_at, dispatched_at, transport_temp_c, received_at, accessioned_at, report_released_at, delivered_at, critical_flag, critical_note) | critical → clinical escalation |
-| record_payment | p_case, p_amount, p_mode (upi/link/card/cash), p_txn | |
+| record_payment | p_case, p_amount, p_mode (upi/link/card/cash), p_txn, p_account (HHC_HINDUJA / HHC_SECONDMEDIC) | Legacy calls without p_account default to HHC_HINDUJA. MIS collections.by_account sums each destination. |
 | reconcile_payment | p_payment, p_ok, p_exception | supervisor/coordinator |
 | set_report_status | p_case, p_status (pending/released/delivered/na) | |
 | capture_feedback | p_case, p_rating, p_text | |

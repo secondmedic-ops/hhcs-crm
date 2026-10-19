@@ -32,6 +32,7 @@ const MODES = [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'],
 const CAT = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', other: 'Other' };
 const COMPLAINT = { service: 'Service', behaviour: 'Staff behaviour', billing: 'Billing', report_delay: 'Report delay', other: 'Other' };
 const ESC = { clinical: 'Clinical', emergency: 'Emergency', delay: 'Field delay', complaint: 'Complaint', privacy: 'Privacy', sla: 'SLA breach' };
+const BANK_ACCOUNT = { HHC_HINDUJA: 'Account 1 (Hinduja Hospital Direct)', HHC_SECONDMEDIC: 'Account 2 (SecondMedic Ops Escrow)' };
 const MODE_PAY = { upi: 'UPI', link: 'Payment link', card: 'Card', cash: 'Cash', refund: 'Refund' };
 const mins = (m) => (m == null ? '–' : m >= 120 ? `${(m / 60).toFixed(1)} h` : `${Number(m).toFixed(1)} min`);
 const target = (m) => (m >= 120 ? `${m / 60} h` : `${m} min`);
@@ -236,6 +237,11 @@ export default function Mis() {
                 <dt>Exceptions</dt><dd>{col.exceptions ? <Badge kind="danger">{col.exceptions}</Badge> : <span className="mono">0</span>}</dd>
                 <dt>Outstanding</dt><dd className="mono">{inr(r.outstanding)} <span className="muted small">· all time</span></dd>
               </dl>
+              <div className="mt-16"><div className="upper mb-8">By bank account</div>
+                <dl className="kv">{Object.entries(BANK_ACCOUNT).map(([account, label]) => (
+                  <div key={account} style={{ display: 'contents' }}><dt>{label}</dt><dd className="mono">{inr(col.by_account?.[account] ?? 0)}</dd></div>
+                ))}</dl>
+              </div>
               {Object.keys(col.by_mode || {}).length > 0 && <div className="mt-16"><div className="upper mb-8">By mode</div>
                 <HBars data={Object.entries(col.by_mode).map(([k, v]) => ({ k: MODE_PAY[k] || k, v }))} label="k" value="v" format={inr} /></div>}
             </> : <Skeleton lines={6} />}
@@ -350,6 +356,7 @@ function writeWorkbook(r, { from, to, mode, workspace }) {
     S1('Revenue', 'Booking value', r.revenue.booking_value), S1('Revenue', 'Completed value', r.revenue.completed_value),
     S1('Collections', 'Collected', col.collected), S1('Collections', 'Payments', col.count), S1('Collections', 'Reconciled', col.reconciled), S1('Collections', 'Exceptions', col.exceptions),
     ...Object.entries(col.by_mode || {}).map(([m, v]) => S1('Collections', `By mode: ${MODE_PAY[m] || m}`, v)),
+    ...Object.entries(BANK_ACCOUNT).map(([account, label]) => S1('Collections', label, col.by_account?.[account] ?? 0)),
     S1('Collections', 'Outstanding (all time)', r.outstanding),
     S1('Complaints', 'New', k.new), S1('Complaints', 'Resolved', k.resolved), S1('Complaints', 'Acknowledged within 15 min', k.ack_within_sla),
     ...Object.entries(k.by_category || {}).map(([m, v]) => S1('Complaints', `Category: ${COMPLAINT[m] || m}`, v)),

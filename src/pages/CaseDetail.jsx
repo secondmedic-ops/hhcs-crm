@@ -1077,11 +1077,12 @@ function PaymentPanel({ c, pays, canAct, canReconcile, allowCash, templates = []
 function PayModal({ c, outstanding, allowCash, onClose }) {
   const [run, busy] = useAction();
   const [amount, setAmount] = useState(String(outstanding));
+  const [account, setAccount] = useState('HHC_HINDUJA');
   const [mode, setMode] = useState('upi');
   const [txn, setTxn] = useState('');
   const modes = [['upi', 'UPI'], ['link', 'Payment link'], ['card', 'Card']].concat(allowCash ? [['cash', 'Cash']] : []);
   const save = async () => {
-    const r = await run(() => rpc('record_payment', { p_case: c.id, p_amount: Number(amount), p_mode: mode, p_txn: txn.trim() || null }), 'Payment recorded · receipt generated');
+    const r = await run(() => rpc('record_payment', { p_case: c.id, p_amount: Number(amount), p_mode: mode, p_txn: txn.trim() || null, p_account: account }), 'Payment recorded · receipt generated');
     if (r !== undefined) onClose();
   };
   return (
@@ -1090,6 +1091,15 @@ function PayModal({ c, outstanding, allowCash, onClose }) {
       <div className="form-grid">
         <Field label="Amount" hint={`outstanding ${inr(outstanding)}`}><Input type="number" min="1" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} className="mono" /></Field>
         <Field label="Mode"><Segmented options={modes} value={mode} onChange={setMode} /></Field>
+        <div className="span2" role="radiogroup" aria-label="Bank Account">
+          <div className="upper mb-8">Bank Account</div>
+          {[['HHC_HINDUJA', 'Account 1 (Hinduja Hospital Direct)'], ['HHC_SECONDMEDIC', 'Account 2 (SecondMedic Ops Escrow)']].map(([value, label]) => (
+            <label key={value} className="row gap-8 mb-8">
+              <input type="radio" name="destination_account" value={value} checked={account === value} onChange={() => setAccount(value)} />
+              {label}
+            </label>
+          ))}
+        </div>
         <Field label="Transaction reference" className="span2"><Input className="mono" value={txn} onChange={(e) => setTxn(e.target.value)} placeholder={mode === 'upi' ? 'UPI ref, 12 digits' : 'Gateway reference'} /></Field>
       </div>
       {!allowCash && <p className="tiny muted mt-8">Cash collection is off for this programme.</p>}
