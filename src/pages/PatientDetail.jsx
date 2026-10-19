@@ -5,7 +5,7 @@ import { db, q, rpc } from '../lib/db.js';
 import { dial, aiCall as summariseCall, aiStatus } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
-import { inr, num, ago, dateLong, dateTime, time, dur, CHANNEL_LABEL } from '../lib/fmt.js';
+import { inr, num, ago, dateLong, dateTime, time, dur, CHANNEL_LABEL, outcomeLabel } from '../lib/fmt.js';
 import {
   PageHead, Panel, Badge, Button, StageBadge, SlaBadge, Tabs, Modal, Field, Input, Select, Skeleton, TableSkeleton, Empty, ErrorNote, AiTag, useAction, useToast,
 } from '../components/ui.jsx';
@@ -250,7 +250,7 @@ function CallsTab({ load, onCase, ai, canRun, summarising, onSummarise }) {
             </div>
             {c.ai_summary && <div className="small mt-4"><AiTag /> {c.ai_summary}</div>}
             <AiCallState call={c} enabled={ai?.enabled} canRun={canRun} busy={summarising === c.id} onRun={onSummarise} />
-            {c.disposition && <div className="tiny muted mt-4">Disposition: {c.disposition}</div>}
+            {c.disposition && <div className="tiny muted mt-4">Outcome: {outcomeLabel(c.disposition)}</div>}
           </div>
         </div>
       )) : <Empty title="No calls with this patient" />}

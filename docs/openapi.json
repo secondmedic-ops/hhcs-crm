@@ -493,6 +493,19 @@
         ]
       }
     },
+    "/api/v1/admin/webhooks/health": {
+      "get": {
+        "summary": "MyOperator webhook health: last event, counts, failures, rejections (no payloads or numbers)",
+        "x-access": [
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/integrations": {
       "get": {
         "summary": "Which integrations are configured",
@@ -1442,6 +1455,9 @@
       "admin",
       "client_manager"
     ],
+    "set_webhook_alert_hours": [
+      "supervisor"
+    ],
     "autodial_settings": [
       "agent",
       "coordinator",
@@ -1558,6 +1574,12 @@
       "medical_desk"
     ],
     "wrap_up_call": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk"
+    ],
+    "my_pending_wrapup": [
       "agent",
       "coordinator",
       "supervisor",

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, testWaba, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi, emailStatus, testEmail } from '../lib/api.js';
+import { createUser, webhookEvents, webhookHealth, integrations, moSettings, saveMoSettings, testMo, testWaba, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi, emailStatus, testEmail } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { homeFor, roleAllows, useAuth } from '../lib/auth.jsx';
 import { dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
@@ -1067,6 +1067,7 @@ function TelephonyTab() {
         {h.data?.demo && <div className="tiny faint mt-12">Demo mode: telephony and AI are simulated in the browser.</div>}
       </Panel>
 
+      {roleAllows(['supervisor'], profile?.role) && <WebhookHealth />}
       {isAdmin && <AutodialPanel />}
       {isAdmin && <BmmIntegration />}
       {isAdmin ? <MyOperatorConnection /> : (
@@ -1099,6 +1100,57 @@ function TelephonyTab() {
         ) : <Empty title="No webhook events yet">Events appear as soon as MyOperator posts the first call.</Empty>}
       </Panel>
     </div>
+  );
+}
+
+// Supervisors, read-only: is MyOperator still posting calls to CareDesk? Times, counts and masked errors only.
+function WebhookHealth() {
+  const h = useLoad(() => webhookHealth(), []);
+  const [hours, setHours] = useState('');
+  const [run, busy] = useAction();
+  const d = h.data;
+  useEffect(() => { if (d?.alert?.hours) setHours(String(d.alert.hours)); }, [d?.alert?.hours]);
+  const silentH = d?.last_event ? (Date.now() - new Date(d.last_event.at).getTime()) / 3600e3 : null;
+  const tone = !d ? null : !d.last_event ? 'danger' : silentH > (d.alert?.hours || 4) ? 'warn' : 'ok';
+  const save = () => run(async () => { await rpc('set_webhook_alert_hours', { p_hours: Number(hours) }); h.reload(); }, 'Alert window saved');
+  const c = d?.counts || {};
+  return (
+    <Panel title="Webhook health" sub="Is MyOperator still sending call events to CareDesk? Read-only; no payloads or phone numbers."
+      actions={<Button size="sm" kind="ghost" icon="refresh" onClick={h.reload}>Refresh</Button>}>
+      <ErrorNote error={h.error} />
+      {h.loading ? <Skeleton lines={4} /> : d && (
+        <div className="col gap-12">
+          <table className="t compact"><tbody>
+            <tr><td className="small muted nowrap">Last event received</td><td>
+              {d.last_event ? <span className="row"><Badge kind={tone} dot>{tone === 'ok' ? 'Receiving' : 'Quiet'}</Badge><span className="small mono">{dateTime(d.last_event.at)} IST · {d.last_event.type || 'unknown type'}</span></span>
+                : <Badge kind="danger" dot>No webhook event ever received</Badge>}</td></tr>
+            <tr><td className="small muted nowrap">Webhook events</td><td className="small">{c.webhook_24h ?? 0} in the last 24 h · {c.webhook_7d ?? 0} in 7 days</td></tr>
+            <tr><td className="small muted nowrap">Call-log sync</td><td className="small">{c.sync_24h ?? 0} in 24 h · {c.sync_7d ?? 0} in 7 days{d.last_sync_event ? ` · last ${dateTime(d.last_sync_event.at)}` : ''}
+              {d.sync?.last_error && <div className="danger-text">{d.sync.last_error}</div>}</td></tr>
+            <tr><td className="small muted nowrap">Rejected posts</td><td className="small">
+              {d.rejections?.last_401_at ? `Wrong or missing key (401): last ${dateTime(d.rejections.last_401_at)}` : 'No 401 rejections'}
+              {' · '}{d.rejections?.last_503_at ? `Key not set (503): last ${dateTime(d.rejections.last_503_at)}` : 'no 503 rejections'}</td></tr>
+            <tr><td className="small muted nowrap">Not applied (7 days)</td><td className="small">{c.unapplied_7d ? <span className="danger-text">{c.unapplied_7d}</span> : 0}</td></tr>
+          </tbody></table>
+          {d.failed?.length > 0 && (
+            <div className="table-wrap"><table className="t compact">
+              <thead><tr><th>Received</th><th>Event</th><th>Route</th><th>Error</th></tr></thead>
+              <tbody>{d.failed.map((e, i) => (
+                <tr key={i}><td className="small mono nowrap">{dateTime(e.at)}</td><td className="small mono">{e.type || '–'}</td>
+                  <td className="small">{e.source === 'myoperator_sync' ? 'Sync' : 'Webhook'}</td><td className="small danger-text">{e.error}</td></tr>
+              ))}</tbody>
+            </table></div>
+          )}
+          <div className="row wrap gap-8">
+            <Field label="Alert supervisors after (hours without events)" hint={`${d.alert?.window || '09:00 to 21:00 IST'} only`}>
+              <Input type="number" min={1} max={24} value={hours} onChange={(e) => setHours(e.target.value)} style={{ width: 90 }} />
+            </Field>
+            <Button size="sm" onClick={save} disabled={busy || !hours || Number(hours) === d.alert?.hours || Number(hours) < 1 || Number(hours) > 24}>Save</Button>
+            {d.alert?.last_alert_at && <span className="tiny muted">Last alert {dateTime(d.alert.last_alert_at)}</span>}
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 

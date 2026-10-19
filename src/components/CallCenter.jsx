@@ -2,12 +2,12 @@
 // Fed by realtime changes on `calls` (MyOperator webhooks write them; demo mode simulates them).
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db, q, isDemo, isLocal, subscribe } from '../lib/db.js';
+import { db, q, rpc, isDemo, isLocal, subscribe } from '../lib/db.js';
 import { roleAllows, useAuth } from '../lib/auth.jsx';
 import { useNow } from '../lib/hooks.js';
-import { dur, date, STAGE_LABEL } from '../lib/fmt.js';
+import { dur, date, dateTime, STAGE_LABEL, CALL_OUTCOMES } from '../lib/fmt.js';
 import Icon from './icons.jsx';
-import { Button, Badge, StageBadge, useToast } from './ui.jsx';
+import { Button, Badge, StageBadge, Field, Textarea, ErrorNote, useToast } from './ui.jsx';
 import LiveTranscription from './LiveTranscription.jsx';
 
 const Ctx = createContext({ active: null, ringing: [] });
@@ -47,6 +47,7 @@ export function CallProvider({ children }) {
       {children}
       {ringing[0] && <ScreenPop call={ringing[0]} />}
       {ops && <LiveTranscription call={active} />}
+      {ops && !active && <WrapUpGate />}
     </Ctx.Provider>
   );
 }
@@ -96,6 +97,53 @@ function ScreenPop({ call }) {
           <Button onClick={() => { dismiss(call.id); toast('Call left in queue'); }}>Dismiss</Button>
         </div>
         {!isDemo && !isLocal && <div className="tiny faint mt-8">Answer on your registered phone; this panel follows the call.</div>}
+      </div>
+    </div>
+  );
+}
+
+// After a connected call ends the agent picks its outcome before anything else: this dialog cannot be closed, and
+// click-to-call / the auto-dialer refuse the next call until it is saved. Missed and failed calls get an automatic
+// outcome in the database and never show here. Calls that ended before the rule went live never block.
+function WrapUpGate() {
+  const toast = useToast();
+  const [pending, setPending] = useState(null);
+  const [outcome, setOutcome] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => rpc('my_pending_wrapup', {}).then((r) => setPending(r || null)).catch(() => {}), []);
+  useEffect(() => { load(); return subscribe(['calls'], load); }, [load]);
+  useEffect(() => { setOutcome(''); setNote(''); setError(null); }, [pending?.id]);
+  if (!pending) return null;
+  const save = async () => {
+    setSaving(true); setError(null);
+    try {
+      await rpc('wrap_up_call', { p_call: pending.id, p: { disposition: outcome, notes: note.trim() || null } });
+      toast('Call outcome saved');
+      await load();
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  };
+  return (
+    <div className="scrim">
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Call outcome">
+        <div className="modal-head"><h2>Call outcome</h2>{pending.pending > 1 && <Badge kind="warn">{pending.pending} calls to wrap up</Badge>}</div>
+        <div className="modal-body col gap-12">
+          <div className="small">
+            {pending.direction === 'inbound' ? 'Inbound' : 'Outbound'} call ended {dateTime(pending.ended_at)} · talk {dur(pending.talk_seconds)}
+            {pending.patient_name && <> · <strong>{pending.patient_name}</strong></>}{pending.case_no && <> · <span className="mono">{pending.case_no}</span></>}
+          </div>
+          <div className="small muted">Pick the outcome before your next call.{pending.callback_id ? ' Close the callback itself on the Callbacks page.' : ''}</div>
+          <div className="row wrap gap-8" role="radiogroup" aria-label="Outcome">
+            {CALL_OUTCOMES.map(([k, l]) => (
+              <Button key={k} size="sm" kind={outcome === k ? 'primary' : undefined} aria-pressed={outcome === k} onClick={() => setOutcome(k)}>{l}</Button>
+            ))}
+          </div>
+          <Field label="Note" hint="optional"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything the next person should know" /></Field>
+          <ErrorNote error={error} />
+        </div>
+        <div className="modal-foot"><Button kind="primary" disabled={!outcome || saving} onClick={save}>{saving ? 'Saving' : 'Save outcome'}</Button></div>
       </div>
     </div>
   );

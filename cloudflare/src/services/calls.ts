@@ -53,6 +53,8 @@ export async function dial(c: Ctx, body: J) {
     if (!agent) throw new ApiError(409, 'Your agent account is inactive');
     const [active] = await tx`select id from calls where agent_id = ${c.user.id}::uuid and status in ('ringing','answered') limit 1`;
     if (active) throw new ApiError(409, 'You already have an active or unconfirmed call. Wait for its outcome before dialling again.');
+    const [wrap] = await tx`select has_pending_wrapup(${c.user.id}::uuid) as pending`;
+    if (wrap?.pending) throw new ApiError(409, 'Record the outcome of your last call before the next one.');
     let number: string | null = null, patientId: string | null = body.patient_id || null, caseId: string | null = body.case_id || null;
     if (caseId) {
       const [k] = await tx`select c.patient_id, c.caller_mobile, p.mobile from cases c join patients p on p.id = c.patient_id

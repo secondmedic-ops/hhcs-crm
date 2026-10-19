@@ -5,7 +5,7 @@ import { db, q, rpc, isDemo } from '../lib/db.js';
 import { useLoad, useDebounced } from '../lib/hooks.js';
 import { roleAllows, useAuth } from '../lib/auth.jsx';
 import { aiCall, recordingUrl } from '../lib/api.js';
-import { num, pct, dur, time, date, dateTime, istDayRange, toLocalInput, fromLocalInput } from '../lib/fmt.js';
+import { num, pct, dur, time, date, dateTime, istDayRange, toLocalInput, fromLocalInput, CALL_OUTCOMES, outcomeLabel } from '../lib/fmt.js';
 import {
   PageHead, Panel, Kpi, Segmented, Button, Badge, TableSkeleton, Skeleton, Empty, ErrorNote, AiTag, Drawer, Field, Input, Select, Textarea, Check, useAction,
 } from '../components/ui.jsx';
@@ -18,7 +18,7 @@ const STATUS = { completed: ['Completed', 'ok'], answered: ['On call', 'accent']
 const SENTIMENT = { positive: 'ok', neutral: '', negative: 'danger', distressed: 'warn', mixed: 'warn' };
 const REC_ROLES = ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'];
 const QA_KEYS = [['greeting', 'Greeting'], ['consent', 'Consent'], ['price_accuracy', 'Price accuracy'], ['empathy', 'Empathy'], ['closure', 'Closure']];
-const COLS = 'id,direction,customer_number,patient_id,patient_name,agent_id,agent_label,status,started_at,answered_at,ring_seconds,talk_seconds,has_recording,ai_sentiment,ai_flags,ai_processed_at,qa_pct,case_id,case_no,line_label';
+const COLS = 'id,direction,customer_number,patient_id,patient_name,agent_id,agent_label,status,started_at,answered_at,ring_seconds,talk_seconds,has_recording,ai_sentiment,ai_flags,ai_processed_at,qa_pct,case_id,case_no,line_label,disposition,needs_outcome';
 
 export default function Calls() {
   const { profile } = useAuth();
@@ -28,6 +28,7 @@ export default function Calls() {
   const [status, setStatus] = useState('');
   const [agent, setAgent] = useState('');
   const [flagged, setFlagged] = useState(false);
+  const [noOutcome, setNoOutcome] = useState(false); // supervisors: connected calls without an outcome, oldest first, any date
   const [text, setText] = useState('');
   const [shown, setShown] = useState(200);
   const search = useDebounced(text.trim(), 300);
@@ -37,14 +38,15 @@ export default function Calls() {
   const agents = useLoad(() => q(db.from('profiles').select('id,full_name,agent_code').eq('role', 'agent').is('active', true).order('full_name')), []);
   const { data, loading, error } = useLoad(() => {
     const [from, to] = rangeOf(range);
-    let x = db.from('v_calls').select(COLS).gte('started_at', from).lt('started_at', to);
+    let x = db.from('v_calls').select(COLS);
+    x = noOutcome ? x.eq('status', 'completed').is('disposition', null) : x.gte('started_at', from).lt('started_at', to);
     if (direction) x = x.eq('direction', direction);
     if (status) x = x.eq('status', status);
     if (agent) x = x.eq('agent_id', agent);
     if (search) { const s = search.replace(/[,()*]/g, ' '); x = x.or(`patient_name.ilike.*${s}*,case_no.ilike.*${s}*`); }
-    return q(x.order('started_at', { ascending: false }).limit(1000));
-  }, [range, direction, status, agent, search], ['calls']);
-  useEffect(() => { setShown(200); }, [range, direction, status, agent, search, flagged]);
+    return q(x.order('started_at', { ascending: noOutcome }).limit(1000));
+  }, [range, direction, status, agent, search, noOutcome], ['calls']);
+  useEffect(() => { setShown(200); }, [range, direction, status, agent, search, flagged, noOutcome]);
 
   const rows = (data || []).filter((r) => !flagged || r.ai_flags?.length);
   const k = (() => {
@@ -85,6 +87,7 @@ export default function Calls() {
           <Select className="sm" style={{ width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)} options={[['completed', 'Completed'], ['missed', 'Missed'], ['abandoned', 'Abandoned'], ['failed', 'Failed']]} placeholder="Any status" aria-label="Status" />
           {profile.role !== 'agent' && <Select className="sm" style={{ width: 'auto' }} value={agent} onChange={(e) => setAgent(e.target.value)} options={(agents.data || []).map((a) => [a.id, `${a.agent_code ? a.agent_code + ' · ' : ''}${a.full_name}`])} placeholder="All agents" aria-label="Agent" />}
           <Check label={<span className="small">AI flags only</span>} checked={flagged} onChange={(e) => setFlagged(e.target.checked)} />
+          {roleAllows(['supervisor'], profile.role) && <Check label={<span className="small">Without outcome (oldest first, any date)</span>} checked={noOutcome} onChange={(e) => setNoOutcome(e.target.checked)} />}
           <span className="small muted" style={{ marginLeft: 'auto' }}>{data ? `${rows.length} call${rows.length === 1 ? '' : 's'}${data.length >= 1000 ? ' (first 1000)' : ''}` : ''}</span>
         </div>
         {loading ? <TableSkeleton rows={8} cols={10} /> : !rows.length ? <Empty title="No calls match">Change the date range or clear the filters.</Empty> : (
@@ -99,7 +102,7 @@ export default function Calls() {
                 <td className="mono">{r.customer_number || '–'}{r.line_label && <div className="tiny faint" style={{ fontFamily: 'inherit' }}>{r.line_label} line</div>}</td>
                 <td className="truncate" style={{ maxWidth: 170 }}>{r.patient_name || <span className="faint">Unknown</span>}</td>
                 <td className="small truncate" style={{ maxWidth: 150 }}>{r.agent_label || <span className="faint">Queue</span>}</td>
-                <td className="nowrap"><StatusBadge s={r.status} />{r.ai_flags?.length > 0 && <> <Badge kind="danger" title={r.ai_flags.join(', ')}>{r.ai_flags.length} flag{r.ai_flags.length > 1 ? 's' : ''}</Badge></>}</td>
+                <td className="nowrap"><StatusBadge s={r.status} />{r.needs_outcome && <> <Badge kind="warn" title="Connected call without an outcome">No outcome</Badge></>}{r.ai_flags?.length > 0 && <> <Badge kind="danger" title={r.ai_flags.join(', ')}>{r.ai_flags.length} flag{r.ai_flags.length > 1 ? 's' : ''}</Badge></>}</td>
                 <td className="num">{r.ring_seconds ?? '–'}</td>
                 <td className="num">{r.talk_seconds ? dur(r.talk_seconds) : '–'}</td>
                 <td>{r.ai_sentiment ? <Badge kind={SENTIMENT[r.ai_sentiment]}>{r.ai_sentiment}</Badge> : <span className="faint">–</span>}</td>
@@ -200,7 +203,8 @@ function CallDrawer({ id, onClose }) {
             <dt>Status</dt><dd><StatusBadge s={c.status} /></dd>
             <dt>Started</dt><dd className="mono">{dateTime(c.started_at)}</dd>
             <dt>Ring · talk</dt><dd className="mono">{c.ring_seconds ?? '–'} s · {dur(c.talk_seconds)}</dd>
-            {c.disposition && <><dt>Disposition</dt><dd>{c.disposition}</dd></>}
+            <dt>Outcome</dt><dd>{c.disposition ? outcomeLabel(c.disposition) : c.status === 'completed' ? <Badge kind="warn">Pending wrap-up</Badge> : <span className="muted">–</span>}</dd>
+            {c.callback_note && <><dt>Callback</dt><dd className="warn-text">{c.callback_note}</dd></>}
             {c.action_taken && <><dt>Action taken</dt><dd>{c.action_taken}</dd></>}
             {c.followup_at && <><dt>Follow-up</dt><dd className="mono">{dateTime(c.followup_at)}</dd></>}
             {c.notes && <><dt>Notes</dt><dd>{c.notes}</dd></>}
@@ -219,13 +223,9 @@ function CallDrawer({ id, onClose }) {
               </div>
               {wrapEditing ? (
                 <div className="col gap-12 panel" style={{ padding: 12 }}>
-                  <Field label="Enquiry disposition">
-                    <Select value={wrapDisp} onChange={(e) => setWrapDisp(e.target.value)} placeholder="Choose interaction reason"
-                      options={[
-                        ['requirement_captured', 'Requirement captured'], ['information_only', 'Information only'], ['price_enquiry', 'Price enquiry'],
-                        ['follow_up_requested', 'Follow-up requested'], ['not_interested', 'Not interested'], ['already_arranged', 'Already arranged elsewhere'],
-                        ['wrong_number', 'Wrong number'], ['duplicate', 'Duplicate enquiry'],
-                      ]} />
+                  <Field label="Call outcome">
+                    <Select value={wrapDisp} onChange={(e) => setWrapDisp(e.target.value)} placeholder="Choose the outcome"
+                      options={[...CALL_OUTCOMES, ...(wrapDisp && !CALL_OUTCOMES.some(([k]) => k === wrapDisp) ? [[wrapDisp, outcomeLabel(wrapDisp)]] : [])]} />
                   </Field>
                   <Field label="Action taken" hint="e.g. Enquiry created, Quote discussed, Advice given, Follow-up scheduled">
                     <Input value={wrapAct} onChange={(e) => setWrapAct(e.target.value)} placeholder="Action taken on this call" />
@@ -242,7 +242,7 @@ function CallDrawer({ id, onClose }) {
                     )}
                   </div>
                   <div className="row gap-8">
-                    <Button size="sm" kind="primary" disabled={busy || (!wrapDisp && !wrapAct.trim() && !wrapNotes.trim())} onClick={saveWrapup}>Save wrap-up</Button>
+                    <Button size="sm" kind="primary" disabled={busy || (c.status === 'completed' ? !wrapDisp : (!wrapDisp && !wrapAct.trim() && !wrapNotes.trim()))} onClick={saveWrapup}>Save wrap-up</Button>
                     <Button size="sm" onClick={() => setWrapEditing(false)}>Cancel</Button>
                   </div>
                 </div>

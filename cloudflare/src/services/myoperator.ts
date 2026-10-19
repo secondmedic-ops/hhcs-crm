@@ -15,15 +15,52 @@ import { ApiError } from '../domain/errors';
 const OBD_URL = 'https://obd-api.myoperator.co/obd-api-v1';
 type J = Record<string, any>;
 
-const toIso = (v: unknown): string | null => {
+/** Every MyOperator time goes through here: epoch seconds or milliseconds (also "1760539745.5"), ISO with a zone, or a
+ *  wall-clock time without a zone ("2026-10-15 19:49:05", what MyOperator shows), which is India time, never UTC. */
+export const toIso = (v: unknown): string | null => {
   if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v.toISOString();
   let d: Date;
-  if (typeof v === 'number' || /^\d+$/.test(String(v))) {
+  const text = String(v).trim();
+  if (typeof v === 'number' || /^\d+(\.\d+)?$/.test(text)) {
     const n = Number(v);
     d = new Date(n < 1e12 ? n * 1000 : n);
-  } else d = new Date(String(v));
+  } else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(text)) {
+    d = new Date(text.replace(' ', 'T') + '+05:30');
+  } else d = new Date(text);
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
+
+/**
+ * One source of truth for a connected call's timing. MyOperator's own times win over the Worker's clock: the answer time
+ * is the provider's, else end minus the provider's talk time, and only then the time the in-call webhook reached us.
+ * Always started <= answered <= ended, and always a talk time (0 with duration_flag 'unknown' when nothing says how
+ * long; averages skip it). duration_flag: null (as reported), 'derived' (talk from the timestamps), 'clamped'
+ * (inverted or impossible values corrected), 'unknown'.
+ */
+export function settleTiming(a: { startedAt?: unknown; answeredAt?: unknown; serverAnsweredAt?: unknown; endedAt?: unknown; talkSeconds?: unknown }) {
+  const ms = (v: unknown) => { const x = toIso(v); return x ? Date.parse(x) : null; };
+  const iso = (n: number | null) => (n == null ? null : new Date(n).toISOString());
+  let s = ms(a.startedAt), e = ms(a.endedAt), flag: string | null = null;
+  if (s != null && e != null && e < s) { s = e; flag = 'clamped'; }
+  const span = s != null && e != null ? Math.round((e - s) / 1000) : null;
+  const t0 = a.talkSeconds == null || a.talkSeconds === '' ? NaN : Number(a.talkSeconds);
+  let talk: number | null = Number.isFinite(t0) && t0 >= 0 && t0 <= 2147483647 ? Math.round(t0) : null;
+  if (talk != null && span != null && talk > span + 1) { talk = span; flag = 'clamped'; }
+  let an = ms(a.answeredAt);
+  if (an == null && talk != null && e != null) an = e - talk * 1000;
+  if (an == null) an = ms(a.serverAnsweredAt);
+  if (an != null && s != null && an < s) { an = s; flag = flag || 'clamped'; }
+  if (an != null && e != null && an > e) { an = e; flag = flag || 'clamped'; }
+  if (talk == null) {
+    if (an != null && e != null) { talk = Math.round((e - an) / 1000); flag = flag || 'derived'; }
+    else { talk = 0; flag = 'unknown'; }
+  }
+  return { started_at: iso(s), answered_at: iso(an), ended_at: iso(e), talk_seconds: talk, duration_flag: flag };
+}
+
+/** The answer time already on the call, split by source: the Worker's clock (in-call webhook) is only a last resort. */
+const knownAnswer = (call: J) => (call.raw?.answered_source === 'server' ? { serverAnsweredAt: call.answered_at } : { answeredAt: call.answered_at });
 const int = (v: unknown) => (v == null || v === '' || isNaN(Number(v)) ? null : Math.round(Number(v)));
 const mins = (s: number | null) => `${Math.floor((s || 0) / 60)}:${String((s || 0) % 60).padStart(2, '0')}`;
 
@@ -103,6 +140,17 @@ async function readEvents(req: Request): Promise<J[] | null> {
   return out;
 }
 
+/** A refused webhook post (401 wrong / missing key, 503 no key set), for Settings > Telephony > Webhook health. Only
+ *  the status and time are kept: never the key that was sent or the body. Never fails the response. */
+async function noteRejection(sql: Sql, status: 401 | 503) {
+  try {
+    const now = new Date().toISOString();
+    await sql`insert into integration_settings (provider, settings, updated_at)
+      values ('webhook_health', ${sql.json({ [`last_${status}_at`]: now, last_rejection: { status, at: now } })}, now())
+      on conflict (provider) do update set settings = integration_settings.settings || excluded.settings, updated_at = now()`;
+  } catch { /* health note only */ }
+}
+
 export async function handleMyOperatorWebhook(req: Request, env0: Env, exec: ExecutionContext): Promise<Response> {
   const sql = connect(env0);
   const changedAll = new Set<string>();
@@ -115,8 +163,8 @@ export async function handleMyOperatorWebhook(req: Request, env0: Env, exec: Exe
       return new Response('QR scanning is disabled for enterprise compliance. Use MyOperator WABA.', { status: 403 });
     }
     const authorized = !!expected && got === expected;
-    if (!expected && !authorized) return new Response('webhook key not configured', { status: 503 });
-    if (!authorized) return new Response('unauthorized', { status: 401 });
+    if (!expected && !authorized) { await noteRejection(sql, 503); return new Response('webhook key not configured', { status: 503 }); }
+    if (!authorized) { await noteRejection(sql, 401); return new Response('unauthorized', { status: 401 }); }
     const events = await readEvents(req);
     if (!events) return new Response('bad body', { status: 400 });
     if (events.length === 1 && events[0]?.raw?.bridge === 'whatsapp_qr') {
@@ -287,14 +335,18 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
     talk_seconds: connected ? afterCallTalkSeconds(o) : 0,
     raw: tx.json({ ...(call.raw || {}), end: o }),
   };
+  if (connected) {
+    const t = settleTiming({ startedAt: toIso(o._st) || call.started_at, endedAt: patch.ended_at, talkSeconds: patch.talk_seconds, ...knownAnswer(call) });
+    Object.assign(patch, { ended_at: t.ended_at, talk_seconds: t.talk_seconds, answered_at: t.answered_at, duration_flag: t.duration_flag });
+    if (t.started_at && t.started_at !== new Date(call.started_at).toISOString()) patch.started_at = t.started_at;
+  }
   if (call.ring_seconds == null || call.ring_seconds === 0) {
     const startedAt = call.started_at || toIso(o._st);
     if (!connected && patch.status === 'missed') {
       const ring = ringFallback(startedAt, patch.ended_at, 120);
       if (ring != null) patch.ring_seconds = ring;
     } else if (connected) {
-      const answeredAt = call.answered_at || (patch.talk_seconds != null && patch.ended_at
-        ? new Date(Date.parse(toIso(patch.ended_at)!) - patch.talk_seconds * 1000).toISOString() : null);
+      const answeredAt = patch.answered_at || call.answered_at;
       const ring = ringFallback(startedAt, answeredAt, 120);
       if (ring != null) patch.ring_seconds = ring;
     }
@@ -325,7 +377,10 @@ async function onInCall(tx: Tx, env: Env, o: J) {
   if (agent && call.agent_id !== agent.id && call.status !== 'completed') { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
   if (Number(o.call_state) === 1 && call.status === 'ringing') {
     patch.status = 'answered';
-    if (call.direction === 'inbound') patch.answered_at = new Date().toISOString();
+    if (call.direction === 'inbound') {
+      patch.answered_at = new Date().toISOString();
+      patch.raw = tx.json({ ...(call.raw || {}), answered_source: 'server' }); // no provider time in this webhook
+    }
   }
   if (Object.keys(patch).length) [call] = await tx`update calls set ${tx(patch)} where id = ${call.id} returning *`;
   if (patch.status === 'answered' && call.direction === 'inbound') await onConnected(tx, call);
@@ -361,7 +416,9 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
       const leg = answeredLegs.find((l) => l.answered_at) || answeredLegs[0] || {};
       patch.status = 'answered';
       if (call.direction === 'inbound' || legsAnswered(customerLegs(legs, call.customer_number))) {
-        patch.answered_at = toIso(leg.answered_at || ev.timestamp) || new Date().toISOString();
+        const providerAnswer = toIso(leg.answered_at || ev.timestamp);
+        patch.answered_at = providerAnswer || new Date().toISOString();
+        patch.raw = { ...(call.raw || {}), answered_source: providerAnswer ? 'provider' : 'server' };
       }
       const explicit = int(leg.ring_duration ?? p.ring_duration);
       if (explicit != null && explicit > 0) {
@@ -389,6 +446,14 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
       const talkLegs = call.direction === 'outbound' ? customer : legs;
       const talk = talkLegs.filter((l) => l.talk_duration != null).map((l) => Number(l.talk_duration));
       patch.talk_seconds = answered ? (talk.length ? (call.direction === 'outbound' ? Math.max(...talk) : talk.reduce((sum,n) => sum+n,0)) : int(p.talk_duration)) : 0;
+      if (answered) {
+        const legAnswer = (call.direction === 'outbound' ? customer : legs).find((l) => l.answered_at)?.answered_at;
+        const prior = knownAnswer(call);
+        const t = settleTiming({ startedAt: toIso(p.started_at) || call.started_at, endedAt: patch.ended_at, talkSeconds: patch.talk_seconds,
+          answeredAt: toIso(p.answered_at || legAnswer) || prior.answeredAt, serverAnsweredAt: prior.serverAnsweredAt });
+        Object.assign(patch, { ended_at: t.ended_at, talk_seconds: t.talk_seconds, answered_at: t.answered_at, duration_flag: t.duration_flag });
+        if (t.started_at && t.started_at !== new Date(call.started_at).toISOString()) patch.started_at = t.started_at;
+      }
       if (patch.ring_seconds == null && (call.ring_seconds == null || call.ring_seconds === 0)) {
         const ring = legs.map((l) => Number(l.ring_duration || 0)).filter(Boolean);
         const explicitRing = ring.length ? Math.min(...ring) : int(p.ring_duration);
@@ -396,8 +461,7 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
           patch.ring_seconds = explicitRing;
         } else if (answered) {
           const startedAt = call.started_at || toIso(p.started_at || ev.timestamp);
-          const answeredAt = call.answered_at || patch.answered_at || toIso(p.answered_at || legs.find((l) => l.answered_at)?.answered_at)
-            || (patch.talk_seconds != null && patch.ended_at ? new Date(Date.parse(toIso(patch.ended_at)!) - patch.talk_seconds * 1000).toISOString() : null);
+          const answeredAt = patch.answered_at || call.answered_at;
           const fallback = ringFallback(startedAt, answeredAt, 120);
           if (fallback != null) patch.ring_seconds = fallback;
           else if (call.ring_seconds == null && explicitRing != null) patch.ring_seconds = explicitRing;
@@ -411,7 +475,7 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
       }
       if (p.recording_filename) patch.recording_filename = String(p.recording_filename);
       patch.provider_call_id = p.id ? String(p.id) : call.provider_call_id;
-      patch.raw = { ...(call.raw || {}), end: ev };
+      patch.raw = { ...(call.raw || {}), ...(patch.raw || {}), end: ev };
       if (!answered && call.direction === 'outbound') patch.raw.callback_failure_reason =
         call.status === 'answered' || legsAnswered(legs)
           ? 'Customer did not connect after the agent answered'
@@ -447,19 +511,12 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
 }
 
 async function afterCallEnded(tx: Tx, call: J): Promise<{ aiCallId?: string }> {
-  // missed / abandoned inbound -> callback queue with the SLA timer (trigger starts it)
-  if (['missed', 'abandoned'].includes(call.status) && call.direction === 'inbound' && call.customer_number) {
-    await tx`select pg_advisory_xact_lock(hashtextextended(${call.workspace_id + ':' + call.customer_number}, 0))`;
+  // missed / abandoned inbound -> callback queue with the SLA timer (trigger starts it), exactly once per call.
+  // queue_missed_callback also records why when it cannot (no caller number) or merges into a live callback.
+  if (['missed', 'abandoned'].includes(call.status) && call.direction === 'inbound') {
     const [origin] = await tx`select id from callbacks where workspace_id = ${call.workspace_id} and call_id = ${call.id} limit 1`;
-    if (origin) return {};
-    const [pol] = await tx`select target_minutes from sla_policies where workspace_id = ${call.workspace_id} and key = 'missed_callback'`;
-    const [pending] = await tx`select id from callbacks where workspace_id = ${call.workspace_id} and number = ${call.customer_number}
-      and status in ('pending','in_progress') limit 1`;
-    if (!pending) {
-      const due = new Date(Date.now() + (pol?.target_minutes || 10) * 60000).toISOString();
-      await tx`insert into callbacks (workspace_id, call_id, number, patient_id, reason, due_at)
-        values (${call.workspace_id}, ${call.id}, ${call.customer_number}, ${call.patient_id}, ${call.status === 'abandoned' ? 'abandoned' : 'missed'}, ${due})`;
-    }
+    if (origin) return {}; // a repeated end event: already queued and on the timeline
+    await tx`select queue_missed_callback(${call.id}::uuid)`;
   }
   // the callback's own call ended: reached stays reached (or becomes so if the answered event never came); a call that
   // did not complete or a drop-off under 20 s goes back to the queue for the next attempt, or unreachable

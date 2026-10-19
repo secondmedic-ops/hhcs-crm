@@ -81,6 +81,7 @@ export const api = {
 
   createUser: (u: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/admin/users', { method: 'POST', body: u }),
   webhookEvents: () => request<Record<string, unknown>[]>('/api/v1/admin/webhooks'),
+  webhookHealth: () => request<Record<string, any>>('/api/v1/admin/webhooks/health'),
   integrations: () => request<Record<string, unknown>>('/api/v1/admin/integrations'),
   bmmLeads: (limit = 50, offset = 0) => request<Record<string, unknown>>(`/api/v1/bmm/leads?limit=${limit}&offset=${offset}`),
   bmmStatus: (id: string, body: { event_id: string; expected_status: string; status: string; note?: string; scheduled_at?: string }) => request<Record<string, unknown>>(`/api/v1/bmm/leads/${id}/status`, { method: 'POST', body }),

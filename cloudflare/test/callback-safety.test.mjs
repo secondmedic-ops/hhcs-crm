@@ -18,7 +18,8 @@ test('callback eligibility, retry boundaries, reservations, reconciliation and w
     const queue = async () => (await one("insert into callbacks(workspace_id,number,due_at) values ($1,'+919800000001',now()+interval '10 minutes') returning *",[ws]));
     const claim = async () => (await one('select autodial_claim() c')).c;
     const clear = async () => {
-      await db.exec("update callbacks set status='done'; update calls set status='completed',ended_at=now(); update profiles set available=false");
+      // completed calls are wrapped up (Issue 2: an agent with a connected call awaiting its outcome is not auto-dialled)
+      await db.exec("update callbacks set status='done'; update calls set status='completed',ended_at=now(); update calls set disposition='test_internal' where disposition is null; update profiles set available=false");
       await db.query("update profiles set active=true,available=true,myoperator_user_id='mo-a',role='agent' where id=$1",[agent]);
     };
     for (const window of [30,45,60]) for (const attempts of [1,2,3,4,5]) {
@@ -174,5 +175,89 @@ test('initial callback delay: eligibility from the original call end time, retry
     const imm = await one("insert into callbacks(workspace_id,number,due_at) values ($1,'+919800000002',now()+interval '30 minutes') returning *",[ws]);
     expect(Math.abs(new Date(imm.eligible_at) - new Date(imm.created_at))).toBeLessThan(2000);
     expect((await claim()).length).toBe(1);
+  } finally { await db.close(); }
+}, 120000);
+// Issue 1 (15 Oct missed call with no callback): every path that leaves an inbound call missed / abandoned
+// queues exactly one callback, or records a visible reason; the backfill is manual-only for old calls.
+test('missed inbound calls: exactly one callback on every path, visible reason, safe backfill', async () => {
+  const db = new PGlite();
+  try {
+    const dir = join(import.meta.dirname, '../../supabase/migrations');
+    const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
+    for (const f of files) await db.exec(readFileSync(join(dir,f),'utf8'));
+    const one = async (sql, params = []) => (await db.query(sql,params)).rows[0];
+    const ws = (await one("select id from workspaces where code='HHC'")).id;
+    await db.exec("select set_config('request.jwt.claim.role','service_role',false)");
+    await db.query("update workspaces set settings = settings || jsonb_build_object('autodial',jsonb_build_object('enabled',true,'buffer_minutes',30,'max_attempts',3)) where id=$1",[ws]);
+    const call = async (number, status = 'missed', minutesAgo = 1) => (await one(
+      "insert into calls(workspace_id,direction,customer_number,status,started_at,ended_at) values ($1,'inbound',$2,$3,now() - ($4::int * interval '1 minute') - interval '30 seconds', now() - ($4::int * interval '1 minute')) returning *",
+      [ws, number, status, minutesAgo]));
+    const queue = async (id) => (await one('select queue_missed_callback($1) cb',[id])).cb;
+    const own = async (id) => (await one('select count(*)::int n from callbacks where call_id=$1',[id])).n;
+
+    // (1) end-event path, repeated delivery: one callback
+    const a = await call('+919800000101');
+    const cbA = await queue(a.id);
+    expect(cbA).toBeTruthy(); expect(await queue(a.id)).toBe(cbA); expect(await own(a.id)).toBe(1);
+    expect((await one('select reason,status from callbacks where id=$1',[cbA]))).toMatchObject({reason:'missed',status:'pending'});
+    const ab = await call('+919800000109', 'abandoned');
+    expect((await one('select reason from callbacks where id=$1',[await queue(ab.id)])).reason).toBe('abandoned');
+
+    // (2) the actual 15 Oct cause: a stale pending callback (queued before the auto-dialer, never scheduled)
+    //     must not swallow a new missed call from the same number
+    await db.query("insert into callbacks(workspace_id,number,due_at,created_at) values ($1,'+919800000102',now()+interval '1 day',now()-interval '6 days')",[ws]);
+    await db.query("update callbacks set next_attempt_at=null where number='+919800000102'");
+    const b = await call('+919800000102');
+    const cbB = await queue(b.id);
+    expect(await own(b.id)).toBe(1);
+    expect((await one('select next_attempt_at from callbacks where id=$1',[cbB])).next_attempt_at).not.toBeNull();
+
+    // (3) a live callback for the same number: merged, recorded on both sides, never queued twice
+    const c = await call('+919800000102');
+    expect(await queue(c.id)).toBe(cbB); expect(await own(c.id)).toBe(0);
+    expect((await one('select merged_call_ids from callbacks where id=$1',[cbB])).merged_call_ids).toContain(c.id);
+    expect((await one('select callback_note from calls where id=$1',[c.id])).callback_note).toMatch(/already in the callback queue/);
+    expect(await queue(c.id)).toBe(cbB);
+    expect((await one('select array_length(merged_call_ids,1) n from callbacks where id=$1',[cbB])).n).toBe(1);
+
+    // (4) withheld / IVR number: no callback, a visible reason instead of a silent skip
+    for (const num of [null, '', '  ']) {
+      const d = await call(num);
+      expect(await queue(d.id)).toBeNull(); expect(await own(d.id)).toBe(0);
+      expect((await one('select callback_note from calls where id=$1',[d.id])).callback_note).toBe('No caller number: cannot call back');
+    }
+
+    // (5) paths that never reach the Worker's end handler (later event, cleanup job, repair migration):
+    //     the minute sweep queues them once; outbound, answered and older-than-24 h calls are left alone
+    const e = (await one("insert into calls(workspace_id,direction,customer_number,status,started_at) values ($1,'inbound','+919800000103','ringing',now()-interval '2 minutes') returning *",[ws]));
+    await db.query("update calls set status='missed', ended_at=now() where id=$1",[e.id]);
+    const out = (await one("insert into calls(workspace_id,direction,customer_number,status,started_at,ended_at) values ($1,'outbound','+919800000104','failed',now(),now()) returning *",[ws]));
+    const done = await call('+919800000105', 'completed');
+    const old = await call('+919800000106', 'missed', 60 * 30);
+    expect((await one('select sweep_missed_callbacks() n')).n).toBe(1);
+    expect(await own(e.id)).toBe(1); expect(await own(out.id)).toBe(0); expect(await own(done.id)).toBe(0); expect(await own(old.id)).toBe(0);
+    expect((await one('select sweep_missed_callbacks() n')).n).toBe(0);
+    await db.exec("select set_config('request.jwt.claim.role','authenticated',false)");
+    await expect(db.query('select sweep_missed_callbacks()')).rejects.toThrow(/System only/);
+    await db.exec("select set_config('request.jwt.claim.role','service_role',false)");
+
+    // (6) backfill (rerun the migration): old missed call -> pending, backfilled, never auto-dialled, no SLA timer;
+    //     a recent one keeps its auto-dial schedule; calls already handled are untouched; reruns add nothing
+    const recent = await call('+919800000107', 'missed', 30);
+    await db.query("update calls set started_at = greatest(started_at, '2026-10-13'::timestamptz) where id in ($1,$2)",[old.id, recent.id]);
+    const before = (await one('select count(*)::int n from callbacks')).n;
+    const migration = readFileSync(join(dir, files.find(f => f.includes('missed_call_callback_guarantee'))), 'utf8');
+    await db.exec(migration);
+    const bOld = await one('select * from callbacks where call_id=$1',[old.id]);
+    expect(bOld).toMatchObject({status:'pending',backfilled:true,next_attempt_at:null,auto_dialled:false});
+    expect(bOld.notes).toMatch(/Backfilled/);
+    expect((await one("select count(*)::int n from sla_timers where callback_id=$1",[bOld.id])).n).toBe(0);
+    const bRecent = await one('select * from callbacks where call_id=$1',[recent.id]);
+    expect(bRecent.backfilled).toBe(true); expect(bRecent.next_attempt_at).not.toBeNull();
+    expect((await one('select count(*)::int n from callbacks')).n).toBe(before + 2);
+    await db.exec(migration);
+    expect((await one('select count(*)::int n from callbacks')).n).toBe(before + 2);
+    const claimed = (await one('select autodial_claim() c')).c.map(x => x.callback_id);
+    expect(claimed).not.toContain(bOld.id);
   } finally { await db.close(); }
 }, 120000);

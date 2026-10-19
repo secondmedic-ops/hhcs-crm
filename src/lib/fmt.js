@@ -85,6 +85,11 @@ export const DEPARTMENTS = [
 ];
 export const CHANNEL_LABEL = { phone: 'Phone', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email', chat: 'Chat', note: 'Note', system: 'System', crm_edit: 'CRM edit', field: 'Field', lab: 'Lab', payment: 'Payment', walkin: 'Walk-in', referral: 'Referral' };
 // referring source when the channel is Referral (stored as shown; check in 20261015210000_referral_source_options)
+/** Call outcomes (calls.disposition): the fixed list agents pick from after every connected call (wrap_up_call checks it). */
+export const CALL_OUTCOMES = [['booked', 'Booked'], ['quote_sent', 'Quote sent'], ['callback_requested', 'Callback requested'], ['info_only', 'Information only'],
+  ['wrong_number', 'Wrong number'], ['no_response', 'No response'], ['test_internal', 'Test / internal']];
+const AUTO_OUTCOME = { missed: 'Missed (automatic)', abandoned: 'Abandoned (automatic)', failed: 'Not connected (automatic)' };
+export const outcomeLabel = (v) => (v ? Object.fromEntries(CALL_OUTCOMES)[v] || AUTO_OUTCOME[v] || String(v).replace(/_/g, ' ') : null);
 export const REFERRAL_SOURCES = ['ICU', 'Doctor', 'Nursing Team', 'Other'];
 export const CHANNELS = [['phone', 'Phone'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['chat', 'Chat'], ['walkin', 'Walk-in'], ['referral', 'Referral']];
 export const REFERRAL_OPTIONS = [

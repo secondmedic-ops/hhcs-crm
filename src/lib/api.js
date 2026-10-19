@@ -26,6 +26,7 @@ export const emailStatus = () => (isDemo ? Promise.resolve({ demo: true, ready: 
 export const testEmail = (debug) => (isDemo ? Promise.resolve({ ok: false, message: 'Demo mode: e-mail is sent only from the live site' }) : server.testEmail(debug));
 export const createUser = (u) => (isDemo ? demo('/admin/users', u) : server.createUser(u));
 export const webhookEvents = () => (isDemo ? demo('/admin/webhooks', {}) : server.webhookEvents());
+export const webhookHealth = () => (isDemo ? Promise.resolve({ demo: true, last_event: null, last_sync_event: null, counts: { webhook_24h: 0, webhook_7d: 0, sync_24h: 0, sync_7d: 0, unapplied_7d: 0 }, failed: [], rejections: {}, sync: {}, alert: { hours: 4, window: '09:00 to 21:00 IST' } }) : server.webhookHealth());
 export const integrations = () => (isDemo ? demo('/health', {}) : server.integrations());
 // MyOperator connection (admin). The demo has no MyOperator account: it shows the screen with nothing configured.
 const demoOnly = () => Promise.reject(new Error('Demo mode: MyOperator connects on the live site'));

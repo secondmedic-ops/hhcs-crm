@@ -47,6 +47,41 @@ export async function webhookEvents(c: Ctx) {
   return c.sql`select event_id, source, event_type, payload, processed, error, received_at from webhook_events order by received_at desc limit 50`;
 }
 
+/** Phone numbers (and any other long digit runs) out of error text before it reaches a screen. */
+export const maskDigits = (t: unknown) => String(t ?? '').replace(/\+?\d[\d\s-]{6,}\d/g, '•••').slice(0, 300);
+
+/** Settings > Telephony > Webhook health (supervisors, read-only): is MyOperator still posting to CareDesk?
+ *  Times, event types, counts and masked error text only: no payloads, phone numbers or keys. */
+export async function webhookHealth(c: Ctx) {
+  const ws = c.user.workspaceId;
+  const [last] = await c.sql`select event_type, received_at from webhook_events where source = 'myoperator' order by received_at desc limit 1`;
+  const [lastSync] = await c.sql`select event_type, received_at from webhook_events where source = 'myoperator_sync' order by received_at desc limit 1`;
+  const [counts] = await c.sql`select
+      count(*) filter (where source = 'myoperator' and received_at > now() - interval '24 hours')::int as webhook_24h,
+      count(*) filter (where source = 'myoperator' and received_at > now() - interval '7 days')::int as webhook_7d,
+      count(*) filter (where source = 'myoperator_sync' and received_at > now() - interval '24 hours')::int as sync_24h,
+      count(*) filter (where source = 'myoperator_sync' and received_at > now() - interval '7 days')::int as sync_7d,
+      count(*) filter (where not processed and received_at > now() - interval '7 days')::int as unapplied_7d
+    from webhook_events where received_at > now() - interval '7 days'`;
+  const failed = await c.sql`select event_type, source, received_at, error from webhook_events
+    where not processed and (error is not null or received_at < now() - interval '5 minutes')
+    order by received_at desc limit 20`;
+  const [health] = await c.sql`select settings from integration_settings where provider = 'webhook_health'`;
+  const [sync] = await c.sql`select settings from integration_settings where provider = 'myoperator_sync'`;
+  const [cfg] = await c.sql`select webhook_alert_hours(${ws}::uuid) as hours`;
+  const [alert] = await c.sql`select created_at from notifications where workspace_id = ${ws}::uuid and kind = 'webhook_silence' order by created_at desc limit 1`;
+  const h = health?.settings || {}, st = sync?.settings || {};
+  return {
+    last_event: last ? { at: last.received_at, type: last.event_type } : null,
+    last_sync_event: lastSync ? { at: lastSync.received_at, type: lastSync.event_type } : null,
+    counts,
+    failed: failed.map((e) => ({ at: e.received_at, type: e.event_type, source: e.source, error: e.error ? maskDigits(e.error) : 'Not applied (no error recorded)' })),
+    rejections: { last_401_at: h.last_401_at ?? null, last_503_at: h.last_503_at ?? null, last: h.last_rejection ?? null },
+    sync: { last_ok_at: st.last_ok_at ?? null, last_error: st.last_error ? maskDigits(st.last_error) : null },
+    alert: { hours: cfg?.hours ?? 4, window: '09:00 to 21:00 IST', last_alert_at: alert?.created_at ?? null },
+  };
+}
+
 export async function integrations(c: Ctx) {
   const [e, ai] = await Promise.all([moEnv(c.env, c.sql), aiEnv(c.env, c.sql)]);
   return {

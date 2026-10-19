@@ -35,6 +35,8 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const batch = (who, ops) => call(who, 'POST', '/api/v1/batch', { ops });
   const sel = (table, extra = {}) => ({ kind: 'select', spec: { table, op: 'select', cols: '*', filters: [], ...extra } });
   const rpc = (who, fn, args = {}) => call(who, 'POST', `/api/v1/rpc/${fn}`, args);
+  // Issue 2: an agent records the outcome of each connected call before the next one (click-to-call refuses until then)
+  const wrapAll = async (who) => { for (let i = 0; i < 20; i++) { const w = (await rpc(who, 'my_pending_wrapup', {})).body?.data; if (!w) return; await rpc(who, 'wrap_up_call', { p_call: w.id, p: { disposition: 'info_only' } }); } };
   const data = (who, table, spec) => call(who, 'POST', `/api/v1/data/${table}`, { table, ...spec });
   const hook = (ev, key = webhookKey) => fetch(base + '/webhooks/myoperator', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-webhook-key': key }, body: JSON.stringify(ev) });
   const one = async (q, ...p) => (await sql.unsafe(q, p))[0];
@@ -187,6 +189,31 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const cAbandOmit = await one(`select * from calls where session_id = 'sess-aband-omit'`);
   check(cAbandOmit.status === 'abandoned' && cAbandOmit.ring_seconds === 15,
     'abandoned call with missing ring_duration: fallback calculates ring_seconds as ended_at - started_at', JSON.stringify(cAbandOmit));
+  // Issue 1: a withheld number is recorded with a visible reason; a stale pending callback no longer swallows a missed call
+  const bHidden = { session_id: 'sess-miss-hidden', direction: 'inbound', customer_identifier: '', system_identifier: '+918049368621' };
+  await hook({ ...bHidden, event_id: 'mh1', event_type: 'call.initiated', timestamp: t0 });
+  await hook({ ...bHidden, event_id: 'mh2', event_type: 'call.end', timestamp: t0 + 20, payload: { status: 'missed', legs: [] } });
+  const cHidden = await one(`select status, callback_note, (select count(*)::int from callbacks b where b.call_id = calls.id) n from calls where session_id = 'sess-miss-hidden'`);
+  check(cHidden?.status === 'missed' && cHidden.n === 0 && cHidden.callback_note === 'No caller number: cannot call back',
+    'missed call without a caller number: no callback, visible reason', JSON.stringify(cHidden));
+  // a callback queued before the auto-dialer existed: never scheduled, deadline long gone, still 'pending'
+  await sql`insert into callbacks (workspace_id, number, due_at, created_at) values (${ws}, '+919930055599', now() - interval '6 days', now() - interval '6 days')`;
+  await sql`update callbacks set next_attempt_at = null, due_at = now() - interval '6 days' where number = '+919930055599'`;
+  const bStale = { session_id: 'sess-miss-stale', direction: 'inbound', customer_identifier: '+919930055599', system_identifier: '+918049368621' };
+  await hook({ ...bStale, event_id: 'ms1', event_type: 'call.initiated', timestamp: t0 });
+  await hook({ ...bStale, event_id: 'ms2', event_type: 'call.end', timestamp: t0 + 20, payload: { status: 'missed', legs: [] } });
+  await hook({ ...bStale, event_id: 'ms3', event_type: 'call.end', timestamp: t0 + 21, payload: { status: 'missed', legs: [] } });
+  const cStale = await one(`select (select count(*)::int from callbacks b where b.call_id = calls.id) n from calls where session_id = 'sess-miss-stale'`);
+  check(cStale?.n === 1, 'missed call from a number with a stale pending callback gets its own callback, once', JSON.stringify(cStale));
+  await sql`update callbacks set status = 'done' where number = '+919930055599'`;
+  // Issue 2: a connected call needs its outcome before the agent's next call
+  const firstWrap = (await rpc('agent', 'my_pending_wrapup', {})).body?.data;
+  check(firstWrap?.id && !('customer_number' in firstWrap), 'agent sees the pending wrap-up (no phone number)', JSON.stringify(firstWrap));
+  const badWrap = await rpc('agent', 'wrap_up_call', { p_call: firstWrap?.id, p: { disposition: 'requirement_captured' } });
+  check(badWrap.status === 400 && /outcome from the list/.test(badWrap.body?.message || ''), 'outcome must come from the fixed list', JSON.stringify(badWrap.body));
+  await wrapAll('agent');
+  const wrapped = await one(`select disposition, disposition_by::text b from calls where id = $1`, firstWrap?.id ?? null);
+  check(wrapped?.disposition === 'info_only' && wrapped.b === U.agent, 'wrap_up_call saves the outcome to calls.disposition', JSON.stringify(wrapped));
   check((await call('agent', 'POST', '/api/v1/calls/dial', { number: '9999999999' })).status === 400, 'agent cannot dial a typed number');
   const beforeMissing = await one(`select count(*)::int n from calls`);
   check((await rpc('agent','autodial_settings',{})).body?.data?.calling_configured === false,
@@ -234,6 +261,10 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(closeCb.status === 200 && (await one(`select status, outcome from callbacks where id = $1`, cb.id))?.outcome === 'resolved',
     'agent closes the callback with an outcome', JSON.stringify(closeCb.body));
   const noAnswerCb = await one(`insert into callbacks(workspace_id,number,due_at) values ($1,'+919800001234',now()+interval '10 minutes') returning id`,ws);
+  const wrapGate = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(wrapGate.status === 409 && /outcome/.test(wrapGate.body?.message || '') && obdCalls.at(-1)?.body?.number !== undefined,
+    'click-to-call waits for the outcome of the last connected call', JSON.stringify(wrapGate.body));
+  await wrapAll('agent');
   const noAnswerDial = await call('agent','POST','/api/v1/calls/dial',{callback_id:noAnswerCb.id});
   const noAnswerEvent = {session_id:'customer-no-answer',direction:'outbound',customer_identifier:'+919800001234'};
   await hook({...noAnswerEvent,event_id:'na1',event_type:'call.initiated',payload:{client_ref_id:obdCalls.at(-1).body.reference_id}});
@@ -306,12 +337,39 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const r1 = await hookAs('myoperator=' + encodeURIComponent(JSON.stringify(v1)), { type: 'application/x-www-form-urlencoded' });
   const ac = await one(`select count(*)::int n, max(status) s, max(talk_seconds) t, max(recording_filename) f, max(agent_id::text) a, max(department) d from calls where customer_number = '+919876500001'`);
   check(r1.status === 200 && ac.n === 1 && ac.s === 'completed' && ac.t === 125 && ac.f === 'rec-v1.mp3' && ac.a === U.agent2 && ac.d === 'HHCS', 'after-call webhook completes the in-call call (one row)', JSON.stringify(ac));
+  // Issue 3: the in-call answer time is the Worker's clock; MyOperator's end - talk wins, so answered <= ended
+  const icT = await one(`select answered_at, ended_at, talk_seconds, duration_flag from calls where customer_number = '+919876500001'`);
+  check(new Date(icT.answered_at) <= new Date(icT.ended_at) && new Date(icT.ended_at) - new Date(icT.answered_at) === 125000 && icT.talk_seconds === 125,
+    'in-call answer never lands after the provider end (answered = end - talk)', JSON.stringify(icT));
+  const bNoTalk = { session_id: 'sess-no-talk', direction: 'inbound', customer_identifier: '+919876500003', system_identifier: '+918049368621' };
+  await hookAs(JSON.stringify({ ...bNoTalk, event_id: 'nt1', event_type: 'call.initiated', timestamp: t0 }));
+  await hookAs(JSON.stringify({ ...bNoTalk, event_id: 'nt2', event_type: 'call.answered', timestamp: t0 + 10, payload: { legs: [{ answered_at: t0 + 10 }] } }));
+  await hookAs(JSON.stringify({ ...bNoTalk, event_id: 'nt3', event_type: 'call.end', timestamp: t0 + 70, payload: { status: 'answered', legs: [{}] } }));
+  const noTalk = await one(`select status, talk_seconds, duration_flag from calls where session_id = 'sess-no-talk'`);
+  check(noTalk?.status === 'completed' && noTalk.talk_seconds === 60 && noTalk.duration_flag === 'derived',
+    'connected call without talk_duration: talk time derived from the provider times, never null', JSON.stringify(noTalk));
   // after-call, missed, JSON body with Basic auth -> callback queued
   await hookAs(JSON.stringify({ myoperator: JSON.stringify({ _ai: 'log-2', _cl: '+919876500002', _ev: 1, _su: 2, _st: t0, _et: t0 + 20, _ld: [] }) }), { auth: true });
   check((await one(`select status from callbacks where number = '+919876500002'`))?.status === 'pending', 'missed call from the after-call webhook goes to the callback queue (Basic auth key)');
   const unk = await hookAs(JSON.stringify({ hello: 'world' }));
   const ue = await one(`select processed, error from webhook_events where event_type = 'unknown' order by received_at desc limit 1`);
   check(unk.status === 200 && ue && !ue.processed && /not recognised/.test(ue.error || ''), 'unknown format stored for checking, not lost', JSON.stringify(ue));
+  // Issue 4: Webhook health (supervisors only, read-only, no payloads or numbers)
+  const whHealth = await call('sup', 'GET', '/api/v1/admin/webhooks/health');
+  check(whHealth.status === 200 && whHealth.body?.last_event?.at && whHealth.body.counts?.webhook_24h > 0 && whHealth.body.rejections?.last_401_at
+    && whHealth.body.failed?.some((e) => /not recognised/.test(e.error)) && whHealth.body.alert?.hours === 4
+    && !/\+91\d{10}|9876500/.test(JSON.stringify(whHealth.body)), 'webhook health: last event, counts, failures, last 401, no phone numbers', JSON.stringify(whHealth.body).slice(0, 400));
+  check((await call('agent', 'GET', '/api/v1/admin/webhooks/health')).status === 403 && (await call('admin', 'GET', '/api/v1/admin/webhooks/health')).status === 403,
+    'webhook health is supervisor-only');
+  check((await rpc('sup', 'set_webhook_alert_hours', { p_hours: 6 })).body?.data === 6 && (await rpc('agent', 'set_webhook_alert_hours', { p_hours: 2 })).status === 403,
+    'supervisor sets the silence alert window');
+
+  const vcOutcome = await batch('sup', [sel('v_calls', { cols: 'id,needs_outcome,disposition', filters: [{ col: 'session_id', op: 'eq', val: 'sess-no-talk' }], mode: 'single' })]);
+  check(vcOutcome.body?.results?.[0]?.data?.needs_outcome === true, 'supervisor view: connected call without an outcome is flagged', JSON.stringify(vcOutcome.body));
+  const autoMiss = await one(`select disposition, disposition_auto from calls where session_id = 'sess-miss-1'`);
+  check(autoMiss?.disposition === 'missed' && autoMiss.disposition_auto, 'missed call gets its outcome automatically', JSON.stringify(autoMiss));
+
+  await wrapAll('agent');
 
   // ---- 6b2. CRM-only calling: rejection, callback recovery, legacy settings and uncertain responses
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'bad' } });
@@ -331,6 +389,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(back.status === 200 && back.body?.mode === 'api' && rv.n === 0 && !back.body.number,
     'old app setting ignored: API calls only, no number reveals', JSON.stringify(back.body));
   await sql`update calls set status='completed',ended_at=now() where id=${back.body.call_id}`;
+  await wrapAll('agent');
   await rpc('agent', 'callback_update', { p_id: pendingCb.id, p_status: 'unreachable', p_note: 'No answer twice' });
   const dialAgain = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: pendingCb.id });
   const reopened = await one(`select cb.status, cb.completed_at, k.callback_id::text cid from callbacks cb, calls k where cb.id = $1 and k.id = $2`, pendingCb.id, dialAgain.body?.call_id);
@@ -341,6 +400,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(!configured.body.fields.some(f => f.key === 'dial_mode'), 'extension dial mode removed from settings');
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'unknown' } });
   const attempts = obdCalls.length;
+  await wrapAll('agent');
   const unknownCall = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
   const unknownRow = await one(`select status, raw from calls where click_to_call_ref = $1`, obdCalls.at(-1)?.body.reference_id);
   check(unknownCall.status === 504 && obdCalls.length === attempts + 1 && unknownRow?.status === 'ringing'
@@ -511,6 +571,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(adOn.status === 200 && adOn.body?.data?.enabled && adOn.body.data.buffer_minutes === 45, 'supervisor turns on the auto-dialer (45 min)', JSON.stringify(adOn.body));
   await sql`update callbacks set status = 'done' where status in ('pending','in_progress')`;
   await sql`update calls set status = 'completed' where status in ('ringing','answered')`;
+  await wrapAll('agent');
   await sql`update profiles set available = false`;
   const av = await rpc('agent', 'set_my_availability', { p_available: true });
   check(av.status === 200 && av.body?.data?.available === true && av.body.data.linked === true, 'linked agent goes Available', JSON.stringify(av.body));
@@ -541,6 +602,7 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const [{ id: retryCb }] = await sql`insert into callbacks (workspace_id, number, reason, due_at)
     values (${ws}, '+919930055502', 'missed', now() + interval '10 minutes') returning id::text`;
   await hook({ ...bA, event_id: 'a4', event_type: 'call.end', payload: { legs: [{ type: 'customer', dial_status: 'ANSWER', talk_duration: 40 }] } }, newKey);
+  await wrapAll('agent');
   const rejectedManualCallback = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: retryCb });
   const retryState = await one(`select status, attempts, next_attempt_at > now() as scheduled from callbacks where id = $1`, retryCb);
   check(rejectedManualCallback.status === 502 && retryState?.status === 'pending' && retryState.attempts === 1 && retryState.scheduled,

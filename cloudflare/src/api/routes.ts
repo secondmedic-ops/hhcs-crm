@@ -10,7 +10,7 @@ import { whatsappSession, whatsappSessionAction, testWaba } from '../services/my
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
 import { bmmLeads, bmmStatus } from '../services/bmm';
-import { aiSettings, createUser, emailStatus, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testEmail, testMo, webhookEvents } from '../services/admin';
+import { aiSettings, createUser, emailStatus, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testEmail, testMo, webhookEvents, webhookHealth } from '../services/admin';
 
 export type Access = 'public' | 'login' | readonly Role[];
 export interface Route {
@@ -66,6 +66,7 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/ai/extract-enquiry', access: OPS, handler: (c, b) => extractEnquiry(c.env, c.sql, c.user.id, String(b?.text || '').slice(0, 4000)), summary: 'AI enquiry extraction' },
   { method: 'POST', path: '/api/v1/admin/users', access: ADMIN, handler: (c, b) => createUser(c, b), summary: 'Create a login and its profile' },
   { method: 'GET', path: '/api/v1/admin/webhooks', access: TECH, handler: (c) => webhookEvents(c), summary: 'Last 50 MyOperator webhook events' },
+  { method: 'GET', path: '/api/v1/admin/webhooks/health', access: ['supervisor'], handler: (c) => webhookHealth(c), summary: 'MyOperator webhook health: last event, counts, failures, rejections (no payloads or numbers)' },
   { method: 'GET', path: '/api/v1/admin/integrations', access: TECH, handler: (c) => integrations(c), summary: 'Which integrations are configured' },
   { method: 'GET', path: '/api/v1/admin/myoperator', access: TECH, handler: (c) => moSettings(c), summary: 'MyOperator connection: fields set, webhook address, last event' },
   { method: 'POST', path: '/api/v1/admin/myoperator', access: TECH, handler: (c, b) => saveMoSettings(c, b ?? {}), summary: 'Save MyOperator connection values' },

@@ -20,7 +20,19 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
       // call-log sync first, so a missed call it brings in gets its callback timer in this same minute
       try { const r = await syncCallLogs(env, sql, exec); if (r.ok === false) console.log('myoperator sync', r.error); }
       catch (e) { console.log('myoperator sync', (e as Error).message); }
+      // safety net: a missed / abandoned inbound call of the last 24 h with no callback and no reason gets one now
+      const swept: string[] = [];
+      try {
+        const r = await asSystem(sql, (tx) => tx`select sweep_missed_callbacks() as n`);
+        if (r.result[0]?.n) { console.log('missed-call sweep', r.result[0].n); swept.push(...r.changed); }
+      } catch (e) { console.log('missed-call sweep', (e as Error).message); }
+      // working hours only: no MyOperator webhook event for N hours -> one notification to supervisors
+      try {
+        const r = await asSystem(sql, (tx) => tx`select webhook_silence_check() as n`);
+        if (r.result[0]?.n) { console.log('webhook silence alert', r.result[0].n); swept.push(...r.changed); }
+      } catch (e) { console.log('webhook silence', (e as Error).message); }
       const { changed } = await asSystem(sql, (tx) => tx`select sla_scan()`);
+      changed.push(...swept);
       // approved selling prices whose effective date has come (Settings > Rate card > Import rates)
       try { const r = await asSystem(sql, (tx) => tx`select activate_due_prices()`); changed.push(...r.changed); }
       catch (e) { console.log('price activation', (e as Error).message); }

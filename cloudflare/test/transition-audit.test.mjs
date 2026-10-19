@@ -167,13 +167,14 @@ test('Audit requirements 3-7: intake, call wrap-up, hospital validation, commerc
   `, [ws, caseId, users.agent])).rows;
 
   await fn('agent', 'select wrap_up_call($1, $2::jsonb) v', [call2.id, JSON.stringify({
-    disposition: 'interested',
+    disposition: 'booked', // outcomes come from the fixed list (call_outcomes)
     action_taken: 'Hospital bedside assessment scheduled for tomorrow 11 AM',
     notes: 'Bedside nurse assigned'
   })]);
 
   const [savedCall2] = await as('agent', 'select disposition, action_taken from calls where id = $1', [call2.id]);
-  expect(savedCall2.disposition).toBe('interested');
+  expect(savedCall2.disposition).toBe('booked');
+  await expect(fn('agent', 'select wrap_up_call($1, $2::jsonb) v', [call2.id, JSON.stringify({ disposition: 'interested' })])).rejects.toThrow('Choose an outcome from the list');
   expect(savedCall2.action_taken).toBe('Hospital bedside assessment scheduled for tomorrow 11 AM');
 
   // Case-level disposition and action_taken remain undisturbed by individual call wrap-ups

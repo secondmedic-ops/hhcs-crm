@@ -114,6 +114,8 @@
 | outcome_note | text | YES |
 | origin_call_at | timestamp with time zone | YES |
 | eligible_at | timestamp with time zone | YES |
+| backfilled | boolean | NO |
+| merged_call_ids | ARRAY | NO |
 
 ## calls
 | column | type | nullable |
@@ -161,6 +163,11 @@
 | action_taken | text | YES |
 | followup_at | timestamp with time zone | YES |
 | followup_owner_id | uuid | YES |
+| callback_note | text | YES |
+| disposition_at | timestamp with time zone | YES |
+| disposition_by | uuid | YES |
+| disposition_auto | boolean | NO |
+| duration_flag | text | YES |
 
 ## case_counters
 | column | type | nullable |
@@ -1043,6 +1050,10 @@
 | action_taken | text | YES |
 | followup_at | timestamp with time zone | YES |
 | followup_owner_id | uuid | YES |
+| disposition_at | timestamp with time zone | YES |
+| disposition_auto | boolean | YES |
+| callback_note | text | YES |
+| needs_outcome | boolean | YES |
 
 ## v_cases
 | column | type | nullable |

@@ -63,7 +63,7 @@ export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert'
 export const RPC: Record<string, readonly Role[]> = {
   create_enquiry: OPS, advance_case: OPS, advance_stage: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
   record_consent: OPS, callback_update: OPS, callback_close: OPS, set_my_availability: OPS,
-  set_autodial: ['supervisor', 'admin', 'client_manager'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
+  set_autodial: ['supervisor', 'admin', 'client_manager'], set_webhook_alert_hours: ['supervisor'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
   cleanup_whatsapp_autogen: ['admin', 'supervisor'],
   bmm_settings: ['admin','supervisor'], set_bmm_integration: ['admin','supervisor'],
   assign_staff: ['coordinator', 'supervisor'],
@@ -77,7 +77,7 @@ export const RPC: Record<string, readonly Role[]> = {
   update_referral: ['provider', 'supervisor', 'client_manager', 'coordinator'],
   refer_case: [...OPS, 'client_manager'],
   import_cases: ['supervisor', 'client_manager'],
-  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS, set_case_requirements: OPS, wrap_up_call: OPS, assign_coordinator: ['coordinator', 'supervisor'],
+  set_intake: OPS, set_item_scope: OPS, record_signoff: OPS, set_case_requirements: OPS, wrap_up_call: OPS, my_pending_wrapup: OPS, assign_coordinator: ['coordinator', 'supervisor'],
   schedule_validation: ['coordinator', 'supervisor', 'medical_desk'],
   record_validation: ['coordinator', 'supervisor', 'medical_desk', 'field_staff'],
   import_referral_updates: ['provider', 'supervisor', 'client_manager'],
@@ -97,7 +97,7 @@ export const RPC: Record<string, readonly Role[]> = {
 };
 /** Read-only actions that may ride in a batch. */
 export const READ_RPC = new Set(['provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings',
-  'rate_import_check', 'case_margins', 'margin_report']);
+  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);

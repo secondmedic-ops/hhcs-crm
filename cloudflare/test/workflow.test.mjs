@@ -271,6 +271,23 @@ const [{ id: cbD }] = (await db.query(`insert into callbacks(workspace_id, numbe
 let [{ c: claimLong }] = await system(`select autodial_claim() c`);
 claimLong.length === 0 ? ok('a 31-minute answered call still keeps the agent busy') : fail('agent redialled during a long call ' + JSON.stringify(claimLong));
 await db.query(`update calls set status = 'completed', ended_at = now() where id = $1`, [claim3[0].call_id]);
+// Issue 2: a connected call needs its outcome before the agent gets the next call
+let [{ c: claimBlocked }] = await system(`select autodial_claim() c`);
+claimBlocked.length === 0 ? ok('connected call without an outcome keeps the agent out of the auto-dialer') : fail('dialled before wrap-up ' + JSON.stringify(claimBlocked));
+const [{ r: pendingWrap }] = await as('agent', `select my_pending_wrapup() r`);
+pendingWrap?.id === claim3[0].call_id && pendingWrap.pending === 1 ? ok('the agent sees the call as pending wrap-up') : fail(JSON.stringify(pendingWrap));
+const [{ r: supPending }] = await as('sup', `select my_pending_wrapup() r`);
+supPending === null ? ok('pending wrap-up is per agent') : fail(JSON.stringify(supPending));
+await expectError('agent', `select wrap_up_call($1::uuid, '{"disposition":"requirement_captured"}'::jsonb)`, [claim3[0].call_id], 'Choose an outcome from the list');
+await expectError('agent', `select wrap_up_call($1::uuid, '{"notes":"spoke to the son"}'::jsonb)`, [claim3[0].call_id], 'Choose the call outcome');
+await as('agent', `select wrap_up_call($1::uuid, '{"disposition":"booked","notes":"Nursing booked"}'::jsonb)`, [claim3[0].call_id]);
+const [wrapped] = (await db.query(`select disposition, disposition_auto, disposition_by, disposition_at is not null t from calls where id = $1`, [claim3[0].call_id])).rows;
+wrapped.disposition === 'booked' && !wrapped.disposition_auto && wrapped.disposition_by === users.agent && wrapped.t
+  ? ok('wrap_up_call saves the outcome to calls.disposition with who and when') : fail(JSON.stringify(wrapped));
+const [{ r: noneLeft }] = await as('agent', `select my_pending_wrapup() r`);
+noneLeft === null ? ok('no pending wrap-up after the outcome') : fail(JSON.stringify(noneLeft));
+const [autoOut] = (await db.query(`select disposition, disposition_auto from calls where id = $1`, [claim1[0].call_id])).rows;
+autoOut.disposition === 'failed' && autoOut.disposition_auto ? ok('a call that never connected gets an automatic outcome') : fail(JSON.stringify(autoOut));
 let [{ c: claimReleased }] = await system(`select autodial_claim() c`);
 claimReleased.length === 1 && claimReleased[0].callback_id === cbD
   ? ok('completed call releases the agent for the next callback') : fail('agent stayed busy after call completion ' + JSON.stringify(claimReleased));
