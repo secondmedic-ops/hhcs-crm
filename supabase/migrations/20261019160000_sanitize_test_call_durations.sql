@@ -164,6 +164,7 @@ begin
                 'done', count(*) filter (where status='done'),
                 'awaiting_outcome', count(*) filter (where status='reached'),
                 'unreachable', count(*) filter (where status='unreachable'),
+                'agent_unavailable', count(*) filter (where status='agent_unavailable'),
                 'avg_minutes', round(avg(extract(epoch from (reached_at - created_at))/60)::numeric, 1),
                 'outcomes', jsonb_build_object(
                   'resolved', count(*) filter (where outcome='resolved'), 'follow_up', count(*) filter (where outcome='follow_up'),

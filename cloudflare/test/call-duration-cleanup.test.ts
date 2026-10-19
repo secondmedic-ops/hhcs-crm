@@ -68,6 +68,7 @@ test('outlier cleanup, live/MIS averages, snapshots, RLS and reruns on real migr
     expect(dashboard.calls).toMatchObject({ total: fixtures.length, avg_talk: 7260 });
     expect(mis.calls).toMatchObject({ total: fixtures.length, avg_talk: 7260 });
     expect(mis.agents[0].avg_talk).toBe(7260);
+    expect(mis.callbacks.agent_unavailable).toBe(0);
     expect(mis.collections.by_account).toEqual({});
     const otherWs = (await db.query<{ id: string }>("insert into workspaces(code,name,brand_name) values('DUR-OTHER','Other test workspace','Test') returning id")).rows[0].id;
     await db.query("insert into calls(workspace_id,direction,talk_seconds,status) values($1,'inbound',240,'completed')", [otherWs]);
