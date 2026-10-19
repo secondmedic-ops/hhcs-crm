@@ -956,6 +956,18 @@
 | staff_id | uuid | YES |
 | staff_session_id | uuid | YES |
 
+## v_call_metrics
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| agent_id | uuid | YES |
+| direction | text | YES |
+| status | text | YES |
+| started_at | timestamp with time zone | YES |
+| ring_seconds | integer | YES |
+| talk_seconds | integer | YES |
+
 ## v_callbacks
 | column | type | nullable |
 |---|---|---|
