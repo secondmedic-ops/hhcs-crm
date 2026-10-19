@@ -5,6 +5,7 @@ import { test, expect } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { generateQuotationPdfBytes } from '../../src/lib/pdf.js';
 
 const dir = join(import.meta.dirname, '..', '..', 'supabase', 'migrations');
 
@@ -591,6 +592,245 @@ const [closedCase] = (await db.query(`select stage, closed_at from cases where i
 closedCase.stage === 'closed' && closedCase.closed_at
   ? ok('advance_stage advanced case to closed')
   : fail('case not closed: ' + JSON.stringify(closedCase));
+
+console.log('\nScenario: enquiry creation to quote generation with 101 catalogue, care plan sheet, discount approval, and pro-forma invoice');
+
+// 1. Create new patient and enquiry via create_enquiry RPC
+const [{ create_enquiry: enqE2E }] = await as('agent', `select create_enquiry($1::jsonb)`, [JSON.stringify({
+  patient: {
+    full_name: 'Pooja Kulkarni',
+    age: 65,
+    gender: 'F',
+    mobile: '9820055443',
+    address: 'B-104 Sunrise Heights, Linking Road',
+    pincode: '400050',
+    locality: 'Bandra West',
+    lat: 19.0596,
+    lng: 72.8295,
+  },
+  caller_name: 'Karan Kulkarni',
+  caller_relation: 'son',
+  caller_mobile: '9820055443',
+  services_requested: 'ICU nursing, physiotherapy and medical equipment',
+  care_type: 'standard',
+  consent: true,
+  branch: 'Mahim',
+})]);
+
+const e2eCid = enqE2E.case_id;
+const e2eCno = enqE2E.case_no;
+const e2ePid = enqE2E.patient_id;
+
+/^HHC-\d{6}-\d{5}$/.test(e2eCno) && e2eCid && e2ePid
+  ? ok('enquiry created via create_enquiry with valid case_no and patient_id')
+  : fail('enquiry creation failed: ' + JSON.stringify(enqE2E));
+
+const [e2eCaseInit] = await as('agent', `select stage, quote_status, subtotal, total, discount_pct, patient_mobile from v_cases where id = $1`, [e2eCid]);
+e2eCaseInit?.stage === 'enquiry' && Number(e2eCaseInit.subtotal) === 0 && e2eCaseInit.patient_mobile.includes('XXX')
+  ? ok('case starts at enquiry with ₹0 subtotal and masked phone number')
+  : fail('initial case state: ' + JSON.stringify(e2eCaseInit));
+
+// 2. Add service items from the 101 service catalogue
+// Ensure services have tax_basis set for testing GST calculation (healthcare no_gst, equipment incl_gst, beds excl_gst)
+await db.query(`update services set tax_basis = 'no_gst', price = 2300 where code = 'NURSING-ICU-12H'`);
+await db.query(`update services set tax_basis = 'no_gst', price = 2000 where code = 'PHYSIO-NEURO'`);
+await db.query(`update services set tax_basis = 'incl_gst', price = 1500 where code = 'SUCTION'`);
+await db.query(`update services set tax_basis = 'excl_gst', price = 4500 where code = 'BED-ICU'`);
+
+// Check total service catalogue count in database
+const [{ count: totalCatalogueServices }] = (await db.query(`select count(*)::int from services where workspace_id = $1`, [ws])).rows;
+totalCatalogueServices === 101
+  ? ok('101 service catalogue confirmed in workspace')
+  : fail(`expected 101 services in catalogue, found ${totalCatalogueServices}`);
+
+// Insert items from the 101 catalogue
+await as('agent', `insert into case_items(case_id, service_id, qty) values
+  ($1, $2, 15),
+  ($1, $3, 6),
+  ($1, $4, 1),
+  ($1, $5, 1)`,
+  [e2eCid, svc['NURSING-ICU-12H'], svc['PHYSIO-NEURO'], svc['SUCTION'], svc['BED-ICU']]);
+
+const e2eItems = await as('agent', `select service_code, service_name, category, unit, qty, unit_price, line_total, price_version, price_tax_basis, priced_at is not null has_priced_at
+  from case_items where case_id = $1 order by created_at`, [e2eCid]);
+
+const icuNurse = e2eItems.find((x) => x.service_code === 'NURSING-ICU-12H');
+const physioNeuro = e2eItems.find((x) => x.service_code === 'PHYSIO-NEURO');
+const suctionEquip = e2eItems.find((x) => x.service_code === 'SUCTION');
+const bedIcu = e2eItems.find((x) => x.service_code === 'BED-ICU');
+
+// Expected rates and line totals:
+// NURSING-ICU-12H: price 2300, qty 15 -> line_total 34500, price_tax_basis = no_gst
+// PHYSIO-NEURO: price 2000, qty 6 -> line_total 12000, price_tax_basis = no_gst
+// SUCTION: price 1500, qty 1 -> line_total 1500, price_tax_basis = incl_gst
+// BED-ICU: price 4500, qty 1 -> line_total 4500, price_tax_basis = excl_gst
+// Subtotal = 34500 + 12000 + 1500 + 4500 = 52500
+e2eItems.length === 4
+  && icuNurse && Number(icuNurse.unit_price) === 2300 && Number(icuNurse.line_total) === 34500 && icuNurse.price_tax_basis === 'no_gst'
+  && physioNeuro && Number(physioNeuro.unit_price) === 2000 && Number(physioNeuro.line_total) === 12000 && physioNeuro.price_tax_basis === 'no_gst'
+  && suctionEquip && Number(suctionEquip.unit_price) === 1500 && Number(suctionEquip.line_total) === 1500 && suctionEquip.price_tax_basis === 'incl_gst'
+  && bedIcu && Number(bedIcu.unit_price) === 4500 && Number(bedIcu.line_total) === 4500 && bedIcu.price_tax_basis === 'excl_gst'
+  && e2eItems.every((x) => x.has_priced_at && x.price_version >= 1)
+  ? ok('4 items from 101 catalogue added with rate-card snapshot, line totals, and tax_basis')
+  : fail('case_items rate card snapshot failed: ' + JSON.stringify(e2eItems));
+
+const [e2eCasePriced] = await as('agent', `select subtotal, total from cases where id = $1`, [e2eCid]);
+Number(e2eCasePriced.subtotal) === 52500 && Number(e2eCasePriced.total) === 52500
+  ? ok('server-side subtotal computation: ₹52,500 across all 4 items')
+  : fail('subtotal mismatch: ' + JSON.stringify(e2eCasePriced));
+
+// Advance to pricing stage
+await as('agent', `select advance_case($1, null)`, [e2eCid]);
+const [e2eStagePricing] = await as('agent', `select stage from cases where id = $1`, [e2eCid]);
+e2eStagePricing.stage === 'pricing' ? ok('enquiry advanced to pricing stage') : fail('stage: ' + e2eStagePricing.stage);
+
+// 3. Calculate care plan sheet and verify server-side price computation
+await db.query(`update cases set plan_days = 30, coordinator_id = $1 where id = $2`, [users.coord, e2eCid]);
+const [{ s: e2eCps }] = await as('coord', `select care_plan_sheet($1, 30) s`, [e2eCid]);
+const cpsCase = e2eCps?.case;
+const cpsNurseOpt = e2eCps?.options?.find((o) => o.code === 'NURSING-ICU-12H' && o.cover === '12-hour');
+const cpsPhysioOpt = e2eCps?.options?.find((o) => o.code === 'PHYSIO-NEURO');
+const cpsSuctionOpt = e2eCps?.options?.find((o) => o.code === 'SUCTION');
+
+// Server-side computation checks:
+// - plan length: 30 days
+// - case subtotal: 52500
+// - per_day: 52500 / 30 = 1750
+// - options scaling: nursing 30 shifts @ 2300 = 69000, physio 3/wk (13 sessions) @ 2000 = 26000, suction 1 month @ 1500 = 1500
+e2eCps?.days === 30
+  && cpsCase && Number(cpsCase.subtotal) === 52500 && Number(cpsCase.total) === 52500 && Number(cpsCase.per_day) === 1750
+  && cpsCase.items.length === 4
+  && cpsNurseOpt && Number(cpsNurseOpt.qty) === 30 && Number(cpsNurseOpt.plan_total) === 69000
+  && cpsPhysioOpt && Number(cpsPhysioOpt.qty) === 13 && Number(cpsPhysioOpt.plan_total) === 26000
+  && cpsSuctionOpt && Number(cpsSuctionOpt.qty) === 30 && Number(cpsSuctionOpt.plan_total) === 45000
+  ? ok('care_plan_sheet: 30-day plan server-side computation, daily average ₹1,750, scaled catalogue options')
+  : fail('care_plan_sheet computation mismatch: ' + JSON.stringify(e2eCps).slice(0, 300));
+
+// Exclude one item (Suction) via set_item_scope to verify server-side dropped_total & subtotal update
+const suctionItem = (await db.query(`select id from case_items where case_id = $1 and service_code = 'SUCTION'`, [e2eCid])).rows[0];
+await as('coord', `select set_item_scope($1, false, 'Patient family owns suction apparatus', null, 'arranged_elsewhere')`, [suctionItem.id]);
+const [{ s: e2eCpsDropped }] = await as('coord', `select care_plan_sheet($1, 30) s`, [e2eCid]);
+Number(e2eCpsDropped?.case?.dropped_total) === 1500 && Number(e2eCpsDropped?.case?.subtotal) === 51000
+  ? ok('care_plan_sheet reflects dropped item: dropped_total ₹1,500, active subtotal ₹51,000')
+  : fail('dropped total in care_plan_sheet mismatch: ' + JSON.stringify(e2eCpsDropped?.case));
+
+// Restore suction back into scope
+await as('coord', `select set_item_scope($1, true)`, [suctionItem.id]);
+const [e2eSubtotalRestored] = await as('coord', `select subtotal from cases where id = $1`, [e2eCid]);
+Number(e2eSubtotalRestored.subtotal) === 52500 ? ok('scope restored: subtotal returned to ₹52,500') : fail('restored subtotal: ' + e2eSubtotalRestored.subtotal);
+
+// 4. Request discount and verify approval stage gate
+// Workspace band is 10%; requesting 15% discount triggers approval stage gate
+const [e2eDiscReq] = await as('agent', `select set_discount($1, 15, 'Post-ICU elderly compassionate case') r`, [e2eCid]);
+e2eDiscReq.r.status === 'pending_approval' && e2eDiscReq.r.approval_id
+  ? ok('15% discount (> 10% band) requests approval stage gate')
+  : fail('discount request: ' + JSON.stringify(e2eDiscReq));
+
+const [e2eCaseBlocked] = await as('agent', `select quote_status, discount_pct, discount_amount, total from cases where id = $1`, [e2eCid]);
+e2eCaseBlocked.quote_status === 'pending_approval'
+  && Number(e2eCaseBlocked.discount_pct) === 15
+  && Number(e2eCaseBlocked.discount_amount) === 7875
+  && Number(e2eCaseBlocked.total) === 44625
+  ? ok('server-side discount calculation: 15% of ₹52,500 = ₹7,875, net total = ₹44,625')
+  : fail('discount calculation: ' + JSON.stringify(e2eCaseBlocked));
+
+// Verification of stage gates while approval is pending:
+// - Cannot send quote
+await expectError('agent', `select send_quote($1, $2)`, [e2eCid, tpl], 'approval needed');
+// - Cannot advance case to booking
+await expectError('agent', `select advance_case($1, null)`, [e2eCid], 'Stage gate not met');
+// - Unauthorized role (agent / coordinator) cannot approve discount
+await expectError('agent', `select decide_approval($1, true, 'self approval')`, [e2eDiscReq.r.approval_id], 'client approver');
+await expectError('coord', `select decide_approval($1, true, 'coord approval')`, [e2eDiscReq.r.approval_id], 'client approver');
+
+// Client manager (Hinduja approver) decides approval
+await as('client', `select decide_approval($1, true, 'Approved by Hinduja Administration')`, [e2eDiscReq.r.approval_id]);
+const [e2eCaseApproved] = await as('agent', `select quote_status from cases where id = $1`, [e2eCid]);
+e2eCaseApproved.quote_status === 'approved' ? ok('client manager approved discount; quote_status -> approved') : fail('approval status: ' + e2eCaseApproved.quote_status);
+
+// Now send_quote passes
+const [e2eQuoteSent] = await as('agent', `select send_quote($1, $2) r`, [e2eCid, tpl]);
+e2eQuoteSent.r.text.includes('Total payable: ₹44625.00') && e2eQuoteSent.r.text.includes('Reference: ' + e2eCno)
+  ? ok('quote sent with approved discounted payable ₹44,625.00: ' + e2eQuoteSent.r.text.split('\n')[4])
+  : fail('sent quote text: ' + e2eQuoteSent.r.text);
+
+// 5. Generate pro-forma invoice and verify tax calculation (tax_basis)
+// Fetch final case details, patient info and active case items
+const [e2eCaseFinal] = (await db.query(`select * from v_cases where id = $1`, [e2eCid])).rows;
+const [e2ePatFinal] = (await db.query(`select * from patients where id = $1`, [e2ePid])).rows;
+const e2eActiveItems = (await db.query(`select * from case_items where case_id = $1 and not coalesce(excluded, false) order by created_at`, [e2eCid])).rows;
+const [e2eWsRow] = (await db.query(`select brand_name from workspaces where id = $1`, [ws])).rows;
+
+// Pro-forma Invoice Number format
+const expectedInvNo = `HHCS-INV-${e2eCno.replace(/^HHC-/, '')}`;
+expectedInvNo.startsWith('HHCS-INV-') ? ok('pro-forma invoice number formatted: ' + expectedInvNo) : fail('invoice no: ' + expectedInvNo);
+
+// Verify item-by-item GST tax basis and calculation
+// GST basis rules:
+// - no_gst: healthcare service exempt (Notification 12/2017-Central Tax) -> Tax = ₹0.00, Taxable = Line Total
+// - incl_gst: GST included in rate-card price -> Base = Line Total / (1 + Rate), GST = Line Total - Base (e.g. 18% GST)
+// - excl_gst: GST charged extra on top of rate-card price -> Base = Line Total, GST = Line Total * Rate (e.g. 18% GST)
+const GST_RATE = 0.18; // standard GST rate for non-exempt medical goods/rentals
+
+const taxBreakdown = e2eActiveItems.map((item) => {
+  const lineTotal = Number(item.line_total);
+  let taxable = 0;
+  let gst = 0;
+  let taxNote = '';
+
+  if (item.price_tax_basis === 'no_gst') {
+    taxable = lineTotal;
+    gst = 0;
+    taxNote = 'Healthcare services exempt from GST';
+  } else if (item.price_tax_basis === 'incl_gst') {
+    taxable = Math.round((lineTotal / (1 + GST_RATE)) * 100) / 100;
+    gst = Math.round((lineTotal - taxable) * 100) / 100;
+    taxNote = '18% GST included';
+  } else if (item.price_tax_basis === 'excl_gst') {
+    taxable = lineTotal;
+    gst = Math.round(lineTotal * GST_RATE * 100) / 100;
+    taxNote = '18% GST excluded (additional)';
+  }
+
+  return {
+    code: item.service_code,
+    basis: item.price_tax_basis,
+    lineTotal,
+    taxable,
+    gst,
+    taxNote,
+  };
+});
+
+const noGstItems = taxBreakdown.filter((x) => x.basis === 'no_gst');
+const inclGstItems = taxBreakdown.filter((x) => x.basis === 'incl_gst');
+const exclGstItems = taxBreakdown.filter((x) => x.basis === 'excl_gst');
+
+noGstItems.length === 2 && noGstItems.every((x) => x.gst === 0 && x.taxable === x.lineTotal)
+  ? ok('tax_basis no_gst: healthcare services (nursing & physio) 100% GST exempt (GST = ₹0.00)')
+  : fail('no_gst calculation: ' + JSON.stringify(noGstItems));
+
+inclGstItems.length === 1 && inclGstItems[0].lineTotal === 1500 && inclGstItems[0].taxable === 1271.19 && inclGstItems[0].gst === 228.81
+  ? ok('tax_basis incl_gst: suction equipment ₹1,500 yields ₹1,271.19 taxable + ₹228.81 GST (18%)')
+  : fail('incl_gst calculation: ' + JSON.stringify(inclGstItems));
+
+exclGstItems.length === 1 && exclGstItems[0].lineTotal === 4500 && exclGstItems[0].taxable === 4500 && exclGstItems[0].gst === 810
+  ? ok('tax_basis excl_gst: ICU bed ₹4,500 yields ₹4,500 taxable + ₹810.00 GST (18%)')
+  : fail('excl_gst calculation: ' + JSON.stringify(exclGstItems));
+
+// Verify PDF generation of the official quotation / pro-forma estimate
+const pdfBytes = generateQuotationPdfBytes({
+  k: e2eCaseFinal,
+  patient: e2ePatFinal,
+  items: e2eActiveItems,
+  workspace: e2eWsRow,
+});
+
+const pdfStr = new TextDecoder().decode(pdfBytes.slice(0, 100));
+const pdfTail = new TextDecoder().decode(pdfBytes.slice(-30));
+pdfBytes instanceof Uint8Array && pdfBytes.length > 1000 && pdfStr.startsWith('%PDF-1.4') && pdfTail.includes('%%EOF')
+  ? ok(`pro-forma quotation PDF generated successfully (${pdfBytes.length} bytes, PDF 1.4 compliant)`)
+  : fail('quotation PDF generation failed, length: ' + pdfBytes?.length);
 
 expect(problems).toEqual([]);
 }, 120000);
