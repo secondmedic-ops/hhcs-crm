@@ -164,6 +164,29 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(cb?.status === 'pending' && Number(cb.m) >= 9 && Number(cb.m) <= 10, 'missed call queued for callback in 10 min', JSON.stringify(cb));
   const line = await batch('sup', [sel('v_calls', { cols: 'line_label', filters: [{ col: 'session_id', op: 'eq', val: 'sess-miss-1' }], mode: 'single' })]);
   check(line.body?.results?.[0]?.data?.line_label === 'Hinduja helpline', 'call tagged with its line (Hinduja helpline)', JSON.stringify(line.body));
+
+  // Fallback ring_seconds calculation when MyOperator payload omits ring_duration or sends 0
+  const bOmit = { session_id: 'sess-omit-ring', direction: 'inbound', customer_identifier: '+919820012012', system_identifier: '+918049368621' };
+  await hook({ ...bOmit, event_id: 'or1', event_type: 'call.initiated', timestamp: t0 });
+  await hook({ ...bOmit, event_id: 'or2', event_type: 'call.answered', timestamp: t0 + 18, payload: { legs: [{ answered_at: t0 + 18, ring_duration: 0, agent: { uuid: 'mo-77' } }] } });
+  await hook({ ...bOmit, event_id: 'or3', event_type: 'call.end', timestamp: t0 + 60, payload: { status: 'answered', legs: [{ talk_duration: 42 }] } });
+  const cOmit = await one(`select * from calls where session_id = 'sess-omit-ring'`);
+  check(cOmit.status === 'completed' && cOmit.ring_seconds === 18 && cOmit.talk_seconds === 42,
+    'answered call with 0/missing ring_duration: fallback calculates ring_seconds as answered_at - started_at', JSON.stringify(cOmit));
+
+  const bMissOmit = { session_id: 'sess-miss-omit', direction: 'inbound', customer_identifier: '9930011224', system_identifier: '+918049368621' };
+  await hook({ ...bMissOmit, event_id: 'mo1', event_type: 'call.initiated', timestamp: t0 });
+  await hook({ ...bMissOmit, event_id: 'mo2', event_type: 'call.end', timestamp: t0 + 24, payload: { status: 'missed', legs: [] } });
+  const cMissOmit = await one(`select * from calls where session_id = 'sess-miss-omit'`);
+  check(cMissOmit.status === 'missed' && cMissOmit.ring_seconds === 24,
+    'missed call with missing ring_duration: fallback calculates ring_seconds as ended_at - started_at', JSON.stringify(cMissOmit));
+
+  const bAbandOmit = { session_id: 'sess-aband-omit', direction: 'inbound', customer_identifier: '9930011225', system_identifier: '+918049368621' };
+  await hook({ ...bAbandOmit, event_id: 'ab1', event_type: 'call.initiated', timestamp: t0 });
+  await hook({ ...bAbandOmit, event_id: 'ab2', event_type: 'call.end', timestamp: t0 + 15, payload: { status: 'hangup_in_ivr', category: 'abandoned', legs: [] } });
+  const cAbandOmit = await one(`select * from calls where session_id = 'sess-aband-omit'`);
+  check(cAbandOmit.status === 'abandoned' && cAbandOmit.ring_seconds === 15,
+    'abandoned call with missing ring_duration: fallback calculates ring_seconds as ended_at - started_at', JSON.stringify(cAbandOmit));
   check((await call('agent', 'POST', '/api/v1/calls/dial', { number: '9999999999' })).status === 400, 'agent cannot dial a typed number');
   const beforeMissing = await one(`select count(*)::int n from calls`);
   check((await rpc('agent','autodial_settings',{})).body?.data?.calling_configured === false,

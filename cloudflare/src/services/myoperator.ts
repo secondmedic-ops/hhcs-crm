@@ -229,6 +229,15 @@ const elapsedSeconds = (start: unknown, end: unknown): number | null => {
   return seconds >= 0 && seconds <= 2147483647 ? seconds : null;
 };
 
+/** Fallback ring duration: EXTRACT(EPOCH FROM (end - start)) capped safely between 0 and 120s. */
+export const ringFallback = (start: unknown, end: unknown, cap = 120): number | null => {
+  const s = toIso(start), e = toIso(end);
+  if (!s || !e) return null;
+  const seconds = Math.round((Date.parse(e) - Date.parse(s)) / 1000);
+  if (isNaN(seconds)) return null;
+  return Math.max(0, Math.min(cap, seconds));
+};
+
 /** Legacy _ss is UTC seconds since midnight in some payloads, never a safe talk-time fallback. */
 export function afterCallTalkSeconds(o: J): number | null {
   const elapsed = elapsedSeconds(o._st, o._et);
@@ -278,6 +287,18 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
     talk_seconds: connected ? afterCallTalkSeconds(o) : 0,
     raw: tx.json({ ...(call.raw || {}), end: o }),
   };
+  if (call.ring_seconds == null || call.ring_seconds === 0) {
+    const startedAt = call.started_at || toIso(o._st);
+    if (!connected && patch.status === 'missed') {
+      const ring = ringFallback(startedAt, patch.ended_at, 120);
+      if (ring != null) patch.ring_seconds = ring;
+    } else if (connected) {
+      const answeredAt = call.answered_at || (patch.talk_seconds != null && patch.ended_at
+        ? new Date(Date.parse(toIso(patch.ended_at)!) - patch.talk_seconds * 1000).toISOString() : null);
+      const ring = ringFallback(startedAt, answeredAt, 120);
+      if (ring != null) patch.ring_seconds = ring;
+    }
+  }
   if (!connected && direction === 'outbound') patch.raw = tx.json({ ...(call.raw || {}), end: o,
     callback_failure_reason: answeredLeg ? 'Customer did not connect after the agent answered'
       : 'Agent unavailable or call not connected; customer reachability not verified' });
@@ -342,7 +363,18 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
       if (call.direction === 'inbound' || legsAnswered(customerLegs(legs, call.customer_number))) {
         patch.answered_at = toIso(leg.answered_at || ev.timestamp) || new Date().toISOString();
       }
-      patch.ring_seconds = int(leg.ring_duration);
+      const explicit = int(leg.ring_duration ?? p.ring_duration);
+      if (explicit != null && explicit > 0) {
+        patch.ring_seconds = explicit;
+      } else {
+        const startedAt = call.started_at || toIso(p.started_at || ev.timestamp);
+        const answeredAt = patch.answered_at || call.answered_at || (call.direction === 'inbound' ? toIso(leg.answered_at || ev.timestamp) : null);
+        if (startedAt && answeredAt) {
+          patch.ring_seconds = ringFallback(startedAt, answeredAt, 120);
+        } else if (explicit != null) {
+          patch.ring_seconds = explicit;
+        }
+      }
       break;
     }
     case 'call.end': {
@@ -357,9 +389,25 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
       const talkLegs = call.direction === 'outbound' ? customer : legs;
       const talk = talkLegs.filter((l) => l.talk_duration != null).map((l) => Number(l.talk_duration));
       patch.talk_seconds = answered ? (talk.length ? (call.direction === 'outbound' ? Math.max(...talk) : talk.reduce((sum,n) => sum+n,0)) : int(p.talk_duration)) : 0;
-      if (patch.ring_seconds == null && call.ring_seconds == null) {
+      if (patch.ring_seconds == null && (call.ring_seconds == null || call.ring_seconds === 0)) {
         const ring = legs.map((l) => Number(l.ring_duration || 0)).filter(Boolean);
-        if (ring.length) patch.ring_seconds = Math.min(...ring);
+        const explicitRing = ring.length ? Math.min(...ring) : int(p.ring_duration);
+        if (explicitRing != null && explicitRing > 0) {
+          patch.ring_seconds = explicitRing;
+        } else if (answered) {
+          const startedAt = call.started_at || toIso(p.started_at || ev.timestamp);
+          const answeredAt = call.answered_at || patch.answered_at || toIso(p.answered_at || legs.find((l) => l.answered_at)?.answered_at)
+            || (patch.talk_seconds != null && patch.ended_at ? new Date(Date.parse(toIso(patch.ended_at)!) - patch.talk_seconds * 1000).toISOString() : null);
+          const fallback = ringFallback(startedAt, answeredAt, 120);
+          if (fallback != null) patch.ring_seconds = fallback;
+          else if (call.ring_seconds == null && explicitRing != null) patch.ring_seconds = explicitRing;
+        } else if (patch.status === 'missed' || patch.status === 'abandoned' || (!answered && call.direction === 'outbound')) {
+          const startedAt = call.started_at || toIso(p.started_at || ev.timestamp);
+          const endedAt = patch.ended_at || call.ended_at || toIso(p.ended_at || ev.timestamp);
+          const fallback = ringFallback(startedAt, endedAt, 120);
+          if (fallback != null) patch.ring_seconds = fallback;
+          else if (call.ring_seconds == null && explicitRing != null) patch.ring_seconds = explicitRing;
+        }
       }
       if (p.recording_filename) patch.recording_filename = String(p.recording_filename);
       patch.provider_call_id = p.id ? String(p.id) : call.provider_call_id;

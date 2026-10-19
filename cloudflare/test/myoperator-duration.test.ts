@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterCallTalkSeconds } from '../src/services/myoperator';
+import { afterCallTalkSeconds, ringFallback } from '../src/services/myoperator';
 
 vi.mock('../src/services/live', () => ({ notifyLive: vi.fn() }));
 
@@ -35,6 +35,29 @@ test.each(['Infinity', Infinity, -1, '00:60:00', 'broken', 2147483648])('invalid
 
 test('invalid provider timestamps do not throw or manufacture duration', () => {
   expect(afterCallTalkSeconds({ _st: Infinity, _et: 999999999999999999, _ss: 49076 })).toBeNull();
+});
+
+test('ring fallback computes epoch difference and clamps safely between 0 and 120s', () => {
+  // Normal difference within 120s
+  expect(ringFallback(start, start + 18)).toBe(18);
+  expect(ringFallback(start * 1000, (start + 25) * 1000)).toBe(25);
+  expect(ringFallback('2026-10-19T10:00:00.000Z', '2026-10-19T10:00:14.000Z')).toBe(14);
+
+  // Exact same second (0s)
+  expect(ringFallback(start, start)).toBe(0);
+
+  // Exceeds upper bound (120s max cap)
+  expect(ringFallback(start, start + 150)).toBe(120);
+  expect(ringFallback(start, start + 3600)).toBe(120);
+
+  // Inverted timestamps / clock skew clamped safely to 0
+  expect(ringFallback(start + 10, start)).toBe(0);
+
+  // Missing or invalid inputs
+  expect(ringFallback(null, start)).toBeNull();
+  expect(ringFallback(start, null)).toBeNull();
+  expect(ringFallback(undefined, undefined)).toBeNull();
+  expect(ringFallback('invalid', 'dates')).toBeNull();
 });
 
 test('historical repair is conservative, preserves summaries and is idempotent', async () => {
