@@ -27,6 +27,19 @@ export function missingCallingSettings(env: Env): string[] {
     .filter((f) => !String(env[f.env] || '').trim()).map((f) => f.label);
 }
 
+/** Presence is configuration, not proof that MyOperator accepts the credentials. */
+export function wabaConfiguration(env: Env) {
+  const missing = [
+    !env.MYOPERATOR_COMPANY_ID?.trim() && 'Company ID',
+    !env.MYOPERATOR_WABA_API_KEY?.trim() && 'WhatsApp API key',
+    !env.MYOPERATOR_WABA_PHONE_ID?.trim() && 'WhatsApp phone number ID',
+  ].filter((v): v is string => !!v);
+  return {
+    ok: false, status: missing.length ? 'missing_credentials' : 'configured', missing,
+    message: missing.length ? 'Missing: ' + missing.join(', ') : 'Credentials present. Test WABA connection to verify them with MyOperator.',
+  };
+}
+
 const TTL = 30_000;
 let cache: { at: number; values: J } | null = null;
 
@@ -50,7 +63,7 @@ export async function moEnv(env: Env, sql: Sql): Promise<Env> {
   const out: J = { ...env };
   for (const f of MO_FIELDS) {
     const v = typeof s[f.key] === 'string' ? s[f.key].trim() : '';
-    if (v) out[f.env] = v;
+    out[f.env] = v || (typeof env[f.env] === 'string' ? env[f.env]!.trim() : '');
   }
   return out as Env;
 }

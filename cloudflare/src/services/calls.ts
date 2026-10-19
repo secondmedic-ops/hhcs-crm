@@ -143,7 +143,7 @@ async function deliver(c: Ctx, caseId: string, out: { text: string; channel: str
     const [k] = await c.sql`select c.caller_mobile, p.mobile from cases c join patients p on p.id = c.patient_id where c.id = ${caseId}`;
     const to = k?.caller_mobile || k?.mobile;
     if (!to) return { skipped: 'No mobile number on the case' };
-    const res = await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: out.text, templateName: out.provider_template_name }, c.sql);
+    const res = await sendWhatsApp(c.env, { to, text: out.text, templateName: out.provider_template_name }, c.sql);
     if ((res as J)?.queued) {
       await c.sql`update interactions set meta = coalesce(meta, '{}'::jsonb) || '{"delivery_status":"queued","via":"qr"}'::jsonb
         where id = (select id from interactions where case_id = ${caseId}::uuid and channel = 'whatsapp' and direction = 'outbound' order by occurred_at desc limit 1)`;
@@ -257,7 +257,7 @@ export async function sendWhatsAppChat(c: Ctx, body: J) {
       from patients p where p.id = ${m.patientId} and p.workspace_id = ${m.wsId}`;
     const to = target?.mobile || target?.caller_mobile;
     if (!to) delivery = { skipped: 'No mobile number on the patient' };
-    else delivery = await sendWhatsApp(await moEnv(c.env, c.sql), { to, text: m.text, templateName: m.t?.provider_template_name }, c.sql);
+    else delivery = await sendWhatsApp(c.env, { to, text: m.text, templateName: m.t?.provider_template_name }, c.sql);
   } catch (e) {
     delivery = { error: (e as Error).message };
   }

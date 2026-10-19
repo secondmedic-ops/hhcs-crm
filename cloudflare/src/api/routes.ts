@@ -6,7 +6,7 @@ import type { Role } from './auth';
 import { staffDirectory, startStaffSession, endStaffSession } from '../services/staff-session';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
-import { whatsappSession, whatsappSessionAction } from '../services/myoperator';
+import { whatsappSession, whatsappSessionAction, testWaba } from '../services/myoperator';
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
 import { bmmLeads, bmmStatus } from '../services/bmm';
@@ -54,8 +54,8 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/calls/{id}/recording', access: RECORDINGS, handler: (c) => recording(c), summary: 'Call recording audio (logged)' },
   { method: 'POST', path: '/api/v1/cases/{id}/quote', access: OPS, handler: (c, b) => sendQuote(c, b ?? {}), summary: 'Send the quote on an approved template' },
   { method: 'POST', path: '/api/v1/cases/{id}/message', access: OPS, handler: (c, b) => sendMessage(c, b ?? {}), summary: 'Send an approved template message' },
-  { method: 'GET', path: '/api/v1/whatsapp/session', access: ALL, handler: (c) => whatsappSession(c), summary: 'WhatsApp QR and WABA connection status' },
-  { method: 'POST', path: '/api/v1/whatsapp/session', access: WA_OPS, handler: (c, b) => whatsappSessionAction(c, b ?? {}), summary: 'Start, sync or disconnect WhatsApp QR session' },
+  { method: 'GET', path: '/api/v1/whatsapp/session', access: ALL, handler: (c) => whatsappSession(c), summary: 'WhatsApp Business API configuration status' },
+  { method: 'POST', path: '/api/v1/whatsapp/session', access: WA_OPS, handler: (c, b) => whatsappSessionAction(c, b ?? {}), summary: 'QR sessions disabled for enterprise compliance' },
   { method: 'POST', path: '/api/v1/whatsapp/send', access: WA_OPS, handler: (c, b) => sendWhatsAppChat(c, b ?? {}), summary: 'Send a WhatsApp reply or approved template' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}', access: AI_CALLS, handler: (c) => summariseCall(c, c.params.id), summary: 'AI: transcript, summary, QA of a recorded call (a call the user can see)' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}/live-token', access: OPS, handler: (c, b) => liveCallToken(c, b), summary: 'Single-use Gemini 3.5 live transcription token for an active visible call' },
@@ -75,6 +75,7 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/admin/ai/test', access: TECH, handler: (c) => testAi(c), summary: 'Test the Gemini key' },
   { method: 'GET', path: '/api/v1/admin/email', access: TECH, handler: (c) => emailStatus(c), summary: 'Outbound e-mail (Gmail SMTP): settings present, last MIS send' },
   { method: 'POST', path: '/api/v1/admin/email/test', access: TECH, handler: (c, b) => testEmail(c, b ?? {}), summary: 'Send a test e-mail to the configured sender address only' },
+  { method: 'POST', path: '/api/v1/admin/myoperator/waba/test', access: TECH, handler: (c) => testWaba(c), summary: 'Read-only WABA credentials and phone activation check, no message sent' },
   { method: 'POST', path: '/api/v1/admin/myoperator/test', access: TECH, handler: (c) => testMo(c), summary: 'Test the MyOperator connection' },
   { method: 'GET', path: '/api/v1/admin/myoperator/users', access: TECH, handler: (c) => moUsers(c), summary: 'MyOperator users and the CRM logins linked to them' },
   { method: 'POST', path: '/api/v1/admin/users/telephony', access: TECH, handler: (c, b) => setTelephony(c, b ?? {}), summary: 'Set a user\'s MyOperator user id, extension and phone' },

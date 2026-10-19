@@ -60,6 +60,10 @@ const jwks = http.createServer(async (req, res) => {
         country: 'IN', state: 'MH', start_time: new Date((t - 60) * 1000).toISOString().slice(0, 19).replace('T', ' ').replace(/^(.*)$/, (x) => x), seconds: 0, duration: '00:00:00', status: 'missed', department: 'Sales' } },
     ] } });
   }
+  if (req.url.startsWith('/waba/phonenumbers')) {
+    if (req.method !== 'GET' || req.headers.authorization !== 'Bearer waba-test-key' || req.headers['x-myop-company-id'] !== 'co-app') return send(401, {status:'error',code:401});
+    return send(200, {status:'success',code:'200',data:{next:null,results:[{phone_number_id:'123456789',status:'active',phone_number_status:'connected',onboarding_status:'success'}]}});
+  }
   if (req.url.startsWith('/mo/user')) { // MyOperator Users API stand-in
     const tokenOk = new URL(req.url, 'http://x').searchParams.get('token') === 'api-tok';
     if (!tokenOk) return send(200, { status: 'error', code: 401, message: 'Invalid token' });
@@ -153,6 +157,7 @@ const envFile = join(tmp, 'rehearsal.env');
 writeFileSync(envFile, [
   `SUPABASE_URL=${SUPABASE}`, `SUPABASE_SERVICE_ROLE_KEY=${ADMIN_KEY}`, 'EXPOSE_CONTRACT=1', 'BUILD_SHA=rehearsal', 'GEMINI_API_KEY=',
   'MYOPERATOR_WEBHOOK_KEY=rehearsal-hook', 'MYOPERATOR_COMPANY_ID=co-1', 'MYOPERATOR_SECRET_TOKEN=st', 'MYOPERATOR_OBD_API_KEY=obd-key',
+  `MYOPERATOR_WABA_URL=${SUPABASE}/waba/messages`,
   `MYOPERATOR_OBD_URL=${SUPABASE}/obd`, `MYOPERATOR_API_URL=${SUPABASE}/mo`,
   `MYOPERATOR_RECORDING_URL=${SUPABASE}/mo/recordings/link`, `GEMINI_API_URL=${SUPABASE}/gemini`,
 ].join('\n') + '\n', { mode: 0o600 });

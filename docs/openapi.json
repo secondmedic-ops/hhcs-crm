@@ -288,7 +288,7 @@
     },
     "/api/v1/whatsapp/session": {
       "get": {
-        "summary": "WhatsApp QR and WABA connection status",
+        "summary": "WhatsApp Business API configuration status",
         "x-access": [
           "agent",
           "coordinator",
@@ -307,7 +307,7 @@
         ]
       },
       "post": {
-        "summary": "Start, sync or disconnect WhatsApp QR session",
+        "summary": "QR sessions disabled for enterprise compliance",
         "x-access": [
           "agent",
           "coordinator",
@@ -604,6 +604,20 @@
     "/api/v1/admin/email/test": {
       "post": {
         "summary": "Send a test e-mail to the configured sender address only",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/myoperator/waba/test": {
+      "post": {
+        "summary": "Read-only WABA credentials and phone activation check, no message sent",
         "x-access": [
           "admin",
           "supervisor"

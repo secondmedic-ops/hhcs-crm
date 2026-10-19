@@ -33,6 +33,7 @@ export const setTelephony = (body) => (isDemo ? demoOnly() : server.setTelephony
 export const moSettings = () => (isDemo ? Promise.resolve({ demo: true, fields: [], webhook: { key: null, url: `${location.origin}/webhooks/myoperator`, url_with_key: null }, last_event: null, agents: { ops: 0, linked: 0 } }) : server.moSettings());
 export const saveMoSettings = (body) => (isDemo ? demoOnly() : server.saveMoSettings(body));
 export const syncMo = () => (isDemo ? demoOnly() : server.syncMo());
+export const testWaba = () => (isDemo ? demoOnly() : server.testWaba());
 export const testMo = () => (isDemo ? demoOnly() : server.testMo());
 export const moUsers = () => (isDemo ? demoOnly() : server.moUsers());
 export const linkMoUsers = (body) => (isDemo ? demoOnly() : server.linkMoUsers(body));

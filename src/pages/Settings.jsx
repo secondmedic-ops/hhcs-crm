@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { db, q, rpc, isDemo, supabase } from '../lib/db.js';
-import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi, emailStatus, testEmail } from '../lib/api.js';
+import { createUser, webhookEvents, integrations, moSettings, saveMoSettings, testMo, testWaba, moUsers, linkMoUsers, setTelephony, syncMo, aiSettings, saveAiSettings, testAi, emailStatus, testEmail } from '../lib/api.js';
 import { useLoad } from '../lib/hooks.js';
 import { homeFor, roleAllows, useAuth } from '../lib/auth.jsx';
 import { dateTime, ago, ROLE_LABEL, DEPARTMENTS } from '../lib/fmt.js';
@@ -15,6 +15,7 @@ import {
 import Icon from '../components/icons.jsx';
 import { STAFF_ROLES } from '../components/StaffWorkspace.jsx';
 import { RatesTab } from './RateCard.jsx';
+import TelephonySettings from './TelephonySettings.jsx';
 
 const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'administrator'];
 const TABS = [
@@ -813,8 +814,13 @@ function MyOperatorConnection() {
     await saveMoSettings({ values: vals });
     setVals({}); setTest(null); s.reload();
   }, 'MyOperator details saved');
-  const runTest = () => run(async () => setTest(await testMo()));
-  const genKey = () => run(async () => { await saveMoSettings({ generate_webhook_key: true }); setConfirmKey(false); setShowKey(true); s.reload(); }, 'New webhook key made. Update it in MyOperator.');
+  const runTest = () => run(async () => { setTest(null); setTest(await testMo()); });
+  const runWabaTest = () => run(async () => {
+    setTest(null);
+    const whatsapp = await testWaba();
+    setTest({ whatsapp });
+  });
+  const genKey = () => run(async () => { await saveMoSettings({ generate_webhook_key: true }); setConfirmKey(false); setShowKey(true); setTest(null); s.reload(); }, 'New webhook key made. Update it in MyOperator.');
   const d = s.data;
   const wh = d?.webhook || {};
   const hookUrl = wh.url_with_key || wh.url || '';
@@ -822,14 +828,14 @@ function MyOperatorConnection() {
   return (
     <div className="col gap-12">
       <Panel title="MyOperator connection" sub="Values saved here are used at once; nothing to deploy. Saved credentials are never shown again, only their last 4 characters."
-        actions={<><Button size="sm" kind="ghost" icon="refresh" onClick={runTest} disabled={busy || d?.demo}>Test connection</Button>
+        actions={<><Button size="sm" kind="ghost" icon="refresh" onClick={runTest} disabled={busy || changed || s.loading || d?.demo}>Test connection</Button>
           <Button size="sm" kind="primary" onClick={save} disabled={!changed || busy}>Save</Button></>}>
         <ErrorNote error={s.error} />
         {d?.demo && <div className="small muted mb-8">Demo mode: MyOperator connects on the live site.</div>}
-        {test && (
+        {test && !changed && (
           <table className="t compact mb-12"><tbody>
             {[['api', 'API token'], ['click_to_call', 'Calling settings'], ['whatsapp', 'WhatsApp (WABA)'], ['webhook', 'Webhook']].map(([k, l]) => (
-              <tr key={k}><td className="small strong nowrap">{l}</td><td>{okBadge(test[k])}</td><td className="small">{test[k]?.message}</td></tr>
+              test[k] && <tr key={k}><td className="small strong nowrap">{l}</td><td>{k === 'whatsapp' && test[k] ? <Badge kind={test[k].ok ? 'ok' : 'warn'}>{test[k].status === 'connected' ? 'Connected' : test[k].status === 'missing_credentials' ? 'Missing Credentials' : 'Configured'}</Badge> : okBadge(test[k])}</td><td className="small">{test[k]?.message}</td></tr>
             ))}
           </tbody></table>
         )}
@@ -850,6 +856,7 @@ function MyOperatorConnection() {
         )}
         <div className="tiny faint mt-8">If Calling API › Manage is locked in MyOperator, ask MyOperator support to enable the Calling API and Webhooks v2 for the account.</div>
       </Panel>
+      <TelephonySettings result={changed ? null : test?.whatsapp || d?.waba} loading={s.loading} busy={busy} dirty={changed} demo={d?.demo} onTest={runWabaTest} />
       <CallingSetup />
       <WhatsAppSetup />
 

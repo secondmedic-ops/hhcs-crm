@@ -9,7 +9,7 @@ import { asSystem, connect, normMobile, pgArray, type Sql, type Tx } from '../db
 import type { Ctx } from '../api/context';
 import type { Env } from '../env';
 import { notifyLive } from './live';
-import { missingCallingSettings, moEnv } from './myoperator-config';
+import { missingCallingSettings, moEnv, wabaConfiguration } from './myoperator-config';
 import { ApiError } from '../domain/errors';
 
 const OBD_URL = 'https://obd-api.myoperator.co/obd-api-v1';
@@ -111,18 +111,16 @@ export async function handleMyOperatorWebhook(req: Request, env0: Env, exec: Exe
     const env = await moEnv(env0, sql);
     const expected = env.MYOPERATOR_WEBHOOK_KEY;
     const got = req.headers.get('x-webhook-key') || new URL(req.url).searchParams.get('key') || basicPassword(req);
-    const isBridgeReq = req.headers.get('x-whatsapp-bridge') === '1' || new URL(req.url).searchParams.get('bridge') === 'whatsapp_qr';
-    let authorized = !!expected && got === expected;
-    if (!authorized && isBridgeReq && got && got.length >= 24) {
-      const qr = await loadWhatsAppQr(sql);
-      if (qr.bridge_key && got === qr.bridge_key) authorized = true;
+    if (req.headers.get('x-whatsapp-bridge') === '1' || new URL(req.url).searchParams.get('bridge') === 'whatsapp_qr') {
+      return new Response('QR scanning is disabled for enterprise compliance. Use MyOperator WABA.', { status: 403 });
     }
+    const authorized = !!expected && got === expected;
     if (!expected && !authorized) return new Response('webhook key not configured', { status: 503 });
     if (!authorized) return new Response('unauthorized', { status: 401 });
     const events = await readEvents(req);
     if (!events) return new Response('bad body', { status: 400 });
     if (events.length === 1 && events[0]?.raw?.bridge === 'whatsapp_qr') {
-      responseBody = await handleWhatsAppBridge(sql, env, events[0].raw, changedAll);
+      return new Response('QR scanning is disabled for enterprise compliance. Use MyOperator WABA.', { status: 403 });
     } else {
       const r = await processEvents(sql, env, env0, exec, events);
       r.changed.forEach((x) => changedAll.add(x));
@@ -560,280 +558,67 @@ export async function recordingUrl(env: Env, filename: string): Promise<string> 
   return link;
 }
 
-// ---------- WhatsApp (WABA + QR Web multi-device session) ----------
-export async function loadWhatsAppQr(sql: Sql): Promise<J> {
-  try {
-    const [row] = await sql`select settings from integration_settings where provider = 'whatsapp_qr'`;
-    return (row?.settings as J) || {};
-  } catch {
-    return {};
-  }
-}
-
+// ---------- WhatsApp Business API only (QR linking disabled) ----------
 export async function whatsappSession(c: Ctx) {
-  const [env, qr, [queued]] = await Promise.all([
-    moEnv(c.env, c.sql),
-    loadWhatsAppQr(c.sql),
-    c.sql`select count(*)::int as n from interactions where workspace_id = ${c.user.workspaceId}::uuid and channel = 'whatsapp' and direction = 'outbound' and meta->>'delivery_status' = 'queued'`,
-  ]);
-  const wabaReady = !!(env.MYOPERATOR_WABA_API_KEY && env.MYOPERATOR_WABA_PHONE_ID);
-  const bridgeOnline = !!(qr.heartbeat_at && Date.now() - new Date(String(qr.heartbeat_at)).getTime() < 90_000);
-  const isQrStatus = qr.status === 'qr' || qr.status === 'qr_ready';
-  const status = qr.status === 'connected'
-    ? 'connected'
-    : isQrStatus && qr.qr_svg && bridgeOnline
-      ? 'qr_ready'
-      : (qr.status === 'starting' || qr.command === 'start')
-        ? 'starting'
-        : 'disconnected';
+  const config = wabaConfiguration(await moEnv(c.env, c.sql));
   return {
-    status,
-    connected: status === 'connected' || wabaReady,
-    mode: status === 'connected' ? 'qr' : wabaReady ? 'waba' : 'qr',
-    bridge_online: bridgeOnline,
-    waba_ready: wabaReady,
-    waba_configured: wabaReady,
-    qr_svg: status === 'qr_ready' ? (qr.qr_svg || null) : null,
-    qr_at: qr.qr_at || null,
-    qr_updated_at: qr.qr_at || null,
-    pairing_code: status === 'qr_ready' || status === 'starting' ? (qr.pairing_code || null) : null,
-    phone: qr.phone || null,
-    name: qr.name || null,
-    connected_at: qr.connected_at || null,
-    heartbeat_at: qr.heartbeat_at || null,
-    last_seen_at: qr.heartbeat_at || null,
-    last_error: qr.last_error || null,
-    error: qr.last_error || null,
-    queued_count: Number(queued?.n || 0),
+    status: config.status, connected: false, mode: 'waba', qr_enabled: false,
+    waba_ready: !config.missing.length, waba_configured: !config.missing.length,
+    qr_svg: null, pairing_code: null, queued_count: 0,
+    message: config.message,
   };
 }
 
-export async function whatsappSessionAction(c: Ctx, body: J) {
-  const act = String(body?.action || 'start').trim();
-  if (!['start', 'refresh_qr', 'logout', 'disconnect', 'sync'].includes(act)) {
-    throw new ApiError(400, 'Choose a valid WhatsApp session action (start, sync or logout)');
-  }
-  const now = new Date().toISOString();
-  const rawPhone = body?.phone_number || body?.pairing_phone || null;
-  const pairingPhone = rawPhone ? (normMobile(rawPhone)?.replace(/\D/g, '') || null) : null;
-  const { changed } = await asSystem(c.sql, async (tx) => {
-    const [row] = await tx`select settings from integration_settings where provider = 'whatsapp_qr' for update`;
-    const prev: J = (row?.settings as J) || {};
-    const next: J = { ...prev };
-    if (act === 'start' || act === 'refresh_qr') {
-      next.command = 'start';
-      next.command_at = now;
-      next.pairing_phone = pairingPhone;
-      next.last_error = null;
-      if (act === 'refresh_qr' || (next.status !== 'qr' && next.status !== 'qr_ready')) {
-        next.status = 'starting';
-        if (act === 'refresh_qr') { next.qr_svg = null; next.pairing_code = null; }
-      }
-    } else if (act === 'logout' || act === 'disconnect') {
-      next.command = 'logout';
-      next.command_at = now;
-      next.status = 'disconnected';
-      next.qr_svg = null;
-      next.qr_at = null;
-      next.pairing_code = null;
-      next.phone = null;
-      next.name = null;
-      next.connected_at = null;
-    } else if (act === 'sync') {
-      next.command = 'sync';
-      next.command_at = now;
-    }
-    await tx`insert into integration_settings (provider, settings, updated_at, updated_by)
-      values ('whatsapp_qr', ${tx.json(next)}, now(), ${c.user.id}::uuid)
-      on conflict (provider) do update set settings = excluded.settings, updated_at = now(), updated_by = excluded.updated_by`;
-    return null;
-  });
-  c.changed.push(...changed);
-  return whatsappSession(c);
+export async function whatsappSessionAction(_c: Ctx, _body: J) {
+  throw new ApiError(403, 'QR scanning is disabled for enterprise compliance. Configure MyOperator WABA in Settings > Telephony.');
 }
 
-async function handleWhatsAppBridge(sql: Sql, env: Env, body: J, changedAll: Set<string>): Promise<J> {
-  const act = String(body.action || 'poll');
-  const now = new Date().toISOString();
-
-  if (act === 'poll') {
-    const prev = await loadWhatsAppQr(sql);
-    const command = prev.command || null;
-    const pairingPhone = prev.pairing_phone || null;
-    const next: J = {
-      ...prev,
-      heartbeat_at: now,
-      command: null,
-      pairing_phone: null,
-    };
-    if (body.status) {
-      const normStatus = body.status === 'qr' ? 'qr_ready' : String(body.status);
-      next.status = normStatus;
-      next.qr_svg = normStatus === 'qr_ready' ? (body.qr_svg ?? prev.qr_svg ?? null) : null;
-      next.qr_at = normStatus === 'qr_ready' ? (body.qr_at ?? prev.qr_at ?? now) : null;
-      next.pairing_code = normStatus === 'qr_ready' || normStatus === 'starting' ? (body.pairing_code ?? prev.pairing_code ?? null) : null;
-      if (normStatus === 'connected') {
-        next.phone = normMobile(body.phone) || body.phone || prev.phone || null;
-        next.name = body.name ?? prev.name ?? null;
-        next.connected_at = body.connected_at ?? prev.connected_at ?? now;
-        next.last_error = null;
-      } else if (normStatus === 'disconnected') {
-        next.phone = null;
-        next.name = null;
-        next.connected_at = null;
+/** Read-only MyOperator phone-number lookup. No message is sent and provider payloads stay server-side.
+ * Contract: https://documenter.getpostman.com/view/38426694/2sAXqy3evq (List Phone Numbers).
+ */
+export async function testWaba(c: Ctx) {
+  const env = await moEnv(c.env, c.sql);
+  const config = wabaConfiguration(env);
+  const checked_at = new Date().toISOString();
+  const result = (ok: boolean, message: string) => ({ ...config, ok, status: ok ? 'connected' : config.status, message, checked_at });
+  if (config.missing.length) return result(false, config.message);
+  const url = new URL('phonenumbers', env.MYOPERATOR_WABA_URL || 'https://publicapi.myoperator.co/chat/messages');
+  url.search = '';
+  url.searchParams.set('limit', '100');
+  const signal = AbortSignal.timeout(10_000);
+  try {
+    // Bound the admin check to five pages; never follow a provider-supplied URL with credentials.
+    for (let page = 0; page < 5; page++) {
+      url.searchParams.set('offset', String(page * 100));
+      const res = await fetch(url, {
+        method: 'GET', redirect: 'manual', signal,
+        headers: { Accept: 'application/json', Authorization: 'Bearer ' + env.MYOPERATOR_WABA_API_KEY, 'X-MYOP-COMPANY-ID': env.MYOPERATOR_COMPANY_ID! },
+      });
+      if (res.status === 401 || res.status === 403) return result(false, 'MyOperator refused WABA access. Check the WhatsApp API key, Company ID and account permissions.');
+      if (!res.ok) return result(false, 'MyOperator WABA check failed (HTTP ' + res.status + '). Try again later or contact MyOperator support.');
+      const body = await res.json() as J;
+      if (body.status !== 'success' || Number(body.code) !== 200 || !Array.isArray(body.data?.results)) {
+        return result(false, 'MyOperator did not confirm WABA access. Check credentials and permissions, or contact MyOperator support.');
       }
+      const phone = body.data.results.find((row: J) => String(row.phone_number_id) === env.MYOPERATOR_WABA_PHONE_ID);
+      if (phone) {
+        const connected = phone.status === 'active' && phone.phone_number_status === 'connected' && phone.onboarding_status === 'success';
+        return result(connected, connected
+          ? 'MyOperator verified the credentials and reports this WhatsApp phone ID active, connected and onboarded. No message was sent; delivery and webhooks are not tested.'
+          : 'Credentials accepted, but MyOperator has not confirmed this phone ID active, connected and fully onboarded. Complete activation in MyOperator.');
+      }
+      if (!body.data.next) return result(false, 'Credentials accepted, but the saved WhatsApp phone number ID was not found on this account. Check the phone ID and Company ID.');
     }
-    if (body.last_error !== undefined) next.last_error = body.last_error;
-    if (body.error !== undefined) next.last_error = body.error;
-
-    const stateChanged =
-      prev.status !== next.status ||
-      prev.qr_svg !== next.qr_svg ||
-      prev.pairing_code !== next.pairing_code ||
-      prev.phone !== next.phone ||
-      prev.last_error !== next.last_error ||
-      !!command;
-
-    if (stateChanged) {
-      const { changed } = await asSystem(sql, async (tx) => {
-        await tx`insert into integration_settings (provider, settings, updated_at)
-          values ('whatsapp_qr', ${tx.json(next)}, now())
-          on conflict (provider) do update set settings = excluded.settings, updated_at = now()`;
-        return null;
-      });
-      changed.forEach((x) => changedAll.add(x));
-    } else {
-      await sql`insert into integration_settings (provider, settings, updated_at)
-        values ('whatsapp_qr', ${sql.json(next)}, now())
-        on conflict (provider) do update set settings = excluded.settings, updated_at = now()`;
-    }
-
-    const outbox = next.status === 'connected'
-      ? await sql`
-          select i.id::text, i.body, coalesce(p.mobile, c.caller_mobile) as mobile, coalesce(p.mobile, c.caller_mobile) as to_mobile, p.full_name as patient_name
-          from interactions i
-          left join patients p on p.id = i.patient_id
-          left join cases c on c.id = i.case_id
-          where i.channel = 'whatsapp' and i.direction = 'outbound'
-            and i.meta->>'delivery_status' = 'queued'
-            and i.occurred_at > now() - interval '24 hours'
-          order by i.occurred_at asc limit 20`
-      : [];
-    return {
-      ok: true,
-      status: next.status || 'disconnected',
-      command,
-      pairing_phone: pairingPhone,
-      command_meta: pairingPhone ? { phone_number: pairingPhone } : null,
-      outbox,
-    };
+    return result(false, 'Credentials accepted, but the phone ID was not found in the first 500 numbers. Ask MyOperator support to verify this phone ID.');
+  } catch {
+    return result(false, 'Could not complete the MyOperator WABA check. The provider timed out or returned an unexpected response. Try again.');
   }
-
-  if (act === 'ack') {
-    const items: J[] = Array.isArray(body.items) ? body.items : body.id ? [body] : [];
-    if (items.length) {
-      const { changed } = await asSystem(sql, async (tx) => {
-        for (const it of items) {
-          if (!it?.id) continue;
-          const status = String(it.status || 'sent');
-          await tx`update interactions
-            set meta = coalesce(meta, '{}'::jsonb) || ${tx.json({
-              delivery_status: status,
-              message_id: it.message_id || null,
-              delivery_error: it.error || null,
-              status_at: now,
-            })}
-            where id = ${String(it.id)}::uuid and channel = 'whatsapp'`;
-        }
-        return null;
-      });
-      changed.forEach((x) => changedAll.add(x));
-    }
-    return { ok: true };
-  }
-
-  if (act === 'sync_messages') {
-    const msgs: J[] = Array.isArray(body.messages) ? body.messages : [];
-    let synced = 0;
-    if (msgs.length) {
-      const { changed } = await asSystem(sql, async (tx) => {
-        const ws = await resolveWorkspace(tx, env, null);
-        for (const m of msgs) {
-          const msgId = String(m?.id || '').trim();
-          const number = normMobile(m?.mobile || m?.phone);
-          if (!msgId || !number) continue;
-          const fresh = await tx`insert into webhook_events (event_id, source, event_type, payload, processed)
-            values (${'waqr:' + msgId}, 'whatsapp_qr', ${m.direction === 'outbound' ? 'message.sent' : 'message.received'}, ${tx.json(m)}, true)
-            on conflict do nothing returning event_id`;
-          if (!fresh.length) continue;
-
-          const inbound = m.direction !== 'outbound';
-          const mediaType = String(m.media_type || 'text').toLowerCase();
-          const text = String(m.text || '').trim() || (mediaType !== 'text' ? `[${mediaType.toUpperCase()} attachment]` : '');
-          if (!text) continue;
-
-          let [patient] = await tx`select id::text, full_name from patients where workspace_id = ${ws}::uuid and mobile = ${number} limit 1`;
-          let [kase] = patient ? await tx`select id::text from cases where patient_id = ${patient.id}::uuid and stage not in ('closed','cancelled') order by created_at desc limit 1` : [];
-          const name = String(m.name || '').trim() || patient?.full_name || 'WhatsApp contact';
-          const isHistory = !!(m.historical || m.is_history);
-          if (isHistory) continue; // Never create patients or cases from historical chat syncs
-
-          if (inbound && !kase) {
-            const [r] = await tx`select create_enquiry(${tx.json({
-              workspace_id: ws, source_channel: 'whatsapp', services_requested: text.slice(0, 500),
-              patient: { full_name: name, mobile: number }, caller_mobile: number,
-            })}) as r`;
-            kase = { id: r.r.case_id } as never;
-            patient = { id: r.r.patient_id, full_name: name } as never;
-          } else if (!patient && number.startsWith('+91')) {
-            const [r] = await tx`select upsert_patient(${tx.json({ workspace_id: ws, full_name: name, mobile: number })}) as id`;
-            patient = { id: r.id, full_name: name } as never;
-          } else if (m.name && patient?.full_name === 'WhatsApp contact' && name !== 'WhatsApp contact') {
-            await tx`update patients set full_name = ${name} where id = ${patient.id}::uuid`;
-          }
-
-          if (!inbound && patient?.id) {
-            const [existing] = await tx`
-              select id::text from interactions
-              where workspace_id = ${ws}::uuid and patient_id = ${patient.id}::uuid and channel = 'whatsapp' and direction = 'outbound'
-                and (
-                  (${msgId}::text is not null and meta->>'message_id' = ${msgId})
-                  or (occurred_at > now() - interval '5 minutes' and coalesce(body, '') = ${text})
-                )
-              order by occurred_at desc limit 1`;
-            if (existing) {
-              await tx`update interactions set meta = coalesce(meta, '{}'::jsonb) || ${tx.json({ message_id: msgId, delivery_status: 'sent', via: 'qr' })}
-                where id = ${existing.id}::uuid`;
-              continue;
-            }
-          }
-
-          await tx`insert into interactions (workspace_id, case_id, patient_id, channel, direction, actor_label, summary, body, evidence, occurred_at, meta)
-            values (${ws}::uuid, ${kase?.id ?? null}, ${patient?.id ?? null}, 'whatsapp', ${inbound ? 'inbound' : 'outbound'},
-              ${inbound ? 'Patient' : 'WhatsApp'},
-              ${inbound ? 'WhatsApp message received' : 'WhatsApp message sent'},
-              ${text}, 'Message copy', ${toIso(m.timestamp) || now},
-              ${tx.json({ message_id: msgId, media_type: mediaType, delivery_status: inbound ? 'received' : 'sent', via: 'qr' })})`;
-          synced++;
-        }
-        return null;
-      });
-      changed.forEach((x) => changedAll.add(x));
-    }
-    return { ok: true, synced, imported: synced };
-  }
-
-  return { ok: false, error: 'unknown bridge action' };
 }
 
 export async function sendWhatsApp(env: Env, a: { to: string; text: string; templateName?: string | null; language?: string; params?: string[] }, sql?: Sql) {
-  if (!env.MYOPERATOR_WABA_API_KEY || !env.MYOPERATOR_WABA_PHONE_ID) {
-    if (sql) {
-      const qr = await loadWhatsAppQr(sql);
-      if (qr.status === 'connected') return { queued: true, via: 'qr' };
-    }
-    return { skipped: 'WhatsApp API not configured' };
-  }
+  if (sql) env = await moEnv(env, sql);
+  const config = wabaConfiguration(env);
+  if (config.missing.length) return { skipped: config.message };
   const digits = a.to.replace(/\D/g, '');
   const data = a.templateName
     ? { type: 'template', context: { template_name: a.templateName, language: a.language || 'en', body: Object.fromEntries((a.params || []).map((v, i) => [String(i + 1), v])) } }

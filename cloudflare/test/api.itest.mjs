@@ -447,41 +447,38 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const nu = await call('admin', 'POST', '/api/v1/admin/users', { email: 'new.agent@rehearsal.test', password: 'longenough1', full_name: 'New Agent', role: 'agent', agent_code: 'A-20' });
   check(nu.status === 200 && nu.body?.role === 'agent', 'admin creates a login and profile', JSON.stringify(nu.body));
 
-  // ---- 8b. WhatsApp QR login, bridge poll, outbound queue, and live inbound sync
+  // ---- 8b. WABA diagnostics: roles, real configuration merge, no live sends, and QR disabled
+  const wabaPath = '/api/v1/admin/myoperator/waba/test';
+  check((await call(null, 'POST', wabaPath, {})).status === 401, 'WABA diagnostic needs login');
+  for (const role of ['agent','coord','medical','field','client','clinical','bmm']) {
+    check((await call(role, 'POST', wabaPath, {})).status === 403, role + ' cannot test WABA credentials');
+  }
+  for (const role of ['admin','sup','administrator']) {
+    const r = await call(role, 'POST', wabaPath, {});
+    check(r.status === 200 && r.body?.status === 'missing_credentials' && !r.body.ok, role + ' gets missing WABA credentials without sending');
+  }
+  const configWaba = await call('admin', 'POST', '/api/v1/admin/myoperator', {values:{waba_api_key:'waba-test-key',waba_phone_id:'123456789'}});
+  check(configWaba.body?.waba?.status === 'configured', 'saved WABA presence is Configured, never Connected');
+  const wabaTest = await call('sup', 'POST', wabaPath, {});
+  check(wabaTest.status === 200 && wabaTest.body?.ok && wabaTest.body.status === 'connected' && !JSON.stringify(wabaTest.body).includes('waba-test-key'), 'read-only WABA lookup verifies saved key and matching connected phone without exposing the key', JSON.stringify(wabaTest.body));
+  await call('admin', 'POST', '/api/v1/admin/myoperator', {values:{waba_api_key:'wrong-key'}});
+  const badWaba = await call('admin', 'POST', wabaPath, {});
+  check(badWaba.body?.status === 'configured' && badWaba.body.ok === false && /refused/.test(badWaba.body.message), 'rejected WABA key cannot report Connected');
+  await call('admin', 'POST', '/api/v1/admin/myoperator', {values:{waba_api_key:'waba-test-key',waba_phone_id:'999'}});
+  const wrongPhone = await call('admin', 'POST', wabaPath, {});
+  check(wrongPhone.body?.ok === false && /not found/.test(wrongPhone.body.message), 'WABA lookup validates the phone ID belongs to this account');
+  await call('admin', 'POST', '/api/v1/admin/myoperator', {values:{waba_api_key:'',waba_phone_id:''}});
+  await sql`insert into integration_settings(provider,settings) values('whatsapp_qr','{"status":"connected","bridge_key":"obsolete-qr-key-longer-than-24"}'::jsonb)
+    on conflict(provider) do update set settings=excluded.settings`;
   const wa0 = await call('agent', 'GET', '/api/v1/whatsapp/session');
-  check(wa0.status === 200 && wa0.body?.status === 'disconnected', 'WhatsApp session starts disconnected', JSON.stringify(wa0.body));
-  const waStart = await call('agent', 'POST', '/api/v1/whatsapp/session', { action: 'start' });
-  check(waStart.status === 200 && waStart.body?.status === 'starting', 'agent requests WhatsApp QR login', JSON.stringify(waStart.body));
-
-  const pollQr = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'qr_ready', qr_svg: '<svg viewBox="0 0 10 10"></svg>' }, newKey)).json();
-  check(pollQr.ok && pollQr.command === 'start', 'WhatsApp bridge receives start command and posts QR SVG', JSON.stringify(pollQr));
-  const waQr = await call('agent', 'GET', '/api/v1/whatsapp/session');
-  check(waQr.status === 200 && waQr.body?.status === 'qr_ready' && waQr.body.qr_svg?.includes('<svg'), 'WhatsApp session returns live QR SVG to UI', JSON.stringify(waQr.body));
-
-  const pollConn = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'connected', phone: '+919820012345', name: 'Hinduja Home Care Desk' }, newKey)).json();
-  check(pollConn.ok && pollConn.status === 'connected', 'WhatsApp bridge marks session connected after QR scan', JSON.stringify(pollConn));
-  const waConn = await call('agent', 'GET', '/api/v1/whatsapp/session');
-  check(waConn.status === 200 && waConn.body?.connected === true && waConn.body.phone === '+919820012345', 'WhatsApp session reports connected phone', JSON.stringify(waConn.body));
-
-  const waSend = await call('agent', 'POST', '/api/v1/whatsapp/send', { mobile: '9820099887', patient_name: 'Mrs. Meera Joshi', text: 'Namaste, confirming your home ECG slot.' });
-  check(waSend.status === 200 && waSend.body?.delivery?.queued === true && waSend.body?.patient_id, 'outbound WhatsApp chat by mobile queues message for QR bridge', JSON.stringify(waSend.body));
-
-  const pollOut = await (await hook({ bridge: 'whatsapp_qr', action: 'poll', status: 'connected' }, newKey)).json();
-  const outMsg = (pollOut.outbox || []).find((m) => m.id === waSend.body?.id);
-  check(!!outMsg && outMsg.mobile === '+919820099887' && outMsg.body.includes('home ECG slot'), 'WhatsApp bridge poll receives queued outbound message', JSON.stringify(pollOut.outbox));
-
-  const ackRes = await (await hook({ bridge: 'whatsapp_qr', action: 'ack', id: waSend.body?.id, status: 'sent', message_id: 'wamid.qr.1' }, newKey)).json();
-  const ackRow = await one(`select meta->>'delivery_status' as st from interactions where id = $1`, waSend.body?.id);
-  check(ackRes.ok && ackRow?.st === 'sent', 'WhatsApp bridge ack marks interaction sent', JSON.stringify(ackRow));
-
-  const syncIn = await (await hook({
-    bridge: 'whatsapp_qr',
-    action: 'sync_messages',
-    messages: [
-      { id: 'msg-in-1', mobile: '9820099887', name: 'Mrs. Meera Joshi', direction: 'inbound', text: 'Thank you, please come at 8:30 AM.', timestamp: Math.floor(Date.now() / 1000), historical: false },
-    ],
-  }, newKey)).json();
-  check(syncIn.ok && syncIn.imported === 1, 'WhatsApp bridge syncs live inbound reply into CRM', JSON.stringify(syncIn));
+  check(wa0.status === 200 && wa0.body?.status === 'missing_credentials' && !wa0.body.connected && !wa0.body.qr_enabled && !wa0.body.qr_svg, 'legacy QR state cannot report Connected or expose a QR');
+  for (const action of ['start','refresh_qr','sync','logout','disconnect']) {
+    check((await call('agent', 'POST', '/api/v1/whatsapp/session', {action})).status === 403, 'QR session action disabled: ' + action);
+  }
+  check((await hook({bridge:'whatsapp_qr',action:'poll',status:'connected'},newKey)).status === 403, 'even a webhook key cannot enable the QR bridge');
+  check((await fetch(base+'/webhooks/myoperator?bridge=whatsapp_qr', {method:'POST',headers:{'x-webhook-key':'obsolete-qr-key-longer-than-24'},body:'{}'})).status === 403, 'legacy bridge credentials cannot bypass WABA compliance');
+  const waSend = await call('agent', 'POST', '/api/v1/whatsapp/send', {mobile:'9820099887',patient_name:'Test contact',text:'Test message'});
+  check(waSend.body?.delivery?.skipped && !waSend.body.delivery.queued, 'missing WABA credentials never fall back to QR sending');
 
   // ---- 9. callback auto-dialer (Hinduja MoM): settings by role, Available switch, cron dials, connect closes
   await call('admin', 'POST', '/api/v1/admin/myoperator', { values: { public_ivr_id: 'ivr-1' } });

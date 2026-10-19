@@ -85,6 +85,7 @@ export const api = {
   bmmLeads: (limit = 50, offset = 0) => request<Record<string, unknown>>(`/api/v1/bmm/leads?limit=${limit}&offset=${offset}`),
   bmmStatus: (id: string, body: { event_id: string; expected_status: string; status: string; note?: string; scheduled_at?: string }) => request<Record<string, unknown>>(`/api/v1/bmm/leads/${id}/status`, { method: 'POST', body }),
   setTelephony: (body: { profile_id: string; myoperator_user_id?: string | null; myoperator_extension?: string | null; phone?: string | null }) => request<Record<string, any>>('/api/v1/admin/users/telephony', { method: 'POST', body }),
+  testWaba: () => request<Record<string, any>>('/api/v1/admin/myoperator/waba/test', { method: 'POST', body: {} }),
   moSettings: () => request<Record<string, any>>('/api/v1/admin/myoperator'),
   saveMoSettings: (body: { values?: Record<string, string>; generate_webhook_key?: boolean }) => request<Record<string, any>>('/api/v1/admin/myoperator', { method: 'POST', body }),
   syncMo: () => request<Record<string, any>>('/api/v1/admin/myoperator/sync', { method: 'POST', body: {} }),
