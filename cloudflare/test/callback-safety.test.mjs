@@ -50,7 +50,13 @@ test('callback eligibility, retry boundaries, reservations, reconciliation and w
     await db.query('update callbacks set due_at=now() where id=$1',[expired.id]);
     expect(await claim()).toEqual([]);
     const closed = await one('select status,notes,attempts from callbacks where id=$1',[expired.id]);
-    expect(closed).toMatchObject({status:'unreachable',attempts:0}); expect(closed.notes).toContain('no customer attempt made');
+    expect(closed).toMatchObject({status:'agent_unavailable',attempts:0}); expect(closed.notes).toContain('no customer attempt made');
+
+    await clear(); await settings(30,3); const expiredWithAttempt = await queue();
+    await db.query('update callbacks set attempts=1, due_at=now() where id=$1',[expiredWithAttempt.id]);
+    expect(await claim()).toEqual([]);
+    const closedAttempted = await one('select status,notes,attempts from callbacks where id=$1',[expiredWithAttempt.id]);
+    expect(closedAttempted).toMatchObject({status:'unreachable',attempts:1});
 
     await clear(); const uncertain = await queue(); const [ringing] = await claim();
     await db.query("update callbacks set last_attempt_at=now()-interval '6 minutes' where id=$1",[uncertain.id]);

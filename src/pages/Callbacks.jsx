@@ -14,7 +14,7 @@ const COLS = 'id,call_id,reason,due_at,status,assigned_to,assignee_name,attempts
 const REASON = { missed: ['Missed', 'danger'], abandoned: ['Abandoned', 'warn'], requested: ['Requested', 'info'], followup: ['Follow-up', ''] };
 const OUTCOMES = [['resolved', 'Resolved'], ['follow_up', 'Follow-up needed'], ['wrong_number', 'Wrong number'], ['not_needed', 'No longer needed']];
 const OUTCOME = Object.fromEntries(OUTCOMES);
-const EMPTY = { pending: 'No callbacks waiting', outcome: 'Every reached callback has an outcome', done: 'No callbacks closed today', unreachable: 'No unreachable callbacks' };
+const EMPTY = { pending: 'No callbacks waiting', outcome: 'Every reached callback has an outcome', done: 'No callbacks closed today', unreachable: 'No unreachable callbacks', agent_unavailable: 'No callbacks with agent unavailable' };
 
 export default function Callbacks() {
   const nav = useNavigate();
@@ -29,14 +29,15 @@ export default function Callbacks() {
 
   const { data, loading, error } = useLoad(async () => {
     const [from] = istDayRange(0);
-    const [pending, outcome, today, reached, unreachable] = await Promise.all([
+    const [pending, outcome, today, reached, unreachable, agent_unavailable] = await Promise.all([
       q(db.from('v_callbacks').select(COLS).in('status', ['pending', 'in_progress']).order('due_at', { ascending: true }).limit(200)),
       q(db.from('v_callbacks').select(COLS).eq('status', 'reached').order('reached_at', { ascending: true }).limit(200)),
-      q(db.from('v_callbacks').select(COLS).in('status', ['done', 'unreachable']).gte('completed_at', from).order('completed_at', { ascending: false }).limit(300)),
+      q(db.from('v_callbacks').select(COLS).in('status', ['done', 'unreachable', 'agent_unavailable']).gte('completed_at', from).order('completed_at', { ascending: false }).limit(300)),
       q(db.from('v_callbacks').select('id,created_at,due_at,reached_at').gte('reached_at', from).limit(300)),
       q(db.from('v_callbacks').select(COLS).eq('status', 'unreachable').order('completed_at', { ascending: false }).limit(100)),
+      q(db.from('v_callbacks').select(COLS).eq('status', 'agent_unavailable').order('completed_at', { ascending: false }).limit(100)),
     ]);
-    return { pending, outcome, done: today.filter((x) => x.status === 'done'), today, reached, unreachable };
+    return { pending, outcome, done: today.filter((x) => x.status === 'done'), today, reached, unreachable, agent_unavailable };
   }, [], ['callbacks', 'calls']);
   const auto = useLoad(() => rpc('autodial_settings', {}).catch(() => null), [], ['workspaces', 'profiles', 'callbacks']);
   const ad = auto.data;
@@ -86,7 +87,8 @@ export default function Callbacks() {
         <Kpi label="Needs outcome" value={data && num(data.outcome.length)} detail="patient reached, outcome not recorded" tone={data?.outcome.length ? 'warn' : 'ok'} onClick={() => setTab('outcome')} />
         <Kpi label="Reached within SLA today" value={data && pct(metPct)} detail={data && `${met} of ${data.reached.length} reached on time`} tone={metPct != null && metPct < 90 ? 'warn' : 'ok'} onClick={() => setTab('done')} />
         <Kpi label="Avg time to callback" value={data && (avgMin == null ? '–' : `${avgMin.toFixed(1)} min`)} detail="raised to patient reached, today"  />
-        <Kpi label="Unreachable today" value={data && num(data.today.filter((x) => x.status === 'unreachable').length)} detail="closed by policy or manually, see reason" onClick={() => setTab('unreachable')} />
+        <Kpi label="Unreachable today" value={data && num(data.today.filter((x) => x.status === 'unreachable').length)} detail="customer did not answer" onClick={() => setTab('unreachable')} />
+        <Kpi label="Agent unavailable" value={data && num(data.today.filter((x) => x.status === 'agent_unavailable').length)} detail="no agent free before deadline" tone={data?.today.filter((x) => x.status === 'agent_unavailable').length ? 'danger' : 'ok'} onClick={() => setTab('agent_unavailable')} />
       </div>
 
       <Panel tight>
@@ -96,12 +98,14 @@ export default function Callbacks() {
             ['outcome', 'Needs outcome', data?.outcome.length],
             ['done', 'Closed today', data?.done.length],
             ['unreachable', 'Unreachable', data?.unreachable.length],
+            ['agent_unavailable', 'Agent Unavailable', data?.agent_unavailable.length],
           ]} />
         </div>
         {loading ? <TableSkeleton rows={6} cols={8} /> : !rows?.length ? (
           <Empty title={EMPTY[tab]}>
             {tab === 'pending' ? 'Missed and abandoned inbound calls appear here the moment they end.'
-              : tab === 'outcome' ? 'A callback lands here when its call connects, until the agent records what happened.' : null}
+              : tab === 'outcome' ? 'A callback lands here when its call connects, until the agent records what happened.'
+              : tab === 'agent_unavailable' ? 'Callbacks appear here when their retry window expired without an eligible agent becoming available.' : null}
           </Empty>
         ) : (
           <div className="table-wrap"><table className="t">
@@ -128,6 +132,12 @@ export default function Callbacks() {
                           {canAct && <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call again</Button>}
                         </div>
                       )
+                        : cb.status === 'agent_unavailable' ? (
+                          <div className="row" style={{ alignItems: 'center' }}>
+                            <Badge kind="danger">Agent Unavailable · {time(cb.completed_at)}</Badge>
+                            {canAct && <Button size="xs" kind="call" icon="phone" disabled={busy} onClick={() => callBack(cb)}>Call again</Button>}
+                          </div>
+                        )
                         : tab === 'outcome' ? <Badge kind={onTime(cb) ? 'ok' : 'danger'}>{onTime(cb) ? 'On time' : 'Late'} · {time(cb.reached_at)}</Badge>
                           : <>
                             <Badge kind={cb.outcome === 'follow_up' ? 'warn' : ''}>{OUTCOME[cb.outcome] || 'Closed'}</Badge>

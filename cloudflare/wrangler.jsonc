@@ -22,8 +22,8 @@
     "run_worker_first": ["/*", "!/assets/*"]
   },
 
-  // SLA scan every minute; MIS packs at 04:30 UTC = 10:00 IST. (Workers Free allows 5 cron triggers per account.)
-  "triggers": { "crons": ["* * * * *", "30 4 * * *"] },
+  // SLA scan every minute; MIS packs at 02:30 UTC = 08:00 IST. (Workers Free allows 5 cron triggers per account.)
+  "triggers": { "crons": ["* * * * *", "30 2 * * *"] },
 
   // Settings (not secret). The pipeline adds BUILD_SHA, SUPABASE_URL and APP_URL with --var.
   "vars": {

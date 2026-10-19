@@ -178,6 +178,9 @@ describe('MIS e-mail: one send per snapshot', () => {
     const upd = calls.find((c) => /set email_status = \?, email_error/.test(c.q))!;
     expect(upd.v[0]).toBe('failed');
     expect(send.mock.calls[0][1].to).toEqual(['a@hinduja.test', 'b@hinduja.test']);
+    const audit = calls.find((c) => /insert into audit_log/.test(c.q));
+    expect(audit).toBeDefined();
+    expect(audit!.q).toContain('smtp_error');
   });
 
   it('lost answer after DATA is recorded as unknown (not re-sent by the claim rule)', async () => {
@@ -197,5 +200,47 @@ describe('MIS e-mail: one send per snapshot', () => {
     const m = send.mock.calls[0][1];
     expect(m.html).toContain('Calm day.');
     expect(m.text).toContain('Calls: 3');
+  });
+
+  it('compiles daily case volume, conversion rates, active SLA breaches, and collections breakdown', async () => {
+    const { formatMisEmail } = await import('../src/services/cron');
+    const richData = {
+      calls: { total: 45, answer_within_30s_pct: 91.5, missed: 3, abandoned: 1 },
+      funnel: { enquiries: 30, quotes: 25, bookings: 18, completions: 12, closed: 10, conversion_pct: 60 },
+      sla: [
+        { label: 'First Response', target_minutes: 15, met: 28, breached: 2, pct: 93.3 },
+        { label: 'Callback SLA', target_minutes: 60, met: 12, breached: 0, pct: 100 },
+      ],
+      collections: {
+        collected: 150000,
+        count: 15,
+        reconciled: 14,
+        exceptions: 1,
+        by_mode: { upi: 100000, bank_transfer: 35000, cash: 15000 },
+      },
+      revenue: { completed_value: 140000 },
+      outstanding: 25000,
+      cancellations: [{ reason: 'Hospital admission', n: 2 }],
+      complaints: { new: 1 },
+    };
+    const formatted = formatMisEmail('daily', '2026-10-18', '2026-10-18', richData, 'Strong conversion.', 2, 'https://hhcs.test');
+    expect(formatted.subject).toBe('HHCS daily MIS · 2026-10-18');
+    // Case volume
+    expect(formatted.html).toContain('Daily Enquiries');
+    expect(formatted.html).toContain('30');
+    expect(formatted.html).toContain('18 booked');
+    // Conversion rates
+    expect(formatted.html).toContain('60%');
+    expect(formatted.text).toContain('Conversion Rate: 60%');
+    // Active SLA breaches
+    expect(formatted.html).toContain('Active Breaches');
+    expect(formatted.html).toContain('First Response');
+    expect(formatted.text).toContain('Active (Open) SLA Breaches: 2');
+    // Collections breakdown
+    expect(formatted.html).toContain('UPI');
+    expect(formatted.html).toContain('1,50,000');
+    expect(formatted.text).toContain('UPI: ₹1,00,000');
+    expect(formatted.text).toContain('BANK TRANSFER: ₹35,000');
+    expect(formatted.text).toContain('CASH: ₹15,000');
   });
 });

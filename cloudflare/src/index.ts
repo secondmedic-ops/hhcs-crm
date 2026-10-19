@@ -1,7 +1,7 @@
 // CareDesk CRM on Cloudflare (Workers FREE plan) - the whole app in one Worker:
 //   /api/*                 the backend (TypeScript: src/api, src/services, src/domain) on Supabase Postgres via Hyperdrive
 //   /webhooks/myoperator   MyOperator Webhook v2 (calls + WhatsApp), checked with the shared x-webhook-key
-//   scheduled()            SLA scan every minute, MIS packs at 10:00 IST
+//   scheduled()            SLA scan every minute, MIS packs at 08:00 IST
 //   email()                inbound mailbox -> ticket on the patient timeline (Cloudflare Email Routing)
 //   everything else        the React build (../dist) as static assets
 // Deployed ONLY by the pipeline (.github/workflows/ship.yml, step 5). Workers Builds must stay disconnected.

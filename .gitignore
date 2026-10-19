@@ -27,4 +27,7 @@ MY-SETUP-DETAILS.json
 # Excel / Office files
 ~$*
 *.xlsx
+!docs/HHCS_CRM_Feature_Matrix_and_Catalogue.xlsx
+!docs/HHCS_CareDesk_Deployments_Report.xlsx
+!docs/B2B_Provider_Rates_Template.xlsx
 *.pptx

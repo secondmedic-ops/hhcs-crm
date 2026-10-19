@@ -233,11 +233,11 @@ const FIELDS = [
   ['service_code', 'Service Code', ['servicecode', 'code']],
   ['service_name', 'Service Name', ['servicename', 'service', 'name', 'serviceequipmentdiagnostics', 'serviceequipment', 'item']],
   ['provider_code', 'Provider Code', ['providercode', 'provider', 'suppliercode', 'supplier']],
-  ['category', 'Category', ['category']],
-  ['unit', 'Unit', ['unit', 'uom']],
-  ['b2b', 'B2B Rate', ['b2brate', 'b2b', 'buyingrate']],
+  ['category', 'Category', ['category', 'clinicalcategory']],
+  ['unit', 'Unit', ['unit', 'uom', 'unitperdaypervisitpermonth', 'unitperdayvisitmonth']],
+  ['b2b', 'B2B Rate', ['b2brate', 'b2b', 'buyingrate', 'partnerbuyingrateb2b', 'partnerbuyingrate', 'buyingrateb2b']],
   // never "BMM B2C / Listed Tariff": that is a provider's own customer price, not ours
-  ['b2c', 'B2C Rate', ['b2crate', 'b2c', 'sellingrate', 'proposedhindujapatientprice', 'hindujapatientprice', 'patientprice']],
+  ['b2c', 'B2C Rate', ['b2crate', 'b2c', 'sellingrate', 'proposedhindujapatientprice', 'hindujapatientprice', 'patientprice', 'sellingpriceb2c', 'sellingprice']],
   ['effective_from', 'Effective From', ['effectivefrom', 'effectivedate']],
 ];
 const CAT_IN = { lab: 'lab', 'sample collection': 'lab', 'blood test': 'lab', 'blood tests': 'lab', xray: 'xray', 'x-ray': 'xray', 'portable x-ray': 'xray',
