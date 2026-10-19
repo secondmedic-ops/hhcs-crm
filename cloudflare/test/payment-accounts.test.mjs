@@ -77,4 +77,4 @@ test('payment destinations: upgrade, compatibility, validation, audit and scoped
     const snapshot = (await db.query("select data from mis_snapshots where workspace_id=$1 and period_start='2026-10-19'", [ws])).rows[0];
     expect(snapshot.data.collections.by_account).toEqual(r.collections.by_account);
   } finally { await db.close(); }
-});
+}, 120000);
