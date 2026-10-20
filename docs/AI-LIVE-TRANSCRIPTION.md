@@ -8,7 +8,7 @@ The CRM uses `gemini-3.5-transcribe-live` for speech while a call is happening. 
 2. Select the Google Cloud project used for this app. If it is missing, open Dashboard > Projects > Import projects, select it, then Import. Return to API Keys.
 3. Click **Create API key**, select that project and give the key a name such as **HHCS-CRM Gemini**. Google AI Studio creates authorization keys by default.
 4. Open the project's billing information in AI Studio. For patient calls, use a billing-enabled project: Google's paid API tier does not use inputs and outputs to improve its products; the free tier does. Review the charges before enabling billing. The CRM does not enable billing or purchase anything for you.
-5. Copy the new key. Open [HHCS-CRM](https://hhcs-caredesk.secondmedic.workers.dev), sign in as an admin or supervisor, then go to **Settings > Telephony & integrations > AI call summaries**.
+5. Copy the new key. Open [HHCS-CRM](https://hhcs-caredesk.smdevs.workers.dev), sign in as an admin or supervisor, then go to **Settings > Telephony & integrations > AI call summaries**.
 6. Paste it into **Gemini API key**. Leave **Summary model** empty to use `gemini-2.5-flash`. Click **Save**.
 7. Click **Test key**. This checks the summary model and creation of a live session token. Successful token creation still needs a live audio test to confirm the model is available to the project.
 8. If you want summaries to run after calls, leave **Summarise finished calls automatically** checked. If an old quota failure paused summaries, fix the quota/key and use **Retry failed calls**.

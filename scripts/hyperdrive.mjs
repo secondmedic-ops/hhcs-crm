@@ -4,6 +4,9 @@
 //  - creates the Hyperdrive config "hhcs-caredesk-db" from the GitHub secret SUPABASE_DB_URL, or updates it (a changed
 //    database password is picked up on the next ship);
 //  - caching OFF: case stages, SLA timers and payments must never be a minute old;
+//  - origin connection limit 10: Supabase's session pooler takes only 15 clients. Cloudflare's default of 20 filled it
+//    on 20 Oct 2026 ("max clients reached": site "Database is unavailable" and migrations failed). 10 leaves room for
+//    the pipeline's migrations and Hyperdrive's soft-limit extras;
 //  - writes cloudflare/wrangler.deploy.jsonc = wrangler.jsonc with the real Hyperdrive id (not committed);
 //  - removes Worker secrets left from the old Spring setups (DB_* with the DB password, and SUPABASE_URL, which is now
 //    a plain setting - a secret with the same name would make the deploy fail).
@@ -52,7 +55,7 @@ async function cf(method, path, body) {
 }
 
 const origin = originFrom(dbUrl);
-const body = { name: NAME, origin, caching: { disabled: true } };
+const body = { name: NAME, origin, caching: { disabled: true }, origin_connection_limit: 10 };
 const list = (await cf("GET", "/configs")) || [];
 const existing = list.find((c) => c.name === NAME);
 const result = existing ? await cf("PUT", `/configs/${existing.id}`, body) : await cf("POST", "/configs", body);

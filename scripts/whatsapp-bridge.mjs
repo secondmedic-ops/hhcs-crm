@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CareDesk CRM WhatsApp QR Bridge.
-// Links your WhatsApp (via QR scan or 8-digit pairing code) to https://hhcs-caredesk.secondmedic.workers.dev/whatsapp
+// Links your WhatsApp (via QR scan or 8-digit pairing code) to https://hhcs-caredesk.smdevs.workers.dev/whatsapp
 // so incoming and outgoing WhatsApp chats work live inside CareDesk CRM.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -73,7 +73,7 @@ function loadConfig() {
   if (existsSync(CFG_FILE)) {
     try { saved = JSON.parse(readFileSync(CFG_FILE, 'utf8')); } catch { saved = {}; }
   }
-  const url = (process.env.CAREDESK_URL || saved.url || 'https://hhcs-caredesk.secondmedic.workers.dev').replace(/\/$/, '');
+  const url = (process.env.CAREDESK_URL || saved.url || 'https://hhcs-caredesk.smdevs.workers.dev').replace(/\/$/, '');
   const key = process.env.CAREDESK_BRIDGE_KEY || process.env.MYOPERATOR_WEBHOOK_KEY || saved.key || '';
   if (key && (saved.url !== url || saved.key !== key)) {
     writeFileSync(CFG_FILE, JSON.stringify({ url, key }, null, 2));
@@ -275,7 +275,7 @@ async function startSocket(resetAuth = false) {
           state.status = 'qr_ready';
           state.qr_svg = svg;
           state.error = null;
-          console.log('[WhatsApp Bridge] New QR code ready on https://hhcs-caredesk.secondmedic.workers.dev/whatsapp');
+          console.log('[WhatsApp Bridge] New QR code ready on https://hhcs-caredesk.smdevs.workers.dev/whatsapp');
           await postBridge({ action: 'poll', ...state });
         } catch (e) {
           console.error('[WhatsApp Bridge] QR generation error:', e.message);

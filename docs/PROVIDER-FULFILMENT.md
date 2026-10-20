@@ -1,6 +1,6 @@
 # Medicare portal: login setup and field fulfilment
 
-Use the CareDesk sign-in at https://hhcs-caredesk.secondmedic.workers.dev. Decision of 20 October 2026: BMM works directly in this portal, with SecondMedic giving them support. There is no integration with BMM's own software. No actual staff accounts were created during implementation; names and emails can be added later.
+Use the CareDesk sign-in at https://hhcs-caredesk.smdevs.workers.dev. Decision of 20 October 2026: BMM works directly in this portal, with SecondMedic giving them support. There is no integration with BMM's own software. No actual staff accounts were created during implementation; names and emails can be added later.
 
 ## Accounts and navigation
 

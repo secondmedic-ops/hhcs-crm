@@ -3,7 +3,7 @@
 Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case ID from enquiry to closure, every call recorded through MyOperator on the patient timeline, locked rate card with in-app discount approval, SLA timers, three-level escalation, live Hinduja dashboard and MIS. It runs on the **sb-spring-cf-stack** pipeline (Worker + Supabase, no Java): one push checks and ships the database, the API and the frontend together, on free plans.
 
 - GitHub repo: secondmedic-ops/hhcs-crm   (`main` = production; pushed only as the GitHub account secondmedic-ops)
-- Live URL: https://hhcs-caredesk.secondmedic.workers.dev
+- Live URL: https://hhcs-caredesk.smdevs.workers.dev
 - Cloudflare Worker: `hhcs-caredesk` (Workers **Free**), everything in `cloudflare/`. ONE Worker is the whole app: `/api/*` is the backend (TypeScript: `src/api`, `src/services`, `src/domain`), `/webhooks/myoperator` takes MyOperator events, crons run the SLA scan and MIS, `email()` turns mailbox mail into tickets, everything else is the React build `dist/`.
 - Hyperdrive config: `hhcs-caredesk-db` (made by the pipeline from the GitHub secret `SUPABASE_DB_URL`, caching off).
 - Live updates: Durable Object `LiveHub` (SQLite class, free plan): the Worker pushes changed table names to open screens over WebSocket.
