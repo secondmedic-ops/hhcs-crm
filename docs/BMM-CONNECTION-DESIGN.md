@@ -1,5 +1,7 @@
 # Book My Medicare connection: functional logic and implementation plan
 
+> **Not pursued (20 October 2026).** BMM works directly in the CareDesk portal ([PROVIDER-FULFILMENT.md](PROVIDER-FULFILMENT.md)), with SecondMedic giving them support. This API stays disabled and is kept only as reference.
+
 **Design date:** 15 October 2026. **Release status:** deployment/publication authorized by the user on 15 October 2026. **Scope:** this document specifies proposed logic. Publishing it does not implement the proposed extensions or activate BMM patient exchange.
 
 **Authorization update:** after reviewing the design, the user instructed, "Please Push to deploy." This lifts the earlier commit/push/deployment hold for publishing the HHCS-side preparation and this design. BMM interface documentation, implementation of the proposed controls, sandbox acceptance, credentials and explicit activation remain prerequisites for actual exchange. The historical investigation and phased plan below retain the original design-stage findings; references to the earlier deployment hold are superseded by this update for publication. The release is isolated from unrelated working-tree changes.

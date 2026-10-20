@@ -1,5 +1,7 @@
 # Book My Medicare: HHCS-side integration contract
 
+> **Not pursued (20 October 2026).** BMM works directly in the CareDesk portal ([PROVIDER-FULFILMENT.md](PROVIDER-FULFILMENT.md)), with SecondMedic giving them support. This API stays disabled and is kept only as reference.
+
 Status: HHCS-side lead/progress API prepared, disabled by default. The user authorized deployment/publication on 15 October 2026, lifting the earlier deployment hold. Activation still requires BMM's actual interface documentation and contract confirmation. This defines an HHCS interface for BMM to confirm; it does not assert compatibility with BMM's existing software. No outbound request is made to an invented BMM endpoint. The complete proposed logic and remaining implementation work are in [BMM-CONNECTION-DESIGN.md](BMM-CONNECTION-DESIGN.md); publishing that design does not implement its extensions.
 
 ## Human portal
