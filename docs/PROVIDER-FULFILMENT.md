@@ -1,6 +1,6 @@
 # Medicare portal: login setup and field fulfilment
 
-Use the CareDesk sign-in at https://hhcs-caredesk.secondmedic.workers.dev. Decision of 20 October 2026: BMM works directly in this portal, with SecondMedic giving them support. No API connection with BMM's software is being built; the prepared machine API stays disabled. No actual staff accounts were created during implementation; names and emails can be added later.
+Use the CareDesk sign-in at https://hhcs-caredesk.secondmedic.workers.dev. Decision of 20 October 2026: BMM works directly in this portal, with SecondMedic giving them support. There is no integration with BMM's own software. No actual staff accounts were created during implementation; names and emails can be added later.
 
 ## Accounts and navigation
 
@@ -41,7 +41,6 @@ Hinduja and SecondMedic see the same job statuses, unit completion counts, staff
 - Missing post-discharge sign-off, dropped items, cancelled leads and closed cases block new fulfilment. Resolve scope and agreement before resuming; safe return/cessation and issue evidence remain recordable.
 - Audit records retain identifiers, status and version only. Recipient names, serials and notes remain protected business data.
 - Up to 100 recent visible leads, the first 500 jobs and 200 recent events are shown. Select a specific lead to narrow its work. Required/completed unit totals are computed independently.
-- BMM's own software is not connected: BMM works in this portal (decision 20 October 2026).
 
 ## Implementation and proof
 

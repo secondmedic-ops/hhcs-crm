@@ -1069,7 +1069,6 @@ function TelephonyTab() {
 
       {roleAllows(['supervisor'], profile?.role) && <WebhookHealth />}
       {isAdmin && <AutodialPanel />}
-      {isAdmin && <BmmIntegration />}
       {isAdmin ? <MyOperatorConnection /> : (
         <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}
@@ -1155,32 +1154,6 @@ function WebhookHealth() {
 }
 
 // ------------------------------------------------------------------ import from the old Hinduja CRM
-function BmmIntegration() {
-  const cfg = useLoad(() => rpc('bmm_settings', {}), [], ['bmm_integration_settings','profiles','providers']);
-  const [f,setF] = useState(null);
-  const [run,busy] = useAction();
-  useEffect(() => { if (cfg.data && !f) setF({enabled:cfg.data.enabled,confirmed:cfg.data.contract_confirmed}); },[cfg.data,f]);
-  const save = () => run(async () => {
-    const saved = await rpc('set_bmm_integration',{p_enabled:f.enabled,p_contract_confirmed:f.confirmed});
-    cfg.setData(saved);setF({enabled:saved.enabled,confirmed:saved.contract_confirmed});
-  },'BMM integration settings saved');
-  const d = cfg.data;
-  return <Panel title="Book My Medicare integration" sub="BMM can retrieve its assigned leads and send progress updates using a dedicated provider login. Confirm their system supports this connection before activation.">
-    <ErrorNote error={cfg.error} />
-    {cfg.loading || (!f && !cfg.error) ? <Skeleton lines={3} /> : f && d && <div className="col gap-12">
-      <div className="row gap-8"><Badge kind={d.enabled ? 'ok' : 'outline'}>{d.enabled ? 'Enabled' : 'Disabled'}</Badge><span className="small">{d.provider_logins} active BMM provider login{d.provider_logins === 1 ? '' : 's'}</span></div>
-      {!d.provider_active && <div className="small warn-text">Book My Medicare must be active before enabling this connection.</div>}
-      {!d.provider_logins && <div className="small warn-text">An administrator must create a provider login assigned to Book My Medicare under Settings, Users.</div>}
-      <Check label="BMM has confirmed the connection format" checked={f.confirmed} onChange={e => setF({...f,confirmed:e.target.checked,enabled:e.target.checked && f.enabled})} />
-      <Check label="Enable BMM system access" checked={f.enabled} disabled={!f.confirmed || !d.provider_logins || !d.provider_active} onChange={e => setF({...f,enabled:e.target.checked})} />
-      <div><Button kind="primary" disabled={busy} onClick={save}>Save BMM settings</Button></div>
-      <div className="small">Only service lines that are BMM's are shared: the provider chosen on the case line, otherwise the BMM service categories, in the unit agreed on the booking. Post-discharge patient details stay on hold until family sign-off. Calls, recordings, clinical validation and buying prices are excluded.</div>
-      <dl className="kv"><dt>Retrieve leads</dt><dd className="mono small">GET /api/v1/bmm/leads</dd><dt>Update progress</dt><dd className="mono small">POST /api/v1/bmm/leads/&#123;id&#125;/status</dd></dl>
-      <div className="tiny muted">Existing Provider leads and Excel status sync remain available while this connection is disabled.</div>
-    </div>}
-  </Panel>;
-}
-
 // Excel / CSV from the previous CRM -> patients and cases. Column names are matched loosely (e.g. "Phone",
 // "Contact No" -> mobile). Each row gets a new CareDesk Case ID; the old ID is kept, so importing the same file
 // again skips rows already in. Done in steps of 200 rows; errors are listed by row number.

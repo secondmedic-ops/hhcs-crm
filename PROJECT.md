@@ -41,13 +41,13 @@ Patient-service CRM for the HHCS engagement (proposal deck, Sept 2026): one case
 
 ## Everyday use
 
-Medicare human portal: **Provider fulfilment** tracks each agreed unit from planning and field assignment through dispatch, arrival, service/installation, handover and required returns. BMM coordinators use Provider logins; BMM delivery/service staff use Field staff logins linked to Book My Medicare. Hinduja monitors read-only; SecondMedic supervisors and authorized case coordinators monitor/manage live. Accounts can be added later in Settings > Users. See docs/PROVIDER-FULFILMENT.md. This does not activate BMM external-system API access.
+Medicare human portal: **Provider fulfilment** tracks each agreed unit from planning and field assignment through dispatch, arrival, service/installation, handover and required returns. BMM coordinators use Provider logins; BMM delivery/service staff use Field staff logins linked to Book My Medicare. Hinduja monitors read-only; SecondMedic supervisors and authorized case coordinators monitor/manage live. Accounts are added in Settings > Users. See docs/PROVIDER-FULFILMENT.md.
 
 Supervisors can select a department and staff member from the first Live dashboard to open an audited staff workspace for 30 minutes. Actions display `Staff Name - Supervisor (Supervisor Name)` in audit/access records; the original supervisor login is retained. See `docs/SUPERVISOR-STAFF-ACCESS.md`.
 
 AI Summary supports microphone transcription during active calls using `gemini-3.5-transcribe-live` and server-created, single-use ephemeral tokens. Finished live transcripts are summarised by the configured text model; recordings remain the fallback. MyOperator does not currently stream live audio into the CRM: use speakerphone near the microphone. Setup, charges and limits: `docs/AI-LIVE-TRANSCRIPTION.md`.
 
-Book My Medicare (decision 20 Oct 2026): BMM works directly in CareDesk through the portal above (Provider and Field staff logins), with SecondMedic giving them support. No API connection with BMM's software is being built or switched on: the prepared lead API (`docs/BMM-INTEGRATION.md`, `docs/BMM-CONNECTION-DESIGN.md`) stays disabled in Settings > Telephony & integrations > Book My Medicare integration. Do not extend it unless asked again.
+Book My Medicare (decision 20 Oct 2026): BMM uses CareDesk itself (Provider leads, Provider fulfilment, My provider jobs), with SecondMedic supporting them. There is no integration with BMM's software: the partner API (`/api/v1/bmm/*`), the Settings integration panel and the integration docs were removed. The old SQL (`bmm_leads`, `bmm_apply_status`, `bmm_settings`, `bmm_integration_settings`, `profiles.integration_only`) is unused and can be dropped in a later `[contract]` push. Build what BMM needs into the portal, not an API.
 
 | You want to | Do this |
 |---|---|

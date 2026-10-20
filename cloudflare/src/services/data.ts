@@ -65,7 +65,6 @@ export const RPC: Record<string, readonly Role[]> = {
   record_consent: OPS, callback_update: OPS, callback_close: OPS, set_my_availability: OPS,
   set_autodial: ['supervisor', 'admin', 'client_manager'], set_webhook_alert_hours: ['supervisor'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
   cleanup_whatsapp_autogen: ['admin', 'supervisor'],
-  bmm_settings: ['admin','supervisor'], set_bmm_integration: ['admin','supervisor'],
   assign_staff: ['coordinator', 'supervisor'],
   field_update: ['field_staff', 'coordinator', 'supervisor'],
   upsert_sample: [...OPS, 'field_staff'],
@@ -96,7 +95,7 @@ export const RPC: Record<string, readonly Role[]> = {
   refresh_case_prices: OPS, set_item_provider: COMMERCIAL, case_margins: COMMERCIAL, margin_report: COMMERCIAL,
 };
 /** Read-only actions that may ride in a batch. */
-export const READ_RPC = new Set(['provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet', 'bmm_settings',
+export const READ_RPC = new Set(['provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
   'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);

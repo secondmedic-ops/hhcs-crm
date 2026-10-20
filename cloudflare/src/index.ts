@@ -113,8 +113,8 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
     // Read confinement fresh, before special routes or staff impersonation; cached roles cannot widen a machine login.
     const [identity] = await sql`select integration_only from profiles where id = ${who.id}::uuid`;
     if (identity?.integration_only) {
-      const machinePath = found.route.path === '/api/v1/bmm/leads' || found.route.path === '/api/v1/bmm/leads/{id}/status';
-      if (!machinePath && found.route.path !== '/api/v1/me') return errorResponse(403, FORBIDDEN);
+      // There is no partner API (BMM works in the portal): a confined login only gets its minimal identity.
+      if (found.route.path !== '/api/v1/me') return errorResponse(403, FORBIDDEN);
       if (found.route.path === '/api/v1/me') {
         const [p] = await sql`select id, role::text, workspace_id from profiles where id = ${who.id}::uuid and active`;
         if (!p || p.role !== 'provider') return errorResponse(403, FORBIDDEN);

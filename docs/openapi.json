@@ -153,32 +153,6 @@
         ]
       }
     },
-    "/api/v1/bmm/leads": {
-      "get": {
-        "summary": "BMM assigned lead snapshot, authenticated and enabled only",
-        "x-access": [
-          "provider"
-        ],
-        "security": [
-          {
-            "supabase": []
-          }
-        ]
-      }
-    },
-    "/api/v1/bmm/leads/{id}/status": {
-      "post": {
-        "summary": "BMM status update with event deduplication and current-status check",
-        "x-access": [
-          "provider"
-        ],
-        "security": [
-          {
-            "supabase": []
-          }
-        ]
-      }
-    },
     "/api/v1/data/{table}": {
       "post": {
         "summary": "One read or write on an allowed table",
@@ -1479,14 +1453,6 @@
       "medical_desk"
     ],
     "cleanup_whatsapp_autogen": [
-      "admin",
-      "supervisor"
-    ],
-    "bmm_settings": [
-      "admin",
-      "supervisor"
-    ],
-    "set_bmm_integration": [
       "admin",
       "supervisor"
     ],
