@@ -477,7 +477,8 @@
       "post": {
         "summary": "Create a login and its profile",
         "x-access": [
-          "admin"
+          "admin",
+          "provider"
         ],
         "security": [
           {

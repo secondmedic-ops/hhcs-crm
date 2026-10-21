@@ -18,11 +18,20 @@ export async function createUser(c: Ctx, b: J) {
   if (!b?.email || !b?.password || !b?.full_name) throw new ApiError(400, 'Email, password and name are required', { email: 'must not be blank' });
   if (!(ROLES as readonly string[]).includes(b.role)) throw new ApiError(400, 'Unknown role');
   if (String(b.password).length < 10) throw new ApiError(400, 'Password must be at least 10 characters');
-  if (b.role === 'provider' && !b.provider_id) throw new ApiError(400, 'Pick the provider (SecondMedic / Book My Medicare) for this login');
-  if (b.provider_id) {
-    if (!['provider','field_staff'].includes(b.role) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.provider_id))) throw new ApiError(400,'Choose a valid provider for this login');
-    const provider = await asUser(c.sql,c.user.id,async tx => tx`select id from providers where id=${b.provider_id}::uuid and workspace_id=${c.user.workspaceId}::uuid and active`);
-    if (!provider.result.length) throw new ApiError(400,'Choose an active provider in this workspace');
+  let targetProviderId: string | null = null;
+  if (c.user.role === 'provider') {
+    if (b.role !== 'field_staff') throw new ApiError(403, 'Provider coordinators can only create field staff logins');
+    const [callerProf] = await c.sql`select provider_id from profiles where id = ${c.user.id}::uuid and workspace_id = ${c.user.workspaceId}::uuid and active`;
+    if (!callerProf?.provider_id) throw new ApiError(403, 'Your login is not linked to an active provider');
+    targetProviderId = callerProf.provider_id;
+  } else {
+    if (b.role === 'provider' && !b.provider_id) throw new ApiError(400, 'Pick the provider (SecondMedic / Book My Medicare) for this login');
+    if (b.provider_id) {
+      if (!['provider','field_staff'].includes(b.role) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.provider_id))) throw new ApiError(400,'Choose a valid provider for this login');
+      const provider = await asUser(c.sql,c.user.id,async tx => tx`select id from providers where id=${b.provider_id}::uuid and workspace_id=${c.user.workspaceId}::uuid and active`);
+      if (!provider.result.length) throw new ApiError(400,'Choose an active provider in this workspace');
+      targetProviderId = b.provider_id;
+    }
   }
   const base = supabaseBase(c.env);
   const r = await fetch(base + '/auth/v1/admin/users', {
@@ -33,13 +42,15 @@ export async function createUser(c: Ctx, b: J) {
   const u = (await r.json().catch(() => ({}))) as J;
   if (!r.ok) throw new ApiError(r.status === 422 ? 409 : 502, u.msg || u.message || 'Could not create the login');
   const { result, changed } = await asSystem(c.sql, async (tx) => {
+    const rawSkills = Array.isArray(b.skills) ? b.skills : typeof b.skills === 'string' ? b.skills.split(',').map((s) => s.trim()).filter(Boolean) : [];
     const [p] = await tx`insert into profiles (id, workspace_id, full_name, email, phone, role, agent_code, myoperator_user_id, myoperator_extension, skills, provider_id)
-      values (${u.id}, ${c.user.workspaceId}, ${b.full_name}, ${b.email}, ${normMobile(b.phone)}, ${b.role}, ${b.agent_code || null},
-        ${b.myoperator_user_id || null}, ${b.myoperator_extension || null}, ${pgArray((b.skills || []).map(String))}::text[],
-        ${['provider','field_staff'].includes(b.role) ? (b.provider_id as string || null) : null}::uuid) returning *`;
+      values (${u.id}, ${c.user.workspaceId}, ${b.full_name}, ${b.email}, ${normMobile(b.phone)}, ${b.role}, ${c.user.role === 'provider' ? null : (b.agent_code || null)},
+        ${c.user.role === 'provider' ? null : (b.myoperator_user_id || null)}, ${c.user.role === 'provider' ? null : (b.myoperator_extension || null)}, ${pgArray((rawSkills as string[]).map(String))}::text[],
+        ${['provider','field_staff'].includes(b.role) ? (targetProviderId || null) : null}::uuid) returning *`;
     return p;
   });
   c.changed.push(...changed);
+  c.changed.push('profiles');
   return result;
 }
 

@@ -5,11 +5,12 @@
 // management open the same view of BMM to follow its work. What each login may read is still decided by the API and
 // the database (RLS), not by this page.
 import { useState, useEffect } from 'react';
+import { api } from '../api.ts';
 import { db, q } from '../lib/db.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useLoad } from '../lib/hooks.js';
 import { ROLE_LABEL, time, ago } from '../lib/fmt.js';
-import { PageHead, Panel, Tabs, Badge, Empty, ErrorNote, Skeleton, TableSkeleton, Button } from '../components/ui.jsx';
+import { PageHead, Panel, Tabs, Badge, Empty, ErrorNote, Skeleton, TableSkeleton, Button, Modal, Field as F, Input, useAction } from '../components/ui.jsx';
 import Leads from './Leads.jsx';
 import ProviderFulfilment from './ProviderFulfilment.jsx';
 import Knowledge from './Knowledge.jsx';
@@ -67,6 +68,9 @@ export default function BmmWorkspace() {
 }
 
 function Team({ provider }) {
+  const { profile } = useAuth();
+  const canAddStaff = ['provider', 'admin', 'supervisor'].includes(profile.role);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15000);
@@ -206,9 +210,20 @@ function Team({ provider }) {
         )}
       </Panel>
 
-      <Panel tight title={`${provider.name} team roster`} sub="Logins linked to this provider. The SecondMedic administrator adds or removes them in Settings > Users (Provider = coordinator, Field staff = delivery staff).">
+      <Panel
+        tight
+        title={`${provider.name} team roster`}
+        sub="Logins linked to this provider. Coordinators and administrators can add and manage field delivery personnel."
+        actions={
+          canAddStaff ? (
+            <Button size="sm" kind="primary" icon="plus" onClick={() => setShowAddModal(true)}>
+              Add field staff
+            </Button>
+          ) : null
+        }
+      >
         <ErrorNote error={team.error} />
-        {team.loading ? <TableSkeleton rows={4} cols={4} /> : !rows.length ? <Empty title="No logins linked yet">Ask the SecondMedic administrator to add BMM staff in Settings &gt; Users and choose Book My Medicare as their provider.</Empty> : (
+        {team.loading ? <TableSkeleton rows={4} cols={4} /> : !rows.length ? <Empty title="No logins linked yet">No staff added yet. Click &quot;Add field staff&quot; to create a field delivery login.</Empty> : (
           <div className="table-wrap"><table className="t">
             <thead><tr><th>Name</th><th>Login</th><th>Contact</th><th>Status</th></tr></thead>
             <tbody>{rows.map((p) => (
@@ -222,6 +237,112 @@ function Team({ provider }) {
           </table></div>
         )}
       </Panel>
+
+      {showAddModal && (
+        <AddFieldStaffModal
+          provider={provider}
+          onClose={() => setShowAddModal(false)}
+          onCreated={() => {
+            setShowAddModal(false);
+            team.reload();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function AddFieldStaffModal({ provider, onClose, onCreated }) {
+  const [f, setF] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    password: `BmmStaff@${Math.floor(1000 + Math.random() * 9000)}!`,
+    skills: ['delivery'],
+  });
+  const [run, busy, err] = useAction();
+
+  const toggleSkill = (s) => {
+    setF((prev) => ({
+      ...prev,
+      skills: prev.skills.includes(s)
+        ? prev.skills.filter((x) => x !== s)
+        : [...prev.skills, s],
+    }));
+  };
+
+  const submit = () => run(async () => {
+    if (!f.full_name.trim()) throw new Error('Full name is required');
+    if (!f.phone.trim()) throw new Error('Mobile number is required');
+    if (!f.email.trim()) throw new Error('Email address is required');
+    if (!f.password || f.password.length < 10) throw new Error('Password must be at least 10 characters');
+
+    await api.createUser({
+      full_name: f.full_name.trim(),
+      phone: f.phone.trim(),
+      email: f.email.trim(),
+      password: f.password,
+      role: 'field_staff',
+      provider_id: provider.id,
+      skills: f.skills,
+    });
+    onCreated();
+  }, 'Field staff login created successfully');
+
+  const BMM_SKILL_OPTIONS = [
+    ['delivery', 'Equipment delivery'],
+    ['nursing', 'Nursing care'],
+    ['physio', 'Physiotherapy'],
+    ['icu', 'ICU setup'],
+    ['eldercare', 'Elder care'],
+    ['pickup', 'Equipment return/pickup'],
+  ];
+
+  return (
+    <Modal
+      title={`Add field staff · ${provider.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" disabled={busy || !f.full_name.trim() || !f.email.trim() || !f.phone.trim()} onClick={submit}>
+            {busy ? 'Creating...' : 'Create field staff'}
+          </Button>
+        </>
+      }
+    >
+      <ErrorNote error={err} />
+      <div className="form-grid">
+        <F label="Full name" className="span2" hint="as shown on ID">
+          <Input value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} placeholder="e.g. Ramesh Patil" />
+        </F>
+        <F label="Mobile number" hint="10-digit Indian mobile">
+          <Input type="tel" className="mono" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="98XXXXXXXX" />
+        </F>
+        <F label="Email address" hint="for system sign-in">
+          <Input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="field.staff@domain.com" />
+        </F>
+        <F label="Temporary password" className="span2" hint="10+ characters, share securely with staff member">
+          <Input className="mono" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+        </F>
+        <F label="Skills &amp; capabilities" className="span2" hint="Types of tasks this field technician can perform">
+          <div className="row wrap gap-8 mt-4">
+            {BMM_SKILL_OPTIONS.map(([val, lbl]) => (
+              <label key={val} className="row gap-4 pointer small">
+                <input
+                  type="checkbox"
+                  checked={f.skills.includes(val)}
+                  onChange={() => toggleSkill(val)}
+                />
+                <span>{lbl}</span>
+              </label>
+            ))}
+          </div>
+        </F>
+      </div>
+      <div className="tiny faint mt-12">
+        Field staff login will be locked to {provider.name}. Delivery staff use this login to sign in to the mobile field app (/visits) to accept jobs, stream GPS breadcrumbs, and check in.
+      </div>
+    </Modal>
   );
 }

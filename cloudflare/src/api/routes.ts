@@ -65,7 +65,7 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/ai/cases/{id}/brief', access: ALL, handler: async (c) => { const r = await caseBrief(c.env, c.sql, c.user.id, c.params.id); c.changed.push(...r.changed); return r.brief; }, summary: 'AI case brief' },
   { method: 'POST', path: '/api/v1/ai/command', access: ALL, handler: async (c, b) => command(await aiEnv(c.env, c.sql), String(b?.q || '').slice(0, 400), c.user.role || ''), summary: 'AI command bar' },
   { method: 'POST', path: '/api/v1/ai/extract-enquiry', access: OPS, handler: (c, b) => extractEnquiry(c.env, c.sql, c.user.id, String(b?.text || '').slice(0, 4000)), summary: 'AI enquiry extraction' },
-  { method: 'POST', path: '/api/v1/admin/users', access: ADMIN, handler: (c, b) => createUser(c, b), summary: 'Create a login and its profile' },
+  { method: 'POST', path: '/api/v1/admin/users', access: ['admin', 'provider'], handler: (c, b) => createUser(c, b), summary: 'Create a login and its profile' },
   { method: 'GET', path: '/api/v1/admin/webhooks', access: TECH, handler: (c) => webhookEvents(c), summary: 'Last 50 MyOperator webhook events' },
   { method: 'GET', path: '/api/v1/admin/webhooks/health', access: ['supervisor'], handler: (c) => webhookHealth(c), summary: 'MyOperator webhook health: last event, counts, failures, rejections (no payloads or numbers)' },
   { method: 'GET', path: '/api/v1/admin/integrations', access: TECH, handler: (c) => integrations(c), summary: 'Which integrations are configured' },
