@@ -54,7 +54,7 @@ function SellingRates() {
   const byId = Object.fromEntries((svc.data || []).map((s) => [s.id, s]));
   return (
     <div className="grid g-main-side">
-      <Panel tight title={<Segmented value={cat} onChange={setCat} options={[['', 'All'], ...cats.map((c) => [c, CAT[c] || c])]} />}
+      <Panel tight title={<div className="panel-pills-scroll"><Segmented value={cat} onChange={setCat} options={[['', 'All'], ...cats.map((c) => [c, CAT[c] || c])]} /></div>}
         actions={<span className="small muted">{rows.length} services</span>}>
         <ErrorNote error={svc.error} />
         {svc.loading ? <TableSkeleton rows={10} cols={8} /> : rows.length ? (

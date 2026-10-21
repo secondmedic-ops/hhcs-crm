@@ -32,6 +32,7 @@ const Checklist = lazy(() => import('./pages/Checklist.jsx'));
 const Invoice = lazy(() => import('./pages/Invoice.jsx'));
 const Knowledge = lazy(() => import('./pages/Knowledge.jsx'));
 const BmmWorkspace = lazy(() => import('./pages/BmmWorkspace.jsx'));
+const Email = lazy(() => import('./pages/Email.jsx'));
 
 function Boot({ children }) {
   const [ready, setReady] = useState(false);
@@ -79,6 +80,7 @@ function Routed() {
           <Route path="callbacks" element={g('/callbacks', <Callbacks />)} />
           <Route path="calls" element={g('/calls', <Calls />)} />
           <Route path="whatsapp" element={g('/whatsapp', <Whatsapp />)} />
+          <Route path="email" element={g('/email', <Email />)} />
           <Route path="patients" element={g('/patients', <Patients />)} />
           <Route path="patients/:id" element={g('/patients', <PatientDetail />)} />
           <Route path="field" element={g('/field', <Field />)} />

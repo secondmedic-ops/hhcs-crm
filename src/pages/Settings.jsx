@@ -256,7 +256,7 @@ function TemplatesTab() {
   const current = open && all.find((x) => x.id === open.id);
   return (
     <div className="grid g-main-side">
-      <Panel tight title={<Segmented value={kind} onChange={setKind} options={[['', 'All'], ['script', 'Scripts'], ['whatsapp', 'WhatsApp'], ['sms', 'SMS'], ['email', 'Email']]} />}
+      <Panel tight title={<div className="panel-pills-scroll"><Segmented value={kind} onChange={setKind} options={[['', 'All'], ['script', 'Scripts'], ['whatsapp', 'WhatsApp'], ['sms', 'SMS'], ['email', 'Email']]} /></div>}
         actions={<Check label="Show retired" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />}>
         <ErrorNote error={t.error} />
         {t.loading ? <TableSkeleton rows={10} cols={5} /> : rows.length ? (

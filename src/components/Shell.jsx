@@ -11,7 +11,7 @@ import { DEMO_USERS } from '../demo/seed.js';
 
 const GROUPS = [
   ['Book My Medicare', ['/bmm']],
-  ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits', '/checklist', '/knowledge']],
+  ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/email', '/patients', '/field', '/my-visits', '/checklist', '/knowledge']],
   ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
   ['Configure', ['/settings']],
 ];
@@ -26,12 +26,13 @@ export default function Shell() {
 
   const counts = useLoad(async () => {
     const sees = (to) => NAV.some((n) => n.to === to && roleAllows(n.roles, profile?.role));   // only badges this role has menu items for
-    const [a, e, w] = await Promise.all([
+    const [a, e, w, m] = await Promise.all([
       sees('/approvals') ? q(db.from('approvals').select('id', { count: 'exact', head: true }).eq('status', 'pending')).catch(() => 0) : 0,
       sees('/escalations') ? q(db.from('escalations').select('id', { count: 'exact', head: true }).neq('status', 'resolved')).catch(() => 0) : 0,
       sees('/whatsapp') ? q(db.from('v_whatsapp_chats').select('id', { count: 'exact', head: true }).eq('needs_reply', true)).catch(() => 0) : 0,
+      sees('/email') ? q(db.from('v_email_threads').select('id', { count: 'exact', head: true }).eq('needs_reply', true)).catch(() => 0) : 0,
     ]);
-    return { approvals: a, escalations: e, whatsapp: w };
+    return { approvals: a, escalations: e, whatsapp: w, email: m };
   }, [profile?.id], ['approvals', 'escalations', 'interactions', 'cases']);
 
   const items = NAV.filter((n) => roleAllows(n.roles, profile.role) && (!n.when || n.when(profile)));

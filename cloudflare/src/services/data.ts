@@ -38,7 +38,7 @@ export const READ: Record<string, readonly Role[]> = {
   provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
   // product details: staff see all; provider logins (Book My Medicare) only their categories (RLS, provider_product_knowledge)
   service_knowledge: WITH_PROVIDER,
-  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
+  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER, v_email_threads: WITH_PROVIDER,
 };
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */

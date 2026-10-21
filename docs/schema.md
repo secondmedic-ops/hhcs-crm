@@ -1209,6 +1209,38 @@
 | service_code | text | YES |
 | item_qty | integer | YES |
 
+## v_email_threads
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| patient_id | uuid | YES |
+| workspace_id | uuid | YES |
+| patient_name | text | YES |
+| patient_mrn | text | YES |
+| patient_email | text | YES |
+| patient_mobile | text | YES |
+| case_id | uuid | YES |
+| case_no | text | YES |
+| case_stage | USER-DEFINED | YES |
+| priority | text | YES |
+| branch | text | YES |
+| sla_state | text | YES |
+| owner_id | uuid | YES |
+| owner_name | text | YES |
+| last_message_id | uuid | YES |
+| last_message_at | timestamp with time zone | YES |
+| last_direction | text | YES |
+| last_subject | text | YES |
+| last_body | text | YES |
+| last_actor | text | YES |
+| last_status | text | YES |
+| last_inbound_at | timestamp with time zone | YES |
+| last_outbound_at | timestamp with time zone | YES |
+| needs_reply | boolean | YES |
+| inbound_count | integer | YES |
+| outbound_count | integer | YES |
+| message_count | integer | YES |
+
 ## v_escalations
 | column | type | nullable |
 |---|---|---|

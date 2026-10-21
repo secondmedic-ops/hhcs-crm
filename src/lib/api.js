@@ -12,6 +12,8 @@ export const sendMessage = (caseId, templateId) => (isDemo ? demo(`/cases/${case
 export const whatsappSession = () => (isDemo ? demo('/whatsapp/session', {}) : server.whatsappSession());
 export const whatsappSessionAction = (body) => (isDemo ? demo('/whatsapp/session/action', body) : server.whatsappSessionAction(body));
 export const sendWhatsAppChat = (body) => (isDemo ? demo('/whatsapp/send', body) : server.sendWhatsAppChat(body));
+// Patient e-mail (Email page): Gmail SMTP on the server. The browser demo has no mail server and sends nothing.
+export const sendEmail = (body) => (isDemo ? Promise.reject(new Error('E-mail is sent from the live site and the local test, not the demo')) : server.sendEmail(body));
 export const aiBrief = (caseId) => (isDemo ? demo(`/ai/cases/${caseId}/brief`, {}) : server.aiBrief(caseId));
 export const aiCall = (callId) => (isDemo ? demo(`/ai/calls/${callId}`, {}) : server.aiCall(callId));
 export const aiCommand = (q) => (isDemo ? demo('/ai/command', { q }) : server.aiCommand(q));

@@ -290,6 +290,28 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const waAfterReply = await batch('sup', [sel('v_whatsapp_chats', { filters: [{ col: 'patient_id', op: 'eq', val: wa.patient_id }], mode: 'single' })]);
   check(waAfterReply.body?.results?.[0]?.data?.needs_reply === false && waAfterReply.body?.results?.[0]?.data?.patient_mobile === '+919811122233',
     'v_whatsapp_chats flips needs_reply to false after reply and shows full mobile to supervisor', JSON.stringify(waAfterReply.body?.results?.[0]?.data));
+
+  // ---- 6a2. Email page: POST /api/v1/email/send + v_email_threads (no SMTP password here: logged, never mailed)
+  const mail = (who, b) => call(who, 'POST', '/api/v1/email/send', b);
+  check((await mail('bmm', { case_id: wa.case_id, subject: 'x', text: 'x' })).status === 403, 'provider cannot send patient e-mail');
+  check((await mail('field', { case_id: wa.case_id, subject: 'x', text: 'x' })).status === 403, 'field staff cannot send patient e-mail');
+  if (!(await one(`select email from patients where id = $1`, wa.patient_id))?.email) {
+    check((await mail('agent', { case_id: wa.case_id, subject: 'Visit', text: 'x' })).status === 400, 'e-mail to a patient with no address on file is refused');
+  }
+  check((await mail('agent', { case_id: wa.case_id, to: 'not-an-address', subject: 'x', text: 'x' })).status === 400, 'invalid e-mail address refused');
+  check((await mail('agent', { case_id: wa.case_id, to: 'meera.test@example.com', subject: 'Line\nbreak', text: 'x' })).status === 400, 'subject with a line break refused');
+  check((await mail('agent', { case_id: wa.case_id, to: 'meera.test@example.com', subject: 'Visit' })).status === 400, 'e-mail without a message refused');
+  const em = await mail('agent', { case_id: wa.case_id, to: 'meera.test@example.com', subject: 'Your home visit', text: 'Namaste, please confirm the address.' });
+  check(em.status === 200 && em.body?.delivery?.status === 'logged' && em.body?.subject === `Your home visit [${wa.case_no}]` && em.body?.to === 'meera.test@example.com',
+    'agent e-mails a patient: logged without SMTP, case number in the subject', JSON.stringify(em.body));
+  const emRow = await one(`select channel, direction, summary, body, meta->>'delivery_status' as st from interactions where id = $1`, em.body?.id);
+  check(emRow?.channel === 'email' && emRow?.direction === 'outbound' && emRow?.st === 'logged' && emRow?.body?.includes('confirm the address'), 'e-mail copy on the timeline', JSON.stringify(emRow));
+  const emThread = await batch('agent', [sel('v_email_threads', { filters: [{ col: 'patient_id', op: 'eq', val: wa.patient_id }], mode: 'single' })]);
+  const emT = emThread.body?.results?.[0]?.data;
+  check(emThread.status === 200 && emT?.needs_reply === false && emT?.last_subject?.startsWith('Your home visit') && emT?.case_no === wa.case_no && emT?.outbound_count >= 1,
+    'v_email_threads shows the e-mail thread', JSON.stringify(emT));
+  const emProv = await batch('bmm', [sel('v_email_threads')]);
+  check(emProv.status === 200 && (emProv.body?.results?.[0]?.data || []).length === 0, 'provider sees no e-mail threads', JSON.stringify(emProv.body).slice(0, 200));
   const wh = await call('sup', 'GET', '/api/v1/admin/webhooks');
   check(wh.status === 200 && wh.body.length >= 8, 'webhook log visible in Settings', String(wh.body?.length));
 

@@ -315,6 +315,24 @@
         ]
       }
     },
+    "/api/v1/email/send": {
+      "post": {
+        "summary": "Send an e-mail to a patient (Gmail SMTP), copy on the timeline",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk",
+          "client_manager",
+          "admin"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/ai/calls/{id}": {
       "post": {
         "summary": "AI: transcript, summary, QA of a recorded call (a call the user can see)",
@@ -1181,6 +1199,17 @@
       "provider"
     ],
     "v_whatsapp_chats": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "v_email_threads": [
       "agent",
       "coordinator",
       "supervisor",

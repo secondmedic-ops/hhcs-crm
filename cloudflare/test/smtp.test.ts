@@ -144,6 +144,13 @@ describe('Gmail SMTP sender', () => {
     const m = buildMessage({ username: 'a@b.co', password: 'x', from: 'a@b.co', fromName: 'A' }, { to: ['c@d.co'], subject: 's', text: 'x' });
     expect(m).toContain('Content-Transfer-Encoding: base64');
   });
+
+  it('adds Reply-To only for a valid address (patient e-mail replies routed back to CareDesk)', () => {
+    const cfg = { username: 'a@b.co', password: 'x', from: 'a@b.co', fromName: 'A' };
+    expect(buildMessage(cfg, { to: ['c@d.co'], subject: 's', text: 'x', replyTo: 'desk@e.co' })).toContain('\r\nReply-To: desk@e.co\r\n');
+    expect(buildMessage(cfg, { to: ['c@d.co'], subject: 's', text: 'x', replyTo: 'bad\r\nBcc: x@y.co' })).not.toContain('Reply-To');
+    expect(buildMessage(cfg, { to: ['c@d.co'], subject: 's', text: 'x' })).not.toContain('Reply-To');
+  });
 });
 
 describe('MIS e-mail: one send per snapshot', () => {

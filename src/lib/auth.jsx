@@ -18,6 +18,7 @@ export const NAV = [
   { to: '/callbacks', label: 'Callback queue', icon: 'return', roles: ['agent', 'coordinator', 'supervisor', 'client_manager'] },
   { to: '/calls', label: 'Calls & recordings', icon: 'phone', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/whatsapp', label: 'WhatsApp chats', icon: 'chat', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'whatsapp' },
+  { to: '/email', label: 'Email', icon: 'mail', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'email' },
   { to: '/patients', label: 'Patients', icon: 'person', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/field', label: 'Dispatch board', icon: 'pin', roles: ['coordinator', 'supervisor', 'client_manager'] },
   { to: '/my-visits', label: 'My visits', icon: 'pin', roles: ['field_staff'] },

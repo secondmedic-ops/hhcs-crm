@@ -6,6 +6,7 @@ import type { Role } from './auth';
 import { staffDirectory, startStaffSession, endStaffSession } from '../services/staff-session';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
+import { sendEmailChat } from '../services/emailChat';
 import { whatsappSession, whatsappSessionAction, testWaba } from '../services/myoperator';
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
@@ -54,6 +55,7 @@ export const routes: Route[] = [
   { method: 'GET', path: '/api/v1/whatsapp/session', access: ALL, handler: (c) => whatsappSession(c), summary: 'WhatsApp Business API configuration status' },
   { method: 'POST', path: '/api/v1/whatsapp/session', access: WA_OPS, handler: (c, b) => whatsappSessionAction(c, b ?? {}), summary: 'QR sessions disabled for enterprise compliance' },
   { method: 'POST', path: '/api/v1/whatsapp/send', access: WA_OPS, handler: (c, b) => sendWhatsAppChat(c, b ?? {}), summary: 'Send a WhatsApp reply or approved template' },
+  { method: 'POST', path: '/api/v1/email/send', access: WA_OPS, handler: (c, b) => sendEmailChat(c, b ?? {}), summary: 'Send an e-mail to a patient (Gmail SMTP), copy on the timeline' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}', access: AI_CALLS, handler: (c) => summariseCall(c, c.params.id), summary: 'AI: transcript, summary, QA of a recorded call (a call the user can see)' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}/live-token', access: OPS, handler: (c, b) => liveCallToken(c, b), summary: 'Single-use Gemini 3.5 live transcription token for an active visible call' },
   { method: 'POST', path: '/api/v1/ai/calls/{id}/live-transcript', access: OPS, handler: (c, b) => saveLiveTranscript(c, b), summary: 'Save append-only live transcript checkpoints and finalise for AI summary' },

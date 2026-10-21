@@ -37,7 +37,11 @@
   --top-h: 52px;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 html, body, #root { height: 100%; }
 body {
   margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font);
@@ -77,6 +81,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
 .mt-4 { margin-top: 4px; } .mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; } .mt-16 { margin-top: 16px; } .mt-24 { margin-top: 24px; }
 .mb-8 { margin-bottom: 8px; } .mb-12 { margin-bottom: 12px; } .mb-16 { margin-bottom: 16px; }
 .grid { display: grid; gap: 12px; }
+.grid > * { min-width: 0; }
 .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -129,8 +134,16 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
 .demo-bar select option { color: var(--ink); }
 
 /* panels */
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line-2); min-height: 42px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line-2); min-height: 42px; flex-wrap: wrap; }
+/* a wide title (e.g. a long Segmented filter) scrolls inside the panel and the actions move to the next line,
+   instead of stretching the whole page sideways */
+.panel-title-wrap, .panel-head > .col { min-width: 0; max-width: 100%; flex: 1; }
+.panel-actions, .panel-head > .row { flex-shrink: 0; }
+.panel-pills-scroll { display: flex; align-items: center; overflow-x: auto; max-width: 100%; min-width: 0; scrollbar-width: thin; scrollbar-color: var(--line) transparent; padding-bottom: 2px; }
+.panel-pills-scroll .btn-group { flex: none; }
+.panel-pills-scroll::-webkit-scrollbar { height: 4px; }
+.panel-pills-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
 .panel-body { padding: 14px; }
 .panel-body.tight { padding: 0; }
 .section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
@@ -166,8 +179,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
 .btn.block { width: 100%; }
 .btn.call { background: #1f5a33; border-color: #1f5a33; color: #f0efe6; }
 .btn.hang { background: var(--danger); border-color: var(--danger); color: #fff; }
-.btn-group { display: inline-flex; }
-.btn-group .btn { border-radius: 0; margin-left: -1px; }
+.btn-group { display: inline-flex; max-width: 100%; }
+.btn-group .btn { border-radius: 0; margin-left: -1px; flex-shrink: 0; }
 .btn-group .btn:first-child { border-radius: var(--r) 0 0 var(--r); margin-left: 0; }
 .btn-group .btn:last-child { border-radius: 0 var(--r) var(--r) 0; }
 .btn-group .btn.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
@@ -214,8 +227,10 @@ textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 6
 .form-grid .span2 { grid-column: span 2; }
 
 /* tabs */
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; }
-.tab { padding: 8px 12px; background: none; border: 0; border-bottom: 2px solid transparent; font: inherit; color: var(--muted); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+/* the row's line is drawn inside the row (inset shadow), so tabs need no -1px overlap: that overlap made every tab
+   row scroll vertically by 1 px and show a small up/down scrollbar */
+.tabs { display: flex; gap: 2px; box-shadow: inset 0 -1px 0 var(--line); margin-bottom: 14px; overflow-x: auto; overflow-y: hidden; }
+.tab { padding: 8px 12px; background: none; border: 0; border-bottom: 2px solid transparent; font: inherit; color: var(--muted); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 .tab.on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
 .tab .badge { margin-left: 6px; height: 17px; }
 

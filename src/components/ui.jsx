@@ -86,11 +86,11 @@ export function Panel({ title, actions, children, tight, className = '', sub }) 
     <section className={`panel ${className}`}>
       {(title || actions) && (
         <div className="panel-head">
-          <div className="col gap-4" style={{ gap: 0 }}>
+          <div className="panel-title-wrap col gap-4" style={{ gap: 0 }}>
             {typeof title === 'string' ? <h3>{title}</h3> : title}
             {sub && <span className="small muted">{sub}</span>}
           </div>
-          {actions && <div className="row">{actions}</div>}
+          {actions && <div className="panel-actions row">{actions}</div>}
         </div>
       )}
       <div className={`panel-body ${tight ? 'tight' : ''}`}>{children}</div>

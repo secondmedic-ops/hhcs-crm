@@ -8,7 +8,7 @@
 // - Debug transcript (level 2) only when a caller asks for it; AUTH, addresses and the message body are redacted.
 import type { Env } from '../env';
 
-export interface Mail { to: string[]; subject: string; text: string; html?: string }
+export interface Mail { to: string[]; subject: string; text: string; html?: string; replyTo?: string }
 export interface SmtpResult { accepted: true; attempts: number; response: string; transcript?: string[] }
 export interface SmtpSocket {
   readable: ReadableStream<Uint8Array>;
@@ -71,6 +71,7 @@ export function buildMessage(cfg: SmtpConfig, mail: Mail, now = new Date()): str
   const head = [
     `From: ${/^[\x20-\x7e]*$/.test(name) ? `"${name}"` : header(name)} <${cfg.from}>`,
     `To: ${mail.to.join(', ')}`,
+    ...(mail.replyTo && isAddress(mail.replyTo) ? [`Reply-To: ${mail.replyTo}`] : []),
     `Subject: ${header(mail.subject)}`,
     `Date: ${now.toUTCString().replace('GMT', '+0000')}`,
     `Message-ID: <${id}@${domain}>`,

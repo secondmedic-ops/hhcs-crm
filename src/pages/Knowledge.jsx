@@ -68,7 +68,7 @@ export default function Knowledge({ embedded = false, providerId = null } = {}) 
       <Tabs tabs={[['services', 'Services', active.length], ['categories', 'Category defaults'], ...(partnerLogin ? [] : [['dispositions', 'Call dispositions']])]} value={tab} onChange={setTab} />
 
       {tab === 'services' && (
-        <Panel tight title={<Segmented value={catF} onChange={setCatF} options={[['', 'All'], ...cats.map((c) => [c, CAT_LABEL[c] || c])]} />}
+        <Panel tight title={<div className="panel-pills-scroll"><Segmented value={catF} onChange={setCatF} options={[['', 'All'], ...cats.map((c) => [c, CAT_LABEL[c] || c])]} /></div>}
           actions={<div className="row gap-12">
             <Button size="sm" kind={gap ? 'primary' : 'ghost'} onClick={() => setGap(!gap)}>{gap ? 'Showing gaps only' : 'Show gaps only'}</Button>
             <Input style={{ width: 220 }} value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search services" aria-label="Search services" />

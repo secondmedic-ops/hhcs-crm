@@ -51,4 +51,7 @@ export interface Env {
   /** Secret: comma-separated MIS recipients. */
   MIS_RECIPIENTS?: string;
   EMAIL_ARCHIVE_TO?: string;
+  /** Optional Reply-To for patient e-mail from the Email page: an address routed to this Worker (Cloudflare Email
+   *  Routing) brings replies back into CareDesk; unset = replies go to SMTP_FROM's mailbox. */
+  EMAIL_REPLY_TO?: string;
 }
