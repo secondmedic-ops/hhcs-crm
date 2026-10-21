@@ -51,4 +51,11 @@ export async function providerFulfilmentApiTests({call,sql,check,U,ws,token,base
  const completed=await rpc('client','provider_portal',{p_referral:ref});
  check(completed.body?.data?.leads?.[0]?.completed===1 && completed.body.data.leads[0].status==='completed','Hinduja sees completed unit and lead');
  check((await call(fieldToken,'GET','/api/v1/calls/62000000-0000-4000-8000-000000000099/recording')).status===403,'provider field staff cannot access recordings');
+ const ping={lat:19.1197,lng:72.8468,accuracy:12};
+ check((await call(fieldToken,'POST','/api/v1/field/ping-location',ping)).status===403,'BMM field GPS refused while live location is off');
+ check((await rpc(fieldToken,'set_location_sharing',{p_staff:created.body.id,p_on:true})).status===403,'field staff cannot switch on their own live location');
+ check((await rpc('bmm','set_location_sharing',{p_staff:created.body.id,p_on:true})).status===200,'BMM manager switches live location on');
+ const sent=await call(fieldToken,'POST','/api/v1/field/ping-location',ping);
+ check(sent.status===200 && sent.body?.ok===true,'BMM field GPS accepted once live location is on');
+ check((await rpc('bmm','set_location_sharing',{p_staff:created.body.id,p_on:false})).status===200,'BMM manager switches live location off');
 }

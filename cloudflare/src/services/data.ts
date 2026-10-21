@@ -85,6 +85,7 @@ export const RPC: Record<string, readonly Role[]> = {
   provider_portal: ['provider','field_staff','supervisor','coordinator','agent','client_manager','client_clinical','medical_desk'],
   accept_provider_lead: ['provider','supervisor','coordinator'],
   plan_provider_job: ['provider','supervisor','coordinator'], update_provider_job: ['provider','field_staff','supervisor','coordinator'],
+  set_location_sharing: ['provider', 'supervisor', 'admin'],
   log_deployment: ['provider', 'supervisor', 'client_manager'], set_payment_schedule: OPS,
   transition_metrics: ['supervisor', 'coordinator', 'client_manager', 'client_clinical'],
   care_plan_sheet: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'],

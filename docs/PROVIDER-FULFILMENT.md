@@ -30,7 +30,9 @@ An administrator/platform admin creates logins once names and emails are known. 
 
 ## Live oversight
 
-Hinduja and SecondMedic see the same job statuses, unit completion counts, staff assignments, timestamps, open problems and event history. The existing WebSocket refreshes affected screens; a visible-tab 30-second refresh recovers missed updates. This records progress and handover evidence; it does not provide continuous GPS tracking or a biometric/digital signature.
+Hinduja and SecondMedic see the same job statuses, unit completion counts, staff assignments, timestamps, open problems and event history. The existing WebSocket refreshes affected screens; a visible-tab 30-second refresh recovers missed updates. This records progress and handover evidence; it does not provide a biometric/digital signature.
+
+Live location (21 Oct 2026, migration `20261021190000_partner_location_sharing.sql`): each BMM field login has a switch, off by default (`profiles.location_sharing`), turned on or off in BMM workspace > Team by the BMM manager (provider login), a supervisor or an administrator (`set_location_sharing`). While it is on and one of that person's jobs is dispatched, on site, delivered, installed or active, the job screen sends the latest GPS fix once a minute to `POST /api/v1/field/ping-location`; the Team tab's Live field staff tracker shows the last ping. With the switch off the server refuses the ping (`location_allowed`, also in the `staff_locations` insert policy). SecondMedic field staff (no provider, or the SM provider) keep the My visits tracking without a switch. The phone's browser must also allow location for the site.
 
 ## Access and reliability
 

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { rpc } from '../lib/db.js';
+import { api } from '../api.ts';
+import { db, q, rpc, isDemo } from '../lib/db.js';
 import { useAuth, roleAllows } from '../lib/auth.jsx';
 import { useLoad } from '../lib/hooks.js';
 import { dateTime, toLocalInput, fromLocalInput } from '../lib/fmt.js';
@@ -27,6 +28,7 @@ export default function ProviderFulfilment({ embedded = false, providerId = null
  return <>
   {!embedded && <PageHead title={field ? 'My provider jobs' : 'Provider fulfilment'} sub="Field updates are shared live with Hinduja and SecondMedic. Each work order fulfils one agreed service unit." />}
   <ErrorNote error={board.error} />
+  {field && <LiveLocation jobs={all} />}
   <Panel title="Service plans" actions={<Button size="sm" onClick={board.reload}>Refresh</Button>}>
    <Field label="Provider lead"><Select value={referral} onChange={(e) => setSp(e.target.value ? {referral:e.target.value} : {})} placeholder="All visible leads" options={leads.map((r) => [r.id,r.case_no+' · '+r.provider_name])} /></Field>
    {board.loading ? <TableSkeleton rows={3} cols={4} /> : leads.length ? <div className="table-wrap"><table className="t compact">
@@ -72,6 +74,42 @@ export default function ProviderFulfilment({ embedded = false, providerId = null
   {dialog?.lead && <PlanForm lead={dialog.lead} staff={staff} onClose={() => setDialog(null)} onDone={finish} />}
   {dialog?.job && <JobAction {...dialog} staff={staff} onClose={() => setDialog(null)} onDone={finish} />}
  </>;
+}
+const UNDER_WAY=['dispatched','arrived','delivered','installed','active'];
+/** Partner field staff: while the manager has switched live location on (profiles.location_sharing) and one of their
+ *  jobs is under way, the latest GPS fix goes to the BMM team tracker once a minute (free-plan query budget). */
+function LiveLocation({jobs}) {
+ const {profile}=useAuth();
+ const me=useLoad(() => q(db.from('profiles').select('location_sharing').eq('id',profile.id).maybeSingle()),[profile.id],['profiles']);
+ const on=!!me.data?.location_sharing;
+ const mine=jobs.filter((j) => j.assigned_staff_id===profile.id);
+ const job=mine.find((j) => j.status==='dispatched') || mine.find((j) => UNDER_WAY.includes(j.status));
+ const [state,setState]=useState({kind:'waiting'});
+ const fix=useRef(null);
+ useEffect(() => {
+  if(!on || !job || isDemo) return;
+  if(!navigator.geolocation) { setState({kind:'error',text:'This browser cannot share location.'}); return; }
+  let last=0;
+  const send=() => {
+   const p=fix.current;
+   if(!p || Date.now()-last<55000) return;
+   last=Date.now();
+   api.pingLocation({lat:p.latitude,lng:p.longitude,accuracy:p.accuracy,speed:p.speed,heading:p.heading,case_id:job.case_id})
+    .then((r) => setState({kind:'sent',at:r?.recorded_at}))
+    .catch((e) => setState({kind:'error',text:e?.message || 'Location could not be sent.'}));
+  };
+  const watch=navigator.geolocation.watchPosition((pos) => {fix.current=pos.coords;send();},
+   (e) => setState({kind:'error',text:e.code===1 ? 'Location is blocked. Allow location for this site in your browser settings.' : 'Location is not available. Turn on GPS.'}),
+   {enableHighAccuracy:true,timeout:20000,maximumAge:30000});
+  const timer=setInterval(send,60000);
+  return () => {navigator.geolocation.clearWatch(watch);clearInterval(timer);};
+ },[on,job?.id,job?.case_id]);
+ if(me.loading || !on) return null;
+ return <div className="panel small mb-12" style={{padding:10}}>
+  <strong>Live location is on for your login.</strong> {job
+   ? <>Your position is shared with your manager once a minute while job {job.case_no} is under way. {state.kind==='sent' ? 'Last sent '+dateTime(state.at)+'.' : state.kind==='error' ? <span className="danger-text">{state.text}</span> : 'Waiting for GPS.'}</>
+   : 'Nothing is shared until one of your jobs is dispatched.'}
+ </div>;
 }
 function PlanForm({lead,staff,onClose,onDone}) {
  const items=(lead.items || []).filter((i) => i.planned<i.qty);

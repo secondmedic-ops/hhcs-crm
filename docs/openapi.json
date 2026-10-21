@@ -1681,6 +1681,11 @@
       "supervisor",
       "coordinator"
     ],
+    "set_location_sharing": [
+      "provider",
+      "supervisor",
+      "admin"
+    ],
     "log_deployment": [
       "provider",
       "supervisor",

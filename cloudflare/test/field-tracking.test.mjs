@@ -55,6 +55,20 @@ test('Live field staff geolocation tracking, geofencing, and ATA', { timeout: 30
     }
   }
 
+  // 0. Live location switch: a BMM field login is off until its manager turns it on; SecondMedic staff need no switch
+  const insertOwn = (who) => as(who, `insert into staff_locations (workspace_id, staff_id, lat, lng) values ($1, $2, 19.07, 72.87)`, [ws, who]);
+  await expect(insertOwn(fieldStaff1)).rejects.toThrow(/row-level security/);
+  expect((await as(fieldStaff1, `select location_allowed($1) ok`, [fieldStaff1]))[0].ok).toBe(false);
+  expect((await as(fieldStaff2, `select location_allowed($1) ok`, [fieldStaff2]))[0].ok).toBe(true);
+  await expect(as(fieldStaff1, `select set_location_sharing($1, true)`, [fieldStaff1])).rejects.toThrow(/provider manager/);
+  await expect(as(bmmCoord, `select set_location_sharing($1, true)`, [fieldStaff2])).rejects.toThrow(/provider manager/);
+  await expect(as(bmmCoord, `select set_location_sharing($1, true)`, [bmmCoord])).rejects.toThrow(/not found/);
+  await as(bmmCoord, `select set_location_sharing($1, true)`, [fieldStaff1]);
+  expect((await as(fieldStaff1, `select location_sharing from profiles where id = $1`, [fieldStaff1]))[0].location_sharing).toBe(true);
+  await as(supUser, `select set_location_sharing($1, false)`, [fieldStaff1]);
+  await expect(insertOwn(fieldStaff1)).rejects.toThrow(/row-level security/);
+  await as(bmmCoord, `select set_location_sharing($1, true)`, [fieldStaff1]);
+
   // 1. Field staff 1 can insert their own GPS location
   await as(fieldStaff1, `insert into staff_locations (workspace_id, staff_id, assignment_id, case_id, lat, lng, accuracy, speed, battery_pct)
     values ($1, $2, $3, $4, 19.0761, 72.8778, 10.5, 4.2, 85)`, [ws, fieldStaff1, asg, c]);

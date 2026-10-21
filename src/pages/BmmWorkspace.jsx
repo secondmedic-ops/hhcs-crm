@@ -6,7 +6,7 @@
 // the database (RLS), not by this page.
 import { useState, useEffect } from 'react';
 import { api } from '../api.ts';
-import { db, q } from '../lib/db.js';
+import { db, q, rpc } from '../lib/db.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useLoad } from '../lib/hooks.js';
 import { ROLE_LABEL, time, ago } from '../lib/fmt.js';
@@ -71,13 +71,16 @@ function Team({ provider }) {
   const { profile } = useAuth();
   const canAddStaff = ['provider', 'admin', 'supervisor'].includes(profile.role);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [run, busy] = useAction();
+  const setSharing = (p, on) => run(async () => { await rpc('set_location_sharing', { p_staff: p.id, p_on: on }); team.reload(); },
+    on ? `Live location on for ${p.full_name}` : `Live location off for ${p.full_name}`);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 15000);
     return () => clearInterval(t);
   }, []);
 
-  const team = useLoad(() => q(db.from('profiles').select('id,full_name,role,email,phone,active,available,skills')
+  const team = useLoad(() => q(db.from('profiles').select('id,full_name,role,email,phone,active,available,skills,location_sharing')
     .eq('provider_id', provider.id).order('full_name')), [provider.id], ['profiles']);
   const locs = useLoad(() => q(db.from('v_staff_locations').select('*')), [], ['staff_locations']);
   const board = useLoad(() => q(db.from('v_assignments').select('*').in('status', ['assigned', 'en_route', 'on_site', 'completed']).order('booked_slot')), [], ['assignments']);
@@ -213,7 +216,7 @@ function Team({ provider }) {
       <Panel
         tight
         title={`${provider.name} team roster`}
-        sub="Logins linked to this provider. Coordinators and administrators can add and manage field delivery personnel."
+        sub="Logins linked to this provider. Coordinators and administrators can add and manage field delivery personnel. Live location: when on, that field login shares GPS once a minute while one of its jobs is under way."
         actions={
           canAddStaff ? (
             <Button size="sm" kind="primary" icon="plus" onClick={() => setShowAddModal(true)}>
@@ -225,13 +228,19 @@ function Team({ provider }) {
         <ErrorNote error={team.error} />
         {team.loading ? <TableSkeleton rows={4} cols={4} /> : !rows.length ? <Empty title="No logins linked yet">No staff added yet. Click &quot;Add field staff&quot; to create a field delivery login.</Empty> : (
           <div className="table-wrap"><table className="t">
-            <thead><tr><th>Name</th><th>Login</th><th>Contact</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>Login</th><th>Contact</th><th>Status</th><th>Live location</th></tr></thead>
             <tbody>{rows.map((p) => (
               <tr key={p.id}>
                 <td className="small strong">{p.full_name}</td>
                 <td className="small">{LOGIN[p.role] || ROLE_LABEL[p.role] || p.role}</td>
                 <td className="small">{p.email || <span className="faint">–</span>}{p.phone && <div className="tiny muted">{p.phone}</div>}</td>
                 <td>{p.active ? <Badge kind="ok">Active</Badge> : <Badge>Disabled</Badge>}{p.active && p.role === 'field_staff' && p.available && <div className="tiny muted">available</div>}</td>
+                <td>{p.role !== 'field_staff' ? <span className="tiny faint">–</span> : (
+                  <div className="row gap-8">
+                    {p.location_sharing ? <Badge kind="ok">On</Badge> : <Badge>Off</Badge>}
+                    {canAddStaff && <Button size="sm" kind="ghost" disabled={busy} onClick={() => setSharing(p, !p.location_sharing)}>{p.location_sharing ? 'Turn off' : 'Turn on'}</Button>}
+                  </div>
+                )}</td>
               </tr>
             ))}</tbody>
           </table></div>

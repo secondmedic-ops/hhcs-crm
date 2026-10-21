@@ -68,9 +68,12 @@ export async function pingLocation(c: Ctx, body: PingLocationBody) {
       }
     }
 
+    // partner (BMM) field staff send GPS only while their manager has switched live location on (location_allowed);
+    // a refused ping rolls back the whole request, geofence arrival included
     const [loc] = await tx.unsafe(
       `insert into staff_locations(workspace_id, staff_id, assignment_id, case_id, lat, lng, accuracy, speed, heading, battery_pct)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       select $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::float8, $6::float8, $7::numeric, $8::numeric, $9::numeric, $10::int
+       where location_allowed($2::uuid)
        returning id, recorded_at`,
       [
         c.user.workspaceId,
@@ -85,6 +88,7 @@ export async function pingLocation(c: Ctx, body: PingLocationBody) {
         body.battery_pct != null ? Math.round(Number(body.battery_pct)) : null,
       ]
     );
+    if (!loc) throw new ApiError(403, 'Live location is switched off for your login. Ask your manager to turn it on.');
 
     return {
       ok: true,
