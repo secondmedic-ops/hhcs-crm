@@ -8,7 +8,8 @@ import { misNarrative, summariseBacklog } from './ai';
 import { aiEnv } from './ai-config';
 import { notifyLive } from './live';
 import { syncCallLogs } from './mo-sync';
-import { runAutodial } from './autodial';
+import { runAutodial, type Claim } from './autodial';
+import { missingCallingSettings, moEnv } from './myoperator-config';
 import { safeSmtpError, sendMail, smtpReady, SmtpError } from './smtp';
 
 const istDate = (offsetDays = 0) => new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 86400e3).toISOString().slice(0, 10);
@@ -17,28 +18,28 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
   const sql = connect(env);
   try {
     if (cron === '* * * * *') {
+      // MyOperator settings once for the sync and the auto-dialer (one query instead of two)
+      const mo = await moEnv(env, sql);
       // call-log sync first, so a missed call it brings in gets its callback timer in this same minute
-      try { const r = await syncCallLogs(env, sql, exec); if (r.ok === false) console.log('myoperator sync', r.error); }
+      try { const r = await syncCallLogs(env, sql, exec, { mo }); if (r.ok === false) console.log('myoperator sync', r.error); }
       catch (e) { console.log('myoperator sync', (e as Error).message); }
-      // safety net: a missed / abandoned inbound call of the last 24 h with no callback and no reason gets one now
-      const swept: string[] = [];
+      // one transaction (migration cron_minute): missed-call sweep (callback for a missed / abandoned call of the last
+      // 24 h), webhook silence (working hours, no MyOperator event for N hours), SLA scan, due selling prices
+      // (Settings > Rate card > Import rates), auto-dialer claim. A failing step is reported in errors; the others run.
+      const changed: string[] = [];
+      let claims: Claim[] = [];
       try {
-        const r = await asSystem(sql, (tx) => tx`select sweep_missed_callbacks() as n`);
-        if (r.result[0]?.n) { console.log('missed-call sweep', r.result[0].n); swept.push(...r.changed); }
-      } catch (e) { console.log('missed-call sweep', (e as Error).message); }
-      // working hours only: no MyOperator webhook event for N hours -> one notification to supervisors
-      try {
-        const r = await asSystem(sql, (tx) => tx`select webhook_silence_check() as n`);
-        if (r.result[0]?.n) { console.log('webhook silence alert', r.result[0].n); swept.push(...r.changed); }
-      } catch (e) { console.log('webhook silence', (e as Error).message); }
-      const { changed } = await asSystem(sql, (tx) => tx`select sla_scan()`);
-      changed.push(...swept);
-      // approved selling prices whose effective date has come (Settings > Rate card > Import rates)
-      try { const r = await asSystem(sql, (tx) => tx`select activate_due_prices()`); changed.push(...r.changed); }
-      catch (e) { console.log('price activation', (e as Error).message); }
+        const r = await asSystem(sql, (tx) => tx`select cron_minute(${missingCallingSettings(mo).length === 0}) as r`);
+        const out = (r.result[0]?.r || {}) as { swept?: number; silence?: number; claims?: Claim[]; errors?: Record<string, string> };
+        changed.push(...r.changed);
+        claims = out.claims || [];
+        if (out.swept) console.log('missed-call sweep', out.swept);
+        if (out.silence) console.log('webhook silence alert', out.silence);
+        for (const [step, msg] of Object.entries(out.errors || {})) console.log('cron ' + step, msg);
+      } catch (e) { console.log('cron minute', (e as Error).message); }
       // callback auto-dialer after the sync, so a missed call it just brought in can be dialled this minute
       try {
-        const r = await runAutodial(env, sql);
+        const r = await runAutodial(env, sql, { mo, claims });
         changed.push(...r.changed);
         if (r.dialled || r.failed) console.log('autodial', JSON.stringify({ dialled: r.dialled, failed: r.failed }));
       } catch (e) { console.log('autodial', (e as Error).message); }

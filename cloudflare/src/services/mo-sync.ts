@@ -163,10 +163,10 @@ async function saveState(sql: Sql, s: J) {
 }
 
 /** One sync run. Returns what happened; never throws (errors are kept in the state for the settings screen). */
-export async function syncCallLogs(env0: Env, sql: Sql, exec: ExecutionContext, opts: { force?: boolean } = {}): Promise<J> {
-  const env = await moEnv(env0, sql);
-  const prev = await syncState(sql);
+export async function syncCallLogs(env0: Env, sql: Sql, exec: ExecutionContext, opts: { force?: boolean; mo?: Env } = {}): Promise<J> {
+  const env = opts.mo ?? await moEnv(env0, sql);
   if (!env.MYOPERATOR_API_TOKEN) return { skipped: 'No MyOperator API token' };
+  const prev = await syncState(sql);
   if (prev.paused && !opts.force) return { skipped: 'Paused' };
   const now = Math.floor(Date.now() / 1000);
   // "Sync now" re-reads the last 24 hours (each call is still applied once), so calls an earlier run missed come in too

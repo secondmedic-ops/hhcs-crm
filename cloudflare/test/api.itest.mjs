@@ -468,6 +468,12 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check((leads.body?.results?.[1]?.data || []).every((r) => r.id !== cid), 'provider does not see SecondMedic-only cases');
   const callId = (await one(`select id::text from calls where recording_filename is not null limit 1`))?.id;
   check((await call('bmm', 'GET', `/api/v1/calls/${callId}/recording`)).status === 403, 'provider cannot play call recordings');
+  const pkb = await batch('bmm', [sel('service_knowledge', { cols: 'id,category,service_id' })]);
+  check(pkb.status === 200 && (pkb.body?.results?.[0]?.data || []).length > 0, 'Book My Medicare reads the product details it delivers', JSON.stringify(pkb.body).slice(0, 300));
+  const bmmCats = (await one(`select to_json(categories) c from providers where code = 'BMM'`))?.c || [];
+  check((pkb.body?.results?.[0]?.data || []).every((r) => !r.category || bmmCats.includes(r.category)),
+    'provider reads only its own product categories', JSON.stringify(pkb.body?.results?.[0]?.data?.map?.((r) => r.category)));
+  check((await rpc('bmm', 'save_service_knowledge', { p: { category: 'nursing', summary: 'x' } })).status === 403, 'provider cannot edit product details');
   const pcalls = await batch('bmm', [sel('v_calls', { cols: 'id' })]);
   check(pcalls.status === 403 || (pcalls.body?.results?.[0]?.data || []).length === 0, 'provider sees no calls', JSON.stringify(pcalls.body).slice(0, 120));
   check((await call('bmm', 'GET', '/api/v1/admin/webhooks')).status === 403, 'provider kept out of telephony settings');

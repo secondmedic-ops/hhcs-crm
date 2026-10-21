@@ -108,11 +108,10 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
       return json(users);
     }
     if (path === '/api/v1/local/users') return errorResponse(404, 'Only available in the local test');
-    const access = await accessOf(sql, who.id);
+    const { integrationOnly, ...access } = await accessOf(sql, who.id);
     const principal: User = { id: who.id, email: who.email, ...access, authMode: off ? 'off' : 'supabase' };
-    // Read confinement fresh, before special routes or staff impersonation; cached roles cannot widen a machine login.
-    const [identity] = await sql`select integration_only from profiles where id = ${who.id}::uuid`;
-    if (identity?.integration_only) {
+    // Confinement before special routes or staff impersonation (read with the role, cached 60 s like it).
+    if (integrationOnly) {
       // There is no partner API (BMM works in the portal): a confined login only gets its minimal identity.
       if (found.route.path !== '/api/v1/me') return errorResponse(403, FORBIDDEN);
       if (found.route.path === '/api/v1/me') {

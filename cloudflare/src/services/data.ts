@@ -36,7 +36,8 @@ export const READ: Record<string, readonly Role[]> = {
   // buying rates and imports: SecondMedic rate managers (and coordinators for the buying card); RLS narrows again.
   // Booking costs and margins are not tables here: only case_margins / margin_report return them.
   provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
-  service_knowledge: ALL,
+  // product details: staff see all; provider logins (Book My Medicare) only their categories (RLS, provider_product_knowledge)
+  service_knowledge: WITH_PROVIDER,
   v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER,
 };
 

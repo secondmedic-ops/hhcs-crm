@@ -1,5 +1,6 @@
 // Product knowledge: the full service catalogue for agent training, with notes per service and per category.
-// Supervisors / admin edit notes and import them from Excel; every staff role (not providers) can read.
+// Supervisors / admin edit notes and import them from Excel; every staff role reads all, partner logins (Book My
+// Medicare) read the products their provider delivers.
 import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { db, q, rpc } from '../lib/db.js';
@@ -35,7 +36,11 @@ export default function Knowledge() {
   const [catF, setCatF] = useState('');
   const [gap, setGap] = useState(false);
   const [open, setOpen] = useState(null);         // { kind: 'service', row } | { kind: 'category', category }
-  const rows = cat.data?.rows || [];
+  // A partner login (provider, or field staff linked to a provider such as Book My Medicare) sees only the products its
+  // provider delivers; the database returns product notes only for those categories (provider_product_knowledge).
+  const partnerLogin = !!profile.provider_id && ['provider', 'field_staff'].includes(profile.role);
+  const partner = partnerLogin ? (cat.data?.providers || []).find((p) => p.id === profile.provider_id) : null;
+  const rows = (cat.data?.rows || []).filter((r) => !partnerLogin || (partner?.categories || []).includes(r.category));
   const active = rows.filter((r) => r.active);
   const cats = [...new Set(active.map((r) => r.category))];
   const list = useMemo(() => active.filter((r) => (!catF || r.category === catF) && (!gap || r.kbSource !== 'service') && matches(r, term)), [active, catF, gap, term]);
@@ -44,7 +49,9 @@ export default function Knowledge() {
 
   return (
     <>
-      <PageHead title="Product knowledge" sub="Every service on the rate card: price, who delivers it, and what the agent should ask and say">
+      <PageHead title="Product knowledge" sub={partnerLogin
+        ? `Products ${partner?.name || 'your company'} delivers: price, what is included, what to prepare and common questions`
+        : 'Every service on the rate card: price, who delivers it, and what the agent should ask and say'}>
         {canEdit && <ImportKnowledge rows={rows} />}
       </PageHead>
       {cat.error && <ErrorNote error={cat.error} />}
@@ -56,7 +63,7 @@ export default function Knowledge() {
         <Kpi label="No notes" value={cat.data && num(none)} tone={none ? 'warn' : undefined} detail="add a category default or service notes" onClick={() => { setTab('services'); setGap(true); }} />
       </div>
 
-      <Tabs tabs={[['services', 'Services', active.length], ['categories', 'Category defaults'], ['dispositions', 'Call dispositions']]} value={tab} onChange={setTab} />
+      <Tabs tabs={[['services', 'Services', active.length], ['categories', 'Category defaults'], ...(partnerLogin ? [] : [['dispositions', 'Call dispositions']])]} value={tab} onChange={setTab} />
 
       {tab === 'services' && (
         <Panel tight title={<Segmented value={catF} onChange={setCatF} options={[['', 'All'], ...cats.map((c) => [c, CAT_LABEL[c] || c])]} />}
@@ -86,7 +93,7 @@ export default function Knowledge() {
           {cat.loading ? <TableSkeleton rows={6} cols={3} /> : (
             <div className="table-wrap"><table className="t">
               <thead><tr><th>Category</th><th>Services</th><th>Summary</th><th>Updated</th></tr></thead>
-              <tbody>{Object.keys(CAT_LABEL).filter((c) => cats.includes(c) || cat.data?.byCat[c]).map((c) => {
+              <tbody>{Object.keys(CAT_LABEL).filter((c) => cats.includes(c) || (!partnerLogin && cat.data?.byCat[c])).map((c) => {
                 const k = cat.data?.byCat[c];
                 return (
                   <tr key={c} className="click" onClick={() => setOpen({ kind: 'category', category: c })}>

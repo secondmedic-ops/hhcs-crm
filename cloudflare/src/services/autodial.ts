@@ -11,19 +11,25 @@ import { ApiError } from '../domain/errors';
 import { clickToCall } from './myoperator';
 import { missingCallingSettings, moEnv } from './myoperator-config';
 
-type Claim = { callback_id: string; call_id: string; ref: string; number: string; agent_id: string; myoperator_user_id: string };
+export type Claim = { callback_id: string; call_id: string; ref: string; number: string; agent_id: string; myoperator_user_id: string };
 
-export async function runAutodial(env: Env, sql: Sql): Promise<{ dialled: number; failed: number; changed: string[]; skipped?: string }> {
+/** opts.mo: MyOperator settings already loaded; opts.claims: pairs already claimed (the minute cron claims them in
+ *  cron_minute), so no second transaction is needed. */
+export async function runAutodial(env: Env, sql: Sql, opts: { mo?: Env; claims?: Claim[] } = {}): Promise<{ dialled: number; failed: number; changed: string[]; skipped?: string }> {
   const changed = new Set<string>();
-  const mo = await moEnv(env, sql);
+  const mo = opts.mo ?? await moEnv(env, sql);
   // nothing to dial with: leave the queue as it is (agents still work it by hand)
   if (missingCallingSettings(mo).length) return { dialled: 0, failed: 0, changed: [], skipped: 'calling not configured' };
 
-  const { result: claims, changed: ch } = await asSystem(sql, async (tx) => {
-    const [r] = await tx`select autodial_claim() as c`;
-    return (r?.c || []) as Claim[];
-  });
-  ch.forEach((t) => changed.add(t));
+  let claims = opts.claims;
+  if (!claims) {
+    const r = await asSystem(sql, async (tx) => {
+      const [row] = await tx`select autodial_claim() as c`;
+      return (row?.c || []) as Claim[];
+    });
+    r.changed.forEach((t) => changed.add(t));
+    claims = r.result;
+  }
 
   let dialled = 0, failed = 0;
   for (const k of claims) {

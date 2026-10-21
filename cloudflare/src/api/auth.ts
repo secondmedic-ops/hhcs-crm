@@ -28,7 +28,7 @@ export interface User {
 }
 
 const jwksBySupabase = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-type Access = Omit<User, 'id' | 'email' | 'authMode'> & { at: number };
+type Access = Omit<User, 'id' | 'email' | 'authMode'> & { at: number; integrationOnly: boolean };
 const cache = new Map<string, Access>();
 const CACHE_MS = 60_000;
 
@@ -78,13 +78,16 @@ export async function accessOf(db: Db, userId: string): Promise<Access> {
   const now = Date.now();
   const c = cache.get(userId);
   if (c && now - c.at < CACHE_MS) return c;
-  const none: Access = { role: null, workspaceId: null, fullName: null, agentCode: null, myoperatorUserId: null, at: now };
+  const none: Access = { role: null, workspaceId: null, fullName: null, agentCode: null, myoperatorUserId: null, at: now, integrationOnly: false };
   if (!/^[0-9a-fA-F-]{36}$/.test(userId)) return none;
-  const rows = await db`select role::text as role, workspace_id::text as ws, full_name, agent_code, myoperator_user_id
+  // integration_only comes with the role (one query per login a minute, not one per request); the database's own
+  // confinement (migration bmm_machine_confinement) still applies on every statement.
+  const rows = await db`select role::text as role, workspace_id::text as ws, full_name, agent_code, myoperator_user_id, integration_only
                         from public.profiles where id = ${userId}::uuid and active`;
   const r = rows[0];
   const role = r && (ROLES as readonly string[]).includes(r.role) ? (r.role as Role) : null;
-  const hit: Access = r ? { role, workspaceId: r.ws, fullName: r.full_name, agentCode: r.agent_code, myoperatorUserId: r.myoperator_user_id, at: now } : none;
+  const hit: Access = r ? { role, workspaceId: r.ws, fullName: r.full_name, agentCode: r.agent_code, myoperatorUserId: r.myoperator_user_id, at: now,
+    integrationOnly: r.integration_only === true } : none;
   cache.set(userId, hit);
   return hit;
 }

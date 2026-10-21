@@ -1,5 +1,6 @@
 // Product knowledge + call scripts (20261016110000_product_knowledge_scripts): category defaults and scripts seeded,
-// staff read, providers do not, only supervisor / admin edit and import, blank import cells keep saved text.
+// staff read all, a provider login only its provider's categories (20261021100200), only supervisor / admin edit and
+// import, blank import cells keep saved text.
 import { test, expect } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -38,8 +39,12 @@ test('product knowledge: seed, read access, edit and import rules', async () => 
   const scripts = (await as('agent', `select code from templates where kind='script' and status='approved' order by code`)).map((r) => r.code);
   for (const c of ['S-01', 'S-02', 'S-03', 'S-04', 'S-05', 'S-06', 'S-07', 'S-09']) check(scripts.includes(c), `script missing: ${c}`);
 
-  // providers see none; staff see all
-  check((await as('provider', `select count(*)::int n from service_knowledge`))[0].n === 0, 'provider login can read product knowledge');
+  // a provider login sees the product details of the categories its provider delivers, nothing else; staff see all
+  const provCats = (await db.query(`select categories from providers where id=$1`, [prov])).rows[0].categories;
+  const provRows = await as('provider', `select k.category, s.category as service_category from service_knowledge k left join services s on s.id = k.service_id`);
+  check(provRows.length > 0, 'provider login cannot read the product details of its own categories');
+  check(provRows.every((r) => provCats.includes(r.category ?? r.service_category)), 'provider login reads product details of another provider: ' + JSON.stringify(provRows));
+  check(provRows.filter((r) => r.category).length === cats.filter((c) => provCats.includes(c)).length, 'provider login misses a category default of its own');
   check((await as('coord', `select count(*)::int n from service_knowledge`))[0].n === cats.length, 'coordinator cannot read product knowledge');
 
   // direct writes refused; RPC only for supervisor / admin
