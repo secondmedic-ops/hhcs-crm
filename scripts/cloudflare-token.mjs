@@ -5,6 +5,14 @@
 import { execSync, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+// A clone with a second GitHub remote (origin + the thyrocare-booking mirror) makes gh refuse with "multiple remotes
+// detected": every gh command here (and in the children it starts) uses the origin repo.
+if (!process.env.GH_REPO) {
+  try {
+    const m = execSync("git remote get-url origin", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().match(/github\.com[/:]([^/\s]+\/[^/\s]+?)(\.git)?$/);
+    if (m) process.env.GH_REPO = m[1];
+  } catch { /* no origin yet (first setup): gh picks the only remote */ }
+}
 // Pause without a shell command (Windows "timeout" refuses to run from a script: "Input redirection is not supported").
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
