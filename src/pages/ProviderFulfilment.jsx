@@ -8,21 +8,24 @@ import { PageHead, Panel, Button, Badge, Modal, Field, Input, Select, Textarea, 
 const LABEL = { scheduled: 'Scheduled', dispatched: 'Dispatched', arrived: 'On site', delivered: 'Delivered', installed: 'Installed', active: 'Service active', completed: 'Completed', returned: 'Returned', cancelled: 'Cancelled' };
 const NEXT = { staff: { scheduled: 'dispatched', dispatched: 'arrived', arrived: 'active', active: 'completed' }, equipment: { scheduled: 'dispatched', dispatched: 'delivered', delivered: 'installed', installed: 'active', active: 'completed', completed: 'returned' } };
 const ACTION = { dispatched: 'Dispatch / en route', arrived: 'Check in', delivered: 'Confirm delivery', installed: 'Confirm installation', active: 'Start service', completed: 'Complete service', returned: 'Confirm return', assign: 'Assign field staff', reschedule: 'Reschedule job', report_issue: 'Report a problem', resolve_issue: 'Resolve problem', cancelled: 'Cancel job' };
-export default function ProviderFulfilment() {
+/** embedded: inside the BMM workspace (no page head); providerId: only that provider's leads and jobs. */
+export default function ProviderFulfilment({ embedded = false, providerId = null } = {}) {
  const { profile } = useAuth();
  const [sp,setSp] = useSearchParams(), referral = sp.get('referral') || '';
  const [filter,setFilter] = useState('open'), [dialog,setDialog] = useState(null);
  const [run,busy] = useAction();
  const board = useLoad(() => rpc('provider_portal',{p_referral:referral || null}),[referral],['partner_deployments','provider_fulfilment_events','case_referrals','case_items','cases','profiles']);
- useEffect(() => { const timer=setInterval(() => { if(document.visibilityState==='visible') board.reload(); },30000); return () => clearInterval(timer); },[referral]);
- const data=board.data || {}, leads=data.leads || [], all=data.jobs || [], staff=data.staff || [];
+ // live updates reload the board on every change; this is only a fallback for a dropped connection (free-plan query budget)
+ useEffect(() => { const timer=setInterval(() => { if(document.visibilityState==='visible') board.reload(); },120000); return () => clearInterval(timer); },[referral]);
+ const mine=(x) => !providerId || x.provider_id===providerId;
+ const data=board.data || {}, leads=(data.leads || []).filter(mine), all=(data.jobs || []).filter(mine), staff=data.staff || [];
  const done=(j) => j.status==='returned' || j.status==='cancelled' || (j.status==='completed' && !j.return_required);
  const jobs=all.filter((j) => filter==='all' || (filter==='issues' ? j.issue_open : filter==='done' ? done(j) : !done(j)));
  const field=profile.role==='field_staff';
  const show=(job,action) => setDialog({job,action,eventId:crypto.randomUUID()});
  const finish=() => {setDialog(null);board.reload();};
  return <>
-  <PageHead title={field ? 'My provider jobs' : 'Provider fulfilment'} sub="Field updates are shared live with Hinduja and SecondMedic. Each work order fulfils one agreed service unit." />
+  {!embedded && <PageHead title={field ? 'My provider jobs' : 'Provider fulfilment'} sub="Field updates are shared live with Hinduja and SecondMedic. Each work order fulfils one agreed service unit." />}
   <ErrorNote error={board.error} />
   <Panel title="Service plans" actions={<Button size="sm" onClick={board.reload}>Refresh</Button>}>
    <Field label="Provider lead"><Select value={referral} onChange={(e) => setSp(e.target.value ? {referral:e.target.value} : {})} placeholder="All visible leads" options={leads.map((r) => [r.id,r.case_no+' · '+r.provider_name])} /></Field>

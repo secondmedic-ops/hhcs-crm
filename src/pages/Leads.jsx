@@ -93,13 +93,14 @@ function LeadStep({ lead, to, onClose, onDone }) {
   );
 }
 
-export default function Leads() {
+/** embedded: inside the BMM workspace (no page head); providerId: only that provider's leads, no provider filter. */
+export default function Leads({ embedded = false, providerId = null } = {}) {
   const nav = useNavigate();
   const now = useNow(30000);
   const { profile } = useAuth();
   const isProvider = profile?.role === 'provider';
   const [tab, setTab] = useState('open');
-  const [provider, setProvider] = useState('');
+  const [provider, setProvider] = useState(providerId || '');
   const [branch, setBranch] = useState('');
   const [open, setOpen] = useState(null);
 
@@ -128,9 +129,9 @@ export default function Leads() {
 
   return (
     <>
-      <PageHead title={providerName ? `${providerName} · leads` : 'Provider leads'}
+      {!embedded && <PageHead title={providerName ? `${providerName} · leads` : 'Provider leads'}
         sub={isProvider ? 'Cases sent to you by the Hinduja call centre: case ID, patient details and requirements. Accept, schedule, add progress notes and complete.'
-          : 'Every case is sent to SecondMedic (ECG, X-ray, blood tests) or Book My Medicare (nursing, physiotherapy, beds, elder care) by its services.'} />
+          : 'Every case is sent to SecondMedic (ECG, X-ray, blood tests) or Book My Medicare (nursing, physiotherapy, beds, elder care) by its services.'} />}
       <ErrorNote error={error} />
       {(isProvider || roleAllows(['supervisor', 'client_manager'], profile?.role)) && <SheetSync rows={(data?.rows || []).filter((r) => OPEN.includes(r.status))} onDone={reload} isProvider={isProvider} />}
       <div className="kpis mb-16">
@@ -143,7 +144,7 @@ export default function Leads() {
         <div className="panel-body row wrap" style={{ paddingBottom: 0, justifyContent: 'space-between', gap: 12 }}>
           <Tabs value={tab} onChange={setTab} tabs={[['open', 'Open', byTab.open.length], ['new', 'New', byTab.new.length], ['completed', 'Completed', byTab.completed.length], ['closed', 'Declined / cancelled', byTab.closed.length]]} />
           <div className="row" style={{ gap: 8 }}>
-            {!isProvider && <Select value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="All providers" options={(data?.providers || []).map((p) => [p.id, p.name])} />}
+            {!isProvider && !providerId && <Select value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="All providers" options={(data?.providers || []).map((p) => [p.id, p.name])} />}
             {branches.length > 0 && <Select value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="All branches" options={branches} />}
           </div>
         </div>
@@ -151,7 +152,7 @@ export default function Leads() {
           <Empty title={tab === 'new' ? 'No new leads' : 'No leads here'}>{isProvider ? 'New leads appear here the moment the call centre registers a case for your services.' : null}</Empty>
         ) : (
           <div className="table-wrap"><table className="t">
-            <thead><tr><th>Case</th><th>Patient</th><th>Services and requirements</th>{!isProvider && <th>Provider</th>}<th>Branch</th><th>Status</th><th>Received</th><th /></tr></thead>
+            <thead><tr><th>Case</th><th>Patient</th><th>Services and requirements</th>{!isProvider && !providerId && <th>Provider</th>}<th>Branch</th><th>Status</th><th>Received</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id} className="click" onClick={() => setOpen(r)}>
                 <td className="mono small nowrap">{r.case_no}{r.priority === 'urgent' && <div><Badge kind="danger">Urgent</Badge></div>}</td>
@@ -160,7 +161,7 @@ export default function Leads() {
                 <td style={{ maxWidth: 300 }}><div className="small truncate">{r.service_names || r.services_requested || '–'}</div>
                   {r.care_type === 'post_discharge' && <div className="tiny warn-text">Post-discharge{r.expected_discharge_on ? ` · discharge ${date(r.expected_discharge_on)}` : ''}{r.plan_days ? ` · ${r.plan_days} days` : ''}</div>}
                   {r.additional_info && <div className="tiny muted truncate" title={r.additional_info}>{r.additional_info}</div>}</td>
-                {!isProvider && <td className="small nowrap">{r.provider_name}</td>}
+                {!isProvider && !providerId && <td className="small nowrap">{r.provider_name}</td>}
                 <td className="small">{r.branch || <span className="faint">–</span>}</td>
                 <td className="nowrap"><RefBadge status={r.status} />{r.status === 'scheduled' && r.scheduled_at && <div className="tiny muted">{dateTime(r.scheduled_at)}</div>}</td>
                 <td className="small nowrap" title={dateTime(r.created_at)}>{ago(r.created_at, now)}</td>

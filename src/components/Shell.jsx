@@ -10,6 +10,7 @@ import { Avatar, Button, Badge, useToast } from './ui.jsx';
 import { DEMO_USERS } from '../demo/seed.js';
 
 const GROUPS = [
+  ['Book My Medicare', ['/bmm']],
   ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/patients', '/field', '/my-visits', '/checklist', '/knowledge']],
   ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
   ['Configure', ['/settings']],
@@ -33,7 +34,7 @@ export default function Shell() {
     return { approvals: a, escalations: e, whatsapp: w };
   }, [profile?.id], ['approvals', 'escalations', 'interactions', 'cases']);
 
-  const items = NAV.filter((n) => roleAllows(n.roles, profile.role));
+  const items = NAV.filter((n) => roleAllows(n.roles, profile.role) && (!n.when || n.when(profile)));
   return (
     <div className="shell">
       <aside className={`side ${menu ? 'open' : ''}`}>

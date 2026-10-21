@@ -31,6 +31,7 @@ const Find = lazy(() => import('./pages/Find.jsx'));
 const Checklist = lazy(() => import('./pages/Checklist.jsx'));
 const Invoice = lazy(() => import('./pages/Invoice.jsx'));
 const Knowledge = lazy(() => import('./pages/Knowledge.jsx'));
+const BmmWorkspace = lazy(() => import('./pages/BmmWorkspace.jsx'));
 
 function Boot({ children }) {
   const [ready, setReady] = useState(false);
@@ -54,7 +55,7 @@ function Boot({ children }) {
 function Guard({ path, children }) {
   const { profile } = useAuth();
   const item = NAV.find((n) => n.to === path);
-  if (item && !roleAllows(item.roles, profile.role)) return <Navigate to={homeFor(profile.role, profile.provider_id)} replace />;
+  if (item && (!roleAllows(item.roles, profile.role) || (item.when && !item.when(profile)))) return <Navigate to={homeFor(profile.role, profile.provider_id)} replace />;
   return children;
 }
 
@@ -70,6 +71,7 @@ function Routed() {
         <Route element={<Shell />}>
           <Route index element={profile && homeFor(profile.role, profile.provider_id) !== '/' ? <Navigate to={homeFor(profile.role, profile.provider_id)} replace /> : g('/', <Dashboard />)} />
           <Route path="console" element={g('/console', <Console />)} />
+          <Route path="bmm" element={g('/bmm', <BmmWorkspace />)} />
           <Route path="fulfilment" element={g('/fulfilment', <ProviderFulfilment />)} />
           <Route path="leads" element={g('/leads', <Leads />)} />
           <Route path="cases" element={g('/cases', <Cases />)} />

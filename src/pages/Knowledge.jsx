@@ -27,7 +27,8 @@ const KEY_OF = { servicecode: 'service_code', code: 'service_code', summary: 'su
   preparation: 'prep', prep: 'prep', faq: 'faq', commonquestions: 'faq' };
 const normHead = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-export default function Knowledge() {
+/** embedded: inside the BMM workspace (no page head); providerId: only that provider's products (staff viewing a partner). */
+export default function Knowledge({ embedded = false, providerId = null } = {}) {
   const { profile } = useAuth();
   const canEdit = roleAllows(['supervisor', 'admin'], profile.role);
   const cat = useCatalogue();
@@ -38,8 +39,9 @@ export default function Knowledge() {
   const [open, setOpen] = useState(null);         // { kind: 'service', row } | { kind: 'category', category }
   // A partner login (provider, or field staff linked to a provider such as Book My Medicare) sees only the products its
   // provider delivers; the database returns product notes only for those categories (provider_product_knowledge).
-  const partnerLogin = !!profile.provider_id && ['provider', 'field_staff'].includes(profile.role);
-  const partner = partnerLogin ? (cat.data?.providers || []).find((p) => p.id === profile.provider_id) : null;
+  const partnerId = providerId || (profile.provider_id && ['provider', 'field_staff'].includes(profile.role) ? profile.provider_id : null);
+  const partnerLogin = !!partnerId;
+  const partner = partnerLogin ? (cat.data?.providers || []).find((p) => p.id === partnerId) : null;
   const rows = (cat.data?.rows || []).filter((r) => !partnerLogin || (partner?.categories || []).includes(r.category));
   const active = rows.filter((r) => r.active);
   const cats = [...new Set(active.map((r) => r.category))];
@@ -49,11 +51,11 @@ export default function Knowledge() {
 
   return (
     <>
-      <PageHead title="Product knowledge" sub={partnerLogin
+      {!embedded && <PageHead title="Product knowledge" sub={partnerLogin
         ? `Products ${partner?.name || 'your company'} delivers: price, what is included, what to prepare and common questions`
         : 'Every service on the rate card: price, who delivers it, and what the agent should ask and say'}>
         {canEdit && <ImportKnowledge rows={rows} />}
-      </PageHead>
+      </PageHead>}
       {cat.error && <ErrorNote error={cat.error} />}
 
       <div className="kpis">
