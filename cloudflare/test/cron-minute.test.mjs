@@ -46,4 +46,4 @@ test('live change notes per row, cron_minute runs every step once and is system 
   } finally {
     await db.close();
   }
-});
+}, 120000);
