@@ -1369,6 +1369,25 @@
 | requested_service_start_on | date | YES |
 | referral_subtype | text | YES |
 
+## v_services
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| code | text | YES |
+| name | text | YES |
+| category | text | YES |
+| unit | text | YES |
+| tat_hours | integer | YES |
+| description | text | YES |
+| active | boolean | YES |
+| version | integer | YES |
+| price | numeric | YES |
+| b2b_rate | numeric | YES |
+| tax_basis | text | YES |
+| approved_at | timestamp with time zone | YES |
+| updated_at | timestamp with time zone | YES |
+
 ## v_whatsapp_chats
 | column | type | nullable |
 |---|---|---|

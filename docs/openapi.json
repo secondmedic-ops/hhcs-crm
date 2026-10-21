@@ -734,6 +734,17 @@
       "admin",
       "provider"
     ],
+    "v_services": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
     "templates": [
       "agent",
       "coordinator",
@@ -851,8 +862,7 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin",
-      "provider"
+      "admin"
     ],
     "sla_timers": [
       "agent",
@@ -1184,8 +1194,7 @@
       "medical_desk",
       "client_manager",
       "client_clinical",
-      "admin",
-      "provider"
+      "admin"
     ],
     "v_complaints": [
       "agent",
