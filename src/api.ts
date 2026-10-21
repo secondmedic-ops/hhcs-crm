@@ -71,6 +71,7 @@ export const api = {
   whatsappSessionAction: (body: { action?: 'start' | 'logout' | 'sync'; phone_number?: string | null }) => request<Record<string, any>>('/api/v1/whatsapp/session', { method: 'POST', body }),
   sendWhatsAppChat: (body: { case_id?: string | null; patient_id?: string | null; mobile?: string | null; patient_name?: string | null; template_id?: string | null; text?: string | null }) => request<Record<string, unknown>>('/api/v1/whatsapp/send', { method: 'POST', body }),
   sendEmail: (body: { case_id?: string | null; patient_id?: string | null; to?: string | null; subject?: string | null; text?: string | null; template_id?: string | null }) => request<Record<string, any>>('/api/v1/email/send', { method: 'POST', body }),
+  pingLocation: (body: { lat: number; lng: number; accuracy?: number | null; speed?: number | null; heading?: number | null; assignment_id?: string | null; case_id?: string | null; battery_pct?: number | null }) => request<{ ok: boolean; id?: string; recorded_at?: string; auto_arrived?: boolean; distance_m?: number | null }>('/api/v1/field/ping-location', { method: 'POST', body }),
 
   aiCall: (callId: string) => request<Record<string, unknown>>(`/api/v1/ai/calls/${callId}`, { method: 'POST', body: {} }),
   liveToken: (callId: string, handle = '') => request<{ token: string; setup: Record<string, unknown>; transcript: string }>(`/api/v1/ai/calls/${callId}/live-token`, { method: 'POST', body: { handle } }),

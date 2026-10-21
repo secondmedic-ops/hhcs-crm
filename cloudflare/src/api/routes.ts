@@ -8,6 +8,7 @@ import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
 import { sendEmailChat } from '../services/emailChat';
 import { whatsappSession, whatsappSessionAction, testWaba } from '../services/myoperator';
+import { pingLocation } from '../services/field';
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
 import { aiSettings, createUser, emailStatus, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testEmail, testMo, webhookEvents, webhookHealth } from '../services/admin';
@@ -48,6 +49,7 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/batch', access: ALL, handler: (c, b) => batch(c, b), summary: 'Several reads in one transaction (RLS per user)' },
   { method: 'POST', path: '/api/v1/data/{table}', access: ALL, handler: async (c, b) => changing(await write(c, c.params.table, b), c), summary: 'One read or write on an allowed table' },
   { method: 'POST', path: '/api/v1/rpc/{fn}', access: ALL, handler: async (c, b) => changing(await rpc(c, c.params.fn, b ?? {}), c), summary: 'One business action' },
+  { method: 'POST', path: '/api/v1/field/ping-location', access: ['field_staff', 'supervisor', 'coordinator'], handler: (c, b) => pingLocation(c, b), summary: 'Persist field staff location ping and breadcrumbs' },
   { method: 'POST', path: '/api/v1/calls/dial', access: OPS, handler: (c, b) => dial(c, b ?? {}), summary: 'MyOperator click-to-call' },
   { method: 'GET', path: '/api/v1/calls/{id}/recording', access: RECORDINGS, handler: (c) => recording(c), summary: 'Call recording audio (logged)' },
   { method: 'POST', path: '/api/v1/cases/{id}/quote', access: OPS, handler: (c, b) => sendQuote(c, b ?? {}), summary: 'Send the quote on an approved template' },

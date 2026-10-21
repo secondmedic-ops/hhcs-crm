@@ -44,10 +44,10 @@ export default function Field() {
   const [from, to] = istDayRange(0);
   const [assignFor, setAssignFor] = useState(null);
   const [backupFor, setBackupFor] = useState(null);
-  const live = ['assignments', 'cases', 'escalations'];
+  const live = ['assignments', 'cases', 'escalations', 'staff_locations'];
 
   const board = useLoad(async () => {
-    const cols = 'id,case_id,staff_id,staff_name,task,status,eta,checkin_at,checkin_distance_m,checkout_at,delay_reason,backup_for,case_no,booked_slot,priority,stage,patient_name,zone_name,patient_lat,patient_lng,service_names,pincode';
+    const cols = 'id,case_id,staff_id,staff_name,task,status,eta,checkin_at,actual_arrival_at,eta_vs_ata_variance_min,checkin_distance_m,checkout_at,delay_reason,backup_for,case_no,booked_slot,priority,stage,patient_name,zone_name,patient_lat,patient_lng,service_names,pincode';
     const [today, active] = await Promise.all([
       q(db.from('v_assignments').select(cols).gte('booked_slot', from).lt('booked_slot', to).limit(400)),
       q(db.from('v_assignments').select(cols).in('status', ACTIVE).limit(400)),
@@ -75,6 +75,9 @@ export default function Field() {
 
   const delays = useLoad(() => q(db.from('v_escalations').select('id,case_id,case_no,patient_name,level,trigger_text,raised_at,status,contacted_name,auto_raised')
     .eq('type', 'delay').neq('status', 'resolved').order('raised_at', { ascending: false }).limit(20)), [], live);
+
+  const locs = useLoad(() => q(db.from('v_staff_locations').select('*')), [], ['staff_locations']);
+  const locByStaff = useMemo(() => Object.fromEntries((locs.data || []).map((l) => [l.staff_id, l])), [locs.data]);
 
   const rows = board.data || [];
   const load = useMemo(() => {
@@ -152,7 +155,7 @@ export default function Field() {
                 </div>
                 {s.visits.length ? (
                   <div className="fd-cards">
-                    {s.visits.map((a) => <VisitCard key={a.id} a={a} now={now} canAssign={canAssign} onBackup={() => setBackupFor(a)} onOpen={() => nav(`/cases/${a.case_id}`)} />)}
+                    {s.visits.map((a) => <VisitCard key={a.id} a={a} now={now} loc={locByStaff[s.id]} canAssign={canAssign} onBackup={() => setBackupFor(a)} onOpen={() => nav(`/cases/${a.case_id}`)} />)}
                   </div>
                 ) : <div className="tiny faint mt-8">No visits today · available for assignment</div>}
               </div>
@@ -186,21 +189,32 @@ export default function Field() {
   );
 }
 
-function VisitCard({ a, now, canAssign, onBackup, onOpen }) {
+function VisitCard({ a, now, loc, canAssign, onBackup, onOpen }) {
   const late = isLate(a, now);
+  const ata = a.actual_arrival_at || a.checkin_at;
+  const dist = a.checkin_distance_m;
+  const liveDist = a.status === 'en_route' && loc?.distance_to_patient_m != null ? loc.distance_to_patient_m : null;
   return (
     <div className={`fd-card ${late ? 'late' : ''} ${a.status === 'completed' ? 'done' : ''}`}>
       <div className="row between wrap gap-4">
         <span className="mono strong nowrap">{a.case_no}</span>
-        <span className="row gap-4"><StatusBadge status={a.status} late={late} /></span>
+        <span className="row gap-4">
+          <StatusBadge status={a.status} late={late} />
+          {liveDist != null && <Badge kind="warn">{liveDist}m away</Badge>}
+        </span>
       </div>
       <div className="truncate">{a.patient_name}{a.priority === 'urgent' && <span className="danger-text"> · urgent</span>}</div>
       <div className="tiny muted">{a.zone_name || '–'} · {TASK_LABEL[a.task]}{a.backup_for ? ' · backup' : ''}</div>
       <div className="fd-times">
         <span><span className="faint">Slot</span> <span className="mono">{slotLabel(a.booked_slot)}</span></span>
         <span><span className="faint">ETA</span> <span className="mono">{time(a.eta)}</span></span>
-        <span><span className="faint">In</span> <span className="mono">{a.checkin_at ? time(a.checkin_at) : '–'}</span></span>
-        {a.checkin_distance_m != null && <span className={a.checkin_distance_m > 200 ? 'warn-text' : ''}><span className="mono">{a.checkin_distance_m} m</span> <span className="faint">from pin</span></span>}
+        <span><span className="faint">ATA</span> <span className="mono">{ata ? time(ata) : '–'}</span></span>
+        {a.eta_vs_ata_variance_min != null && <span className={Math.abs(a.eta_vs_ata_variance_min) > 15 ? 'warn-text' : 'muted'}><span className="mono">{a.eta_vs_ata_variance_min > 0 ? `+${a.eta_vs_ata_variance_min}` : a.eta_vs_ata_variance_min}m</span> <span className="faint">var</span></span>}
+        {dist != null && (
+          <Badge kind={dist <= 200 ? 'ok' : 'warn'}>
+            {dist <= 200 ? `Checked in within ${dist}m of pin` : `Off-site check-in (${dist}m)`}
+          </Badge>
+        )}
       </div>
       {a.delay_reason && <div className="tiny warn-text">Delay: {a.delay_reason}</div>}
       <div className="row mt-4">

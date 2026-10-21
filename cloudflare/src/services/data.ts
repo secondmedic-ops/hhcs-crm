@@ -26,7 +26,7 @@ const WITH_PROVIDER: readonly Role[] = [...ALL, 'provider'];
 export const READ: Record<string, readonly Role[]> = {
   workspaces: WITH_PROVIDER, zones: WITH_PROVIDER, profiles: WITH_PROVIDER, services: WITH_PROVIDER, v_services: WITH_PROVIDER, templates: WITH_PROVIDER, sla_policies: WITH_PROVIDER, escalation_matrix: WITH_PROVIDER,
   patients: WITH_PROVIDER, cases: WITH_PROVIDER, case_items: WITH_PROVIDER, case_stage_history: WITH_PROVIDER, calls: ALL, interactions: WITH_PROVIDER, callbacks: WITH_PROVIDER,
-  approvals: ALL, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER,
+  approvals: ALL, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER, staff_locations: WITH_PROVIDER,
   qa_reviews: WITH_PROVIDER, notifications: WITH_PROVIDER, inbound_emails: WITH_PROVIDER,
   providers: WITH_PROVIDER, case_referrals: WITH_PROVIDER, v_referrals: WITH_PROVIDER,
   discharge_assessments: ALL, v_assessments: ALL,
@@ -38,7 +38,7 @@ export const READ: Record<string, readonly Role[]> = {
   provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
   // product details: staff see all; provider logins (Book My Medicare) only their categories (RLS, provider_product_knowledge)
   service_knowledge: WITH_PROVIDER,
-  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: ALL, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER, v_email_threads: WITH_PROVIDER,
+  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_staff_locations: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: ALL, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER, v_email_threads: WITH_PROVIDER,
 };
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */
@@ -53,6 +53,7 @@ export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert'
   patients: { update: OPS },
   profiles: { update: WITH_PROVIDER },
   qa_reviews: { insert: ['supervisor'] },
+  staff_locations: { insert: ['field_staff', 'coordinator', 'supervisor'] },
   sla_policies: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
   templates: { insert: ['admin', 'supervisor'], update: ['admin', 'supervisor'] },
   workspaces: { update: ['admin', 'client_manager'] },

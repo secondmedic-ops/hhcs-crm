@@ -1,6 +1,7 @@
 // Field app (slides 16-17): today's visits, geo-tagged check-in, visit checklist, barcoded samples
 // (chain of custody starts here), payment and patient sign-off. Built for a phone held in one hand.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../api.ts';
 import { db, q, rpc, isDemo } from '../lib/db.js';
 import { useLoad, useNow } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -102,6 +103,34 @@ function VisitDetail({ a, now, onBack, reload }) {
 
   useEffect(() => { if (due != null) setPay((p) => ({ ...p, amount: p.amount === '' ? String(due) : p.amount })); }, [due]);
 
+  useEffect(() => {
+    if (a.status !== 'en_route' || !navigator.geolocation || isDemo) return;
+    let lastSent = 0;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const t = Date.now();
+        if (t - lastSent < 10000) return;
+        lastSent = t;
+        api.pingLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          speed: pos.coords.speed,
+          heading: pos.coords.heading,
+          assignment_id: a.id,
+          case_id: a.case_id,
+        }).then((res) => {
+          if (res?.auto_arrived) reload();
+        }).catch(() => {});
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [a.id, a.case_id, a.status]);
+
   const status = a.status;
   const travelled = status !== 'assigned';
   const onSite = ['checked_in', 'completed'].includes(status);
@@ -191,12 +220,14 @@ function VisitDetail({ a, now, onBack, reload }) {
 
         {step(2, 'Check in at address', st(onSite, travelled && !onSite), onSite
           ? <div className="small">
-            Checked in {time(a.checkin_at)}{dist != null && <> · <span className={dist > 200 ? 'warn-text strong' : 'ok-text'}>{dist} m from the pin</span></>}
-            {checkin?.demo && <span className="muted"> · demo location</span>}
+            <div><strong>ATA: {time(a.actual_arrival_at || a.checkin_at)}</strong> <span className="muted">· Checked in {time(a.checkin_at)}</span></div>
+            {a.eta_vs_ata_variance_min != null && <div className={Math.abs(a.eta_vs_ata_variance_min) > 15 ? 'tiny warn-text mt-4' : 'tiny muted mt-4'}>ETA vs ATA variance: {a.eta_vs_ata_variance_min > 0 ? `+${a.eta_vs_ata_variance_min}` : a.eta_vs_ata_variance_min} min</div>}
+            {dist != null && <div className="mt-4"><Badge kind={dist <= 200 ? 'ok' : 'warn'}>{dist <= 200 ? `Checked in within ${dist}m of pin` : `Off-site check-in (${dist}m)`}</Badge></div>}
+            {checkin?.demo && <div className="tiny muted mt-4">demo location</div>}
             {dist > 200 && <div className="tiny warn-text mt-4">More than 200 m from the registered pin. Confirm the address with the desk.</div>}
           </div>
           : <>
-            <div className="small muted">Your GPS position is recorded with the time, as proof of arrival.</div>
+            <div className="small muted">Your GPS position streams automatically while en route, and is recorded on check-in as proof of arrival.</div>
             <Button kind="primary" className="tap block" disabled={busy || !travelled} onClick={doCheckin}><Icon name="pin" /> Check in here</Button>
           </>)}
 
