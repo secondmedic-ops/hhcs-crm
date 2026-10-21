@@ -53,6 +53,8 @@
 | patient_signoff | boolean | NO |
 | backup_for | uuid | YES |
 | delay_reason | text | YES |
+| actual_arrival_at | timestamp with time zone | YES |
+| eta_vs_ata_variance_min | integer | YES |
 
 ## audit_log
 | column | type | nullable |
@@ -818,6 +820,22 @@
 | breached_at | timestamp with time zone | YES |
 | status | text | NO |
 
+## staff_locations
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| staff_id | uuid | NO |
+| assignment_id | uuid | YES |
+| case_id | uuid | YES |
+| lat | double precision | NO |
+| lng | double precision | NO |
+| accuracy | numeric | YES |
+| speed | numeric | YES |
+| heading | numeric | YES |
+| battery_pct | integer | YES |
+| recorded_at | timestamp with time zone | NO |
+
 ## staff_sessions
 | column | type | nullable |
 |---|---|---|
@@ -930,8 +948,11 @@
 | patient_signoff | boolean | YES |
 | backup_for | uuid | YES |
 | delay_reason | text | YES |
+| actual_arrival_at | timestamp with time zone | YES |
+| eta_vs_ata_variance_min | integer | YES |
 | staff_name | text | YES |
 | staff_phone | text | YES |
+| staff_provider_id | uuid | YES |
 | case_no | text | YES |
 | booked_slot | timestamp with time zone | YES |
 | priority | text | YES |
@@ -1387,6 +1408,35 @@
 | tax_basis | text | YES |
 | approved_at | timestamp with time zone | YES |
 | updated_at | timestamp with time zone | YES |
+
+## v_staff_locations
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| staff_id | uuid | YES |
+| assignment_id | uuid | YES |
+| case_id | uuid | YES |
+| lat | double precision | YES |
+| lng | double precision | YES |
+| accuracy | numeric | YES |
+| speed | numeric | YES |
+| heading | numeric | YES |
+| battery_pct | integer | YES |
+| recorded_at | timestamp with time zone | YES |
+| staff_name | text | YES |
+| staff_role | USER-DEFINED | YES |
+| staff_provider_id | uuid | YES |
+| case_no | text | YES |
+| booked_slot | timestamp with time zone | YES |
+| patient_name | text | YES |
+| patient_lat | double precision | YES |
+| patient_lng | double precision | YES |
+| assignment_status | text | YES |
+| eta | timestamp with time zone | YES |
+| actual_arrival_at | timestamp with time zone | YES |
+| checkin_distance_m | integer | YES |
+| distance_to_patient_m | integer | YES |
 
 ## v_whatsapp_chats
 | column | type | nullable |

@@ -195,6 +195,21 @@
         ]
       }
     },
+    "/api/v1/field/ping-location": {
+      "post": {
+        "summary": "Persist field staff location ping and breadcrumbs",
+        "x-access": [
+          "field_staff",
+          "supervisor",
+          "coordinator"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/calls/dial": {
       "post": {
         "summary": "MyOperator click-to-call",
@@ -687,21 +702,6 @@
           }
         ]
       }
-    },
-    "/api/v1/field/ping-location": {
-      "post": {
-        "summary": "Persist field staff location ping and breadcrumbs",
-        "x-access": [
-          "field_staff",
-          "supervisor",
-          "coordinator"
-        ],
-        "security": [
-          {
-            "supabase": []
-          }
-        ]
-      }
     }
   },
   "x-tables-read": {
@@ -750,14 +750,14 @@
       "provider"
     ],
     "v_services": [
-      "admin",
-      "supervisor",
-      "coordinator",
-      "medical_desk",
       "agent",
+      "coordinator",
+      "supervisor",
       "field_staff",
+      "medical_desk",
       "client_manager",
       "client_clinical",
+      "admin",
       "provider"
     ],
     "templates": [
@@ -935,6 +935,17 @@
       "provider"
     ],
     "payments": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
+    "staff_locations": [
       "agent",
       "coordinator",
       "supervisor",
@@ -1190,6 +1201,17 @@
       "admin",
       "provider"
     ],
+    "v_staff_locations": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "field_staff",
+      "medical_desk",
+      "client_manager",
+      "client_clinical",
+      "admin",
+      "provider"
+    ],
     "v_escalations": [
       "agent",
       "coordinator",
@@ -1242,28 +1264,6 @@
       "client_manager",
       "client_clinical",
       "admin",
-      "provider"
-    ],
-    "staff_locations": [
-      "admin",
-      "supervisor",
-      "coordinator",
-      "medical_desk",
-      "agent",
-      "field_staff",
-      "client_manager",
-      "client_clinical",
-      "provider"
-    ],
-    "v_staff_locations": [
-      "admin",
-      "supervisor",
-      "coordinator",
-      "medical_desk",
-      "agent",
-      "field_staff",
-      "client_manager",
-      "client_clinical",
       "provider"
     ]
   },
@@ -1382,6 +1382,13 @@
         "supervisor"
       ]
     },
+    "staff_locations": {
+      "insert": [
+        "field_staff",
+        "coordinator",
+        "supervisor"
+      ]
+    },
     "sla_policies": {
       "update": [
         "admin",
@@ -1430,13 +1437,6 @@
         "coordinator",
         "supervisor",
         "medical_desk"
-      ]
-    },
-    "staff_locations": {
-      "insert": [
-        "field_staff",
-        "coordinator",
-        "supervisor"
       ]
     }
   },
