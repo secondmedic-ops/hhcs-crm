@@ -23,7 +23,7 @@ export const KB_FIELDS = [
 /** Services + knowledge + providers, merged. Each row: service fields, kb (own or category default), kbSource, delivered. */
 export function useCatalogue() {
   const res = useLoad(() => Promise.all([
-    q(db.from('services').select('id,code,name,category,unit,price,tat_hours,description,active').order('name')),
+    q(db.from('v_services').select('id,code,name,category,unit,price,b2b_rate,tat_hours,description,active').order('name')),
     q(db.from('service_knowledge').select('id,service_id,category,summary,who_needs,ask_caller,includes,excludes,prep,faq,updated_at')),
     q(db.from('providers').select('id,code,name,categories,active')),
   ]), [], ['services', 'service_knowledge', 'providers']);
@@ -53,15 +53,23 @@ export function matches(row, term) {
   return t.split(/\s+/).every((w) => hay.includes(w));
 }
 
-export function KnowledgeBody({ row }) {
+export function KnowledgeBody({ row, isPartner = false }) {
   const kb = row.kb;
+  const showB2B = isPartner || row.price == null;
   return (
     <div className="col gap-12">
-      {row.price != null && <div className="row wrap gap-4 small">
+      {showB2B ? (
+        <div className="row wrap gap-4 small">
+          <strong>{row.b2b_rate != null ? inr(row.b2b_rate) : 'B2B rate not set'}</strong>
+          <span className="muted">· B2B rate{row.unit ? ` per ${row.unit}` : ''}</span>
+          {row.tat_hours ? <span className="muted">· report / start within {row.tat_hours} h</span> : null}
+        </div>
+      ) : row.price != null ? (
+        <div className="row wrap gap-4 small">
         <strong>{priceText(row.price)}</strong>{Number(row.price) > 0 && <span className="muted">per {row.unit || 'unit'}</span>}
         {row.tat_hours ? <span className="muted">· report / start within {row.tat_hours} h</span> : null}
         <span className="muted">· delivered by {row.delivered.length ? row.delivered.join(', ') : 'not routed yet'}</span>
-      </div>}
+      </div>) : null}
       {row.description && <div className="small">{row.description}</div>}
       {!kb ? <div className="small muted">No product knowledge yet. Ask a supervisor to add it on the Product knowledge page.</div> : KB_FIELDS.map(([k, label]) => kb[k] ? (
         <div key={k}>
@@ -93,7 +101,7 @@ export function KnowledgePanel({ onOpenAll }) {
           <div key={r.id} className="list-row click" style={{ display: 'block' }} onClick={() => setOpen(open === r.id ? null : r.id)}>
             <div className="row between gap-12">
               <div className="small grow"><span className="mono">{r.code}</span> · {r.name}</div>
-              <span className="small">{priceText(r.price)}{Number(r.price) > 0 && <span className="tiny muted"> / {r.unit || 'unit'}</span>}</span>
+              <span className="small">{r.price != null ? priceText(r.price) : (r.b2b_rate != null ? `${inr(r.b2b_rate)} (B2B)` : 'B2B not set')}{Number(r.price ?? r.b2b_rate) > 0 && <span className="tiny muted"> / {r.unit || 'unit'}</span>}</span>
             </div>
             <div className="tiny muted truncate">{CAT_LABEL[r.category] || r.category}{r.delivered.length ? ` · ${r.delivered.join(', ')}` : ''}{r.kbSource === 'none' ? ' · no notes yet' : ''}</div>
             {open === r.id && <div className="mt-12" onClick={(e) => e.stopPropagation()}><KnowledgeBody row={r} /></div>}

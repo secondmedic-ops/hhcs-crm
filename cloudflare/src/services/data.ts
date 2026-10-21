@@ -24,9 +24,9 @@ const WITH_PROVIDER: readonly Role[] = [...ALL, 'provider'];
 /** Who may read a table / view (rows are then filtered by RLS per role). Not listed = nobody. Provider logins may query the
  *  case-page tables; calls and clinical assessments are denied here, with RLS as a second wall. */
 export const READ: Record<string, readonly Role[]> = {
-  workspaces: WITH_PROVIDER, zones: WITH_PROVIDER, profiles: WITH_PROVIDER, services: WITH_PROVIDER, templates: WITH_PROVIDER, sla_policies: WITH_PROVIDER, escalation_matrix: WITH_PROVIDER,
+  workspaces: WITH_PROVIDER, zones: WITH_PROVIDER, profiles: WITH_PROVIDER, services: WITH_PROVIDER, v_services: WITH_PROVIDER, templates: WITH_PROVIDER, sla_policies: WITH_PROVIDER, escalation_matrix: WITH_PROVIDER,
   patients: WITH_PROVIDER, cases: WITH_PROVIDER, case_items: WITH_PROVIDER, case_stage_history: WITH_PROVIDER, calls: ALL, interactions: WITH_PROVIDER, callbacks: WITH_PROVIDER,
-  approvals: WITH_PROVIDER, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER,
+  approvals: ALL, sla_timers: WITH_PROVIDER, complaints: WITH_PROVIDER, escalations: WITH_PROVIDER, assignments: WITH_PROVIDER, samples: WITH_PROVIDER, payments: WITH_PROVIDER,
   qa_reviews: WITH_PROVIDER, notifications: WITH_PROVIDER, inbound_emails: WITH_PROVIDER,
   providers: WITH_PROVIDER, case_referrals: WITH_PROVIDER, v_referrals: WITH_PROVIDER,
   discharge_assessments: ALL, v_assessments: ALL,
@@ -38,7 +38,7 @@ export const READ: Record<string, readonly Role[]> = {
   provider_rates: COMMERCIAL_RATES, rate_imports: RATE_MANAGERS, service_price_history: ALL,
   // product details: staff see all; provider logins (Book My Medicare) only their categories (RLS, provider_product_knowledge)
   service_knowledge: WITH_PROVIDER,
-  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: WITH_PROVIDER, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER, v_email_threads: WITH_PROVIDER,
+  v_cases: WITH_PROVIDER, v_patients: WITH_PROVIDER, v_calls: ALL, v_callbacks: WITH_PROVIDER, v_assignments: WITH_PROVIDER, v_escalations: WITH_PROVIDER, v_approvals: ALL, v_complaints: WITH_PROVIDER, v_whatsapp_chats: WITH_PROVIDER, v_email_threads: WITH_PROVIDER,
 };
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */
@@ -122,10 +122,37 @@ export function dbMessage(e: unknown): ApiError | null {
 }
 const wrap = (e: unknown): never => { throw dbMessage(e) ?? e; };
 
-async function runSelect(tx: Tx, spec: QuerySpec) {
+async function runSelect(tx: Tx, spec: QuerySpec, userRole?: Role | null) {
   const q = buildQuery({ ...spec, op: 'select' }, 'raw');
   const rows = await tx.unsafe(q.text, q.params as never[]);
   const count = q.countText ? Number((await tx.unsafe(q.countText, q.countParams as never[]))[0]?.n ?? 0) : null;
+  if (userRole === 'provider' || userRole === 'field_staff') {
+    const t = spec.table;
+    if (t === 'services' || t === 'v_services') {
+      for (const r of rows as Record<string, unknown>[]) {
+        if ('price' in r) {
+          const p = Number(r.price);
+          if (!('b2b_rate' in r) || r.b2b_rate == null) {
+            r.b2b_rate = p > 0 ? Math.round(p * 0.70 * 100) / 100 : null;
+          }
+          r.price = null;
+        }
+        if ('tax_basis' in r) r.tax_basis = null;
+      }
+    } else if (t === 'case_items') {
+      for (const r of rows as Record<string, unknown>[]) {
+        if ('unit_price' in r) r.unit_price = null;
+        if ('line_total' in r) r.line_total = null;
+      }
+    } else if (t === 'cases' || t === 'v_cases') {
+      for (const r of rows as Record<string, unknown>[]) {
+        if ('total' in r) r.total = null;
+        if ('discount_total' in r) r.discount_total = null;
+        if ('net_total' in r) r.net_total = null;
+        if ('discount_pct' in r) r.discount_pct = null;
+      }
+    }
+  }
   return shape(spec, rows as unknown as Record<string, unknown>[], count);
 }
 
@@ -159,7 +186,7 @@ export async function batch(c: Ctx, body: { ops?: BatchOp[] }) {
   const run = (tx: Tx, op: BatchOp) => (op.kind === 'rpc' ? runRpc(tx, op.fn!, op.args ?? {}).then((data) => ({
     data: op.fn === 'autodial_settings' ? { ...data, calling_configured: callingConfigured } : data,
     count: null, error: null,
-  })) : runSelect(tx, op.spec!));
+  })) : runSelect(tx, op.spec!, c.user.role));
   try {
     const results = await readAsUser(c.sql, c.user.id, async (tx) => {
       const out = [];
@@ -183,7 +210,7 @@ export async function write(c: Ctx, table: string, spec: QuerySpec) {
   const op = spec?.op;
   if (!op || op === 'select') {
     if (!allowed(READ[table], c.user.role)) throw deny(`reading "${table}"`);
-    const r = await readAsUser(c.sql, c.user.id, (tx) => runSelect(tx, { ...spec, table })).catch(wrap);
+    const r = await readAsUser(c.sql, c.user.id, (tx) => runSelect(tx, { ...spec, table }, c.user.role)).catch(wrap);
     return { body: r, changed: [] as string[] };
   }
   if (!allowed(WRITE[table]?.[op], c.user.role)) throw deny(`changing "${table}"`);

@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { db, q, rpc } from '../lib/db.js';
 import { useAuth, roleAllows } from '../lib/auth.jsx';
-import { num, ago } from '../lib/fmt.js';
+import { num, ago, inr } from '../lib/fmt.js';
 import { PageHead, Panel, Kpi, Tabs, Segmented, Button, Input, Field, Textarea, Drawer, Empty, ErrorNote, TableSkeleton, useAction, useToast } from '../components/ui.jsx';
 import { useCatalogue, matches, KnowledgeBody, KB_FIELDS, CAT_LABEL, kbBadge, priceText } from '../components/ProductKnowledge.jsx';
 
@@ -42,7 +42,8 @@ export default function Knowledge({ embedded = false, providerId = null } = {}) 
   const partnerId = providerId || (profile.provider_id && ['provider', 'field_staff'].includes(profile.role) ? profile.provider_id : null);
   const partnerLogin = !!partnerId;
   const partner = partnerLogin ? (cat.data?.providers || []).find((p) => p.id === partnerId) : null;
-  const rows = (cat.data?.rows || []).filter((r) => !partnerLogin || (partner?.categories || []).includes(r.category));
+  const NON_BMM_CATEGORIES = ['lab', 'xray', 'ecg', 'visit'];
+  const rows = (cat.data?.rows || []).filter((r) => !partnerLogin || (!NON_BMM_CATEGORIES.includes(r.category) && (partner?.categories || []).includes(r.category)));
   const active = rows.filter((r) => r.active);
   const cats = [...new Set(active.map((r) => r.category))];
   const list = useMemo(() => active.filter((r) => (!catF || r.category === catF) && (!gap || r.kbSource !== 'service') && matches(r, term)), [active, catF, gap, term]);
@@ -75,12 +76,12 @@ export default function Knowledge({ embedded = false, providerId = null } = {}) 
           </div>}>
           {cat.loading ? <TableSkeleton rows={8} cols={5} /> : !list.length ? <Empty title="No service matches" /> : (
             <div className="table-wrap"><table className="t">
-              <thead><tr><th>Service</th><th>Category</th><th className="num">Price</th><th>Delivered by</th><th>Notes</th></tr></thead>
+              <thead><tr><th>Service</th><th>Category</th><th className="num">{partnerLogin ? 'B2B rate' : 'Price'}</th><th>Delivered by</th><th>Notes</th></tr></thead>
               <tbody>{list.map((r) => (
                 <tr key={r.id} className="click" onClick={() => setOpen({ kind: 'service', row: r })}>
                   <td><span className="mono small">{r.code}</span><div>{r.name}</div></td>
                   <td className="small">{CAT_LABEL[r.category] || r.category}</td>
-                  <td className="num">{priceText(r.price)}{Number(r.price) > 0 && <div className="tiny muted">per {r.unit || 'unit'}</div>}</td>
+                  <td className="num">{partnerLogin ? (r.b2b_rate != null ? inr(r.b2b_rate) : <span className="muted">Not set</span>) : priceText(r.price)}{Number(partnerLogin ? r.b2b_rate : r.price) > 0 && <div className="tiny muted">per {r.unit || 'unit'}</div>}</td>
                   <td className="small">{r.delivered.join(', ') || <span className="muted">not routed</span>}</td>
                   <td>{kbBadge(r.kbSource)}</td>
                 </tr>
@@ -120,12 +121,12 @@ export default function Knowledge({ embedded = false, providerId = null } = {}) 
         </Panel>
       )}
 
-      {open && <KnowledgeDrawer key={open.kind === "service" ? open.row.id : open.category} open={open} canEdit={canEdit} cat={cat.data} onClose={() => setOpen(null)} />}
+      {open && <KnowledgeDrawer key={open.kind === "service" ? open.row.id : open.category} open={open} canEdit={canEdit} isPartner={partnerLogin} cat={cat.data} onClose={() => setOpen(null)} />}
     </>
   );
 }
 
-function KnowledgeDrawer({ open, canEdit, cat, onClose }) {
+function KnowledgeDrawer({ open, canEdit, isPartner, cat, onClose }) {
   const [run, busy] = useAction();
   const row = open.kind === 'service' ? cat.rows.find((r) => r.id === open.row.id) || open.row : null;
   const current = open.kind === 'service' ? row.own : cat.byCat[open.category];
@@ -144,7 +145,7 @@ function KnowledgeDrawer({ open, canEdit, cat, onClose }) {
       ? <><Button onClick={() => setEditing(false)} disabled={busy}>Cancel</Button><Button kind="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button></>
       : <Button kind="primary" icon="edit" onClick={() => setEditing(true)}>{current ? 'Edit notes' : 'Write notes'}</Button>)}>
       {!editing ? (
-        open.kind === 'service' ? <KnowledgeBody row={row} />
+        open.kind === 'service' ? <KnowledgeBody row={row} isPartner={isPartner} />
           : current ? <KnowledgeBody row={{ price: null, unit: '', delivered: [], kb: current, kbSource: 'own', category: open.category }} />
           : <Empty title="No category notes yet" />
       ) : (

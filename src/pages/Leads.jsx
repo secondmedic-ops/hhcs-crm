@@ -298,7 +298,8 @@ function WorkOrders({ lead }) {
   const can = !lead.fulfilment_managed && canMove(profile, lead) && ['accepted', 'scheduled', 'dispatched', 'in_progress'].includes(lead.status);
   const wo = useLoad(() => q(db.from('v_deployments').select('*').eq('referral_id', lead.id).order('created_at')), [lead.id], ['partner_deployments']);
   const items = useLoad(() => q(db.from('case_items').select('id,service_name,category,qty,excluded').eq('case_id', lead.case_id).order('created_at')), [lead.case_id]);
-  const mine = (items.data || []).filter((i) => !i.excluded && (!lead.categories?.length || lead.categories.includes(i.category)));
+  const NON_BMM_CATEGORIES = ['lab', 'xray', 'ecg', 'visit'];
+  const mine = (items.data || []).filter((i) => !i.excluded && (!lead.categories?.length || lead.categories.includes(i.category)) && !NON_BMM_CATEGORIES.includes(i.category));
   const [form, setForm] = useState(null);
   const [step, setStep] = useState(null);
   const [run, busy] = useAction();
