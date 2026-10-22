@@ -59,7 +59,7 @@ class Query {
 // Must equal READ_RPC in cloudflare/src/services/data.ts (test read-rpc-sync). An action missing here is treated as a
 // write: after it returns every screen reloads, and a loader that calls it (my_pending_wrapup in the call bar,
 // provider_portal) then reloads itself in a loop, about once a second (21 Oct 2026: this used up the daily query budget).
-const READ_ONLY_RPC = new Set(['provider_portal', 'case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
+const READ_ONLY_RPC = new Set(['customer_feedback_summary', 'provider_portal', 'case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
   'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup']);
 
 // ---------------------------------------------------------------- production / local test: through the Worker

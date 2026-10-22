@@ -11,6 +11,7 @@ import { syncCallLogs } from './mo-sync';
 import { runAutodial, type Claim } from './autodial';
 import { missingCallingSettings, moEnv } from './myoperator-config';
 import { safeSmtpError, sendMail, smtpReady, SmtpError } from './smtp';
+import { deliverFeedbackEmail, type FeedbackEmailClaim } from './feedback';
 
 const istDate = (offsetDays = 0) => new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 86400e3).toISOString().slice(0, 10);
 
@@ -28,11 +29,13 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
       // (Settings > Rate card > Import rates), auto-dialer claim. A failing step is reported in errors; the others run.
       const changed: string[] = [];
       let claims: Claim[] = [];
+      let feedbackClaim: FeedbackEmailClaim | null = null;
       try {
-        const r = await asSystem(sql, (tx) => tx`select cron_minute(${missingCallingSettings(mo).length === 0}) as r`);
-        const out = (r.result[0]?.r || {}) as { swept?: number; silence?: number; claims?: Claim[]; errors?: Record<string, string> };
+        const r = await asSystem(sql, (tx) => tx`select cron_minute(${missingCallingSettings(mo).length === 0}, ${smtpReady(env) && !!env.APP_URL}) as r`);
+        const out = (r.result[0]?.r || {}) as { swept?: number; silence?: number; claims?: Claim[]; feedback_email?: FeedbackEmailClaim; errors?: Record<string, string> };
         changed.push(...r.changed);
         claims = out.claims || [];
+        feedbackClaim = out.feedback_email || null;
         if (out.swept) console.log('missed-call sweep', out.swept);
         if (out.silence) console.log('webhook silence alert', out.silence);
         for (const [step, msg] of Object.entries(out.errors || {})) console.log('cron ' + step, msg);
@@ -43,6 +46,10 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
         changed.push(...r.changed);
         if (r.dialled || r.failed) console.log('autodial', JSON.stringify({ dialled: r.dialled, failed: r.failed }));
       } catch (e) { console.log('autodial', (e as Error).message); }
+      if (feedbackClaim) {
+        try { const sent = await deliverFeedbackEmail(env, sql, feedbackClaim); changed.push(...sent.changed); }
+        catch { console.log('feedback email outcome could not be saved'); }
+      }
       notifyLive(env, exec, [...new Set(changed)]);
       // last, so it never delays the SLA scan: one recorded call without an AI summary (webhook missed it, synced call, retry)
       try { const r = await summariseBacklog(env, sql, exec); if (r.failed) console.log('ai backlog', r.error); }

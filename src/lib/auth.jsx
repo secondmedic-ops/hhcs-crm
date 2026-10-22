@@ -8,6 +8,7 @@ export const useAuth = () => useContext(AuthCtx);
 
 // What each role can open. Mirrors the RLS role matrix (slide 20).
 export const NAV = [
+  { to: '/feedback-list', label: 'Customer feedback', icon: 'chat', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   // Book My Medicare's own workspace (leads, jobs, products, team). `when` hides it from field staff with no provider.
   { to: '/bmm', label: 'BMM workspace', icon: 'board', roles: ['provider', 'field_staff', 'supervisor', 'coordinator', 'client_manager'], when: (p) => p.role !== 'field_staff' || !!p.provider_id },
   { to: '/fulfilment', label: 'Provider fulfilment', icon: 'swap', roles: ['provider','field_staff','supervisor','coordinator','agent','client_manager','client_clinical','medical_desk'] },

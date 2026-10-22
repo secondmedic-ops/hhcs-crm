@@ -440,6 +440,33 @@
 | resolution_notes | text | YES |
 | resolved_by | uuid | YES |
 
+## feedback_requests
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| workspace_id | uuid | NO |
+| patient_id | uuid | NO |
+| call_id | uuid | NO |
+| case_id | uuid | YES |
+| channel | text | NO |
+| status | text | NO |
+| token_hash | text | YES |
+| requested_at | timestamp with time zone | NO |
+| expires_at | timestamp with time zone | NO |
+| submitted_at | timestamp with time zone | YES |
+| delivery_status | text | NO |
+| delivery_attempted_at | timestamp with time zone | YES |
+| delivery_error | text | YES |
+
+## feedback_responses
+| column | type | nullable |
+|---|---|---|
+| id | uuid | NO |
+| request_id | uuid | NO |
+| rating | integer | NO |
+| comment | text | YES |
+| submitted_at | timestamp with time zone | NO |
+
 ## inbound_emails
 | column | type | nullable |
 |---|---|---|
@@ -1199,6 +1226,28 @@
 | patient_name | text | YES |
 | owner_name | text | YES |
 | resolve_due | timestamp with time zone | YES |
+
+## v_customer_feedback
+| column | type | nullable |
+|---|---|---|
+| id | uuid | YES |
+| workspace_id | uuid | YES |
+| patient_id | uuid | YES |
+| patient_name | text | YES |
+| mrn | text | YES |
+| call_id | uuid | YES |
+| case_id | uuid | YES |
+| case_no | text | YES |
+| channel | text | YES |
+| status | text | YES |
+| requested_at | timestamp with time zone | YES |
+| expires_at | timestamp with time zone | YES |
+| delivery_status | text | YES |
+| delivery_error | text | YES |
+| rating | integer | YES |
+| comment | text | YES |
+| submitted_at | timestamp with time zone | YES |
+| call_started_at | timestamp with time zone | YES |
 
 ## v_deployments
 | column | type | nullable |

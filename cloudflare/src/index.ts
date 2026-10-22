@@ -18,6 +18,7 @@ import { liveToken, notifyLive, openLive } from './services/live';
 import { runScheduled } from './services/cron';
 import { handleEmail } from './services/email';
 import { resolveStaffSession, logStaffRequest } from './services/staff-session';
+import { publicFeedback } from './services/feedback';
 import { checkPublicRateLimit, httpsRedirect, isScannerProbe, secure } from './security';
 
 export { LiveHub } from './services/live';
@@ -70,6 +71,12 @@ async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Resp
   }
 
   const found = match(req.method, path);
+  if (typeof found !== 'number' && found.route.access === 'feedback-token'
+    && req.method === 'POST' && (path === '/api/v1/feedback/open' || path === '/api/v1/feedback/submit')) {
+    const limited = checkPublicRateLimit(req, url);
+    if (limited) return limited;
+    return publicFeedback(req, env, exec, path === '/api/v1/feedback/submit');
+  }
   if (typeof found !== 'number' && found.route.access === 'public') {
     const limited = checkPublicRateLimit(req, url);
     if (limited) return limited;

@@ -189,6 +189,7 @@ function WorkspaceTab() {
     brand_name: workspace?.brand_name || '', support_number: workspace?.support_number || '', support_email: workspace?.support_email || '',
     discount_band_pct: workspace?.discount_band_pct ?? 10, allow_cash: !!s.allow_cash, collection_model: s.collection_model || 'A',
     idle_logout_minutes: s.idle_logout_minutes ?? 30,
+    feedback_expiry_hours: s.feedback_expiry_hours ?? 168, feedback_auto_email: s.feedback_auto_email !== false,
     did_lines: (s.did_numbers || []).map((n) => (s.did_labels?.[n] ? `${n} = ${s.did_labels[n]}` : n)).join('\n'),
   });
   const [run, busy] = useAction();
@@ -197,7 +198,7 @@ function WorkspaceTab() {
   const save = () => run(async () => {
     const patch = {
       brand_name: f.brand_name.trim(), support_number: f.support_number.trim() || null, support_email: f.support_email.trim() || null,
-      settings: { ...s, allow_cash: f.allow_cash, collection_model: f.collection_model, idle_logout_minutes: Math.max(0, Number(f.idle_logout_minutes) || 0), ...parseLines(f.did_lines) },
+      settings: { ...s, allow_cash: f.allow_cash, collection_model: f.collection_model, idle_logout_minutes: Math.max(0, Number(f.idle_logout_minutes) || 0), feedback_expiry_hours: Math.max(1, Math.min(720, Math.trunc(Number(f.feedback_expiry_hours) || 168))), feedback_auto_email: f.feedback_auto_email, ...parseLines(f.did_lines) },
     };
     if (cm) patch.discount_band_pct = band;
     await q(db.from('workspaces').update(patch).eq('id', workspace.id));
@@ -225,6 +226,8 @@ function WorkspaceTab() {
             <Input type="number" min="0" max="480" className="mono" value={f.idle_logout_minutes} onChange={set('idle_logout_minutes')} />
           </Field>
           <div className="span2"><Check label="Allow cash collection by field staff" checked={f.allow_cash} onChange={set('allow_cash')} /></div>
+          <Field label="Feedback link expiry (hours)" hint="1–720 hours · applies to new requests and replacement links"><Input type="number" min="1" max="720" step="1" value={f.feedback_expiry_hours} onChange={set('feedback_expiry_hours')} /></Field>
+          <div className="span2"><Check label="Automatically email call feedback links when the sender and customer email are configured" checked={f.feedback_auto_email} onChange={set('feedback_auto_email')} /></div>
         </div>
         <div className="row mt-16"><Button kind="primary" onClick={save} disabled={busy || !f.brand_name.trim() || !(band >= 0 && band <= 100)}>Save workspace</Button></div>
       </Panel>

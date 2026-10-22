@@ -10,10 +10,55 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "Supabase ES256 JWT"
+      },
+      "feedbackToken": {
+        "type": "http",
+        "scheme": "feedback-capability",
+        "description": "A 256-bit capability sent in the JSON POST body as token; never in the URL"
       }
     }
   },
   "paths": {
+    "/api/v1/feedback/open": {
+      "post": {
+        "summary": "Validate a single-use customer feedback capability",
+        "x-access": "feedback-token",
+        "security": [
+          {
+            "feedbackToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/feedback/submit": {
+      "post": {
+        "summary": "Submit call experience feedback using a single-use capability",
+        "x-access": "feedback-token",
+        "security": [
+          {
+            "feedbackToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/feedback/link": {
+      "post": {
+        "summary": "Generate a new feedback link for a visible request, invalidating the previous link",
+        "x-access": [
+          "agent",
+          "coordinator",
+          "supervisor",
+          "medical_desk",
+          "client_manager",
+          "client_clinical"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Service and database status",
@@ -706,6 +751,14 @@
     }
   },
   "x-tables-read": {
+    "v_customer_feedback": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "client_manager",
+      "client_clinical"
+    ],
     "workspaces": [
       "agent",
       "coordinator",
@@ -1442,6 +1495,14 @@
     }
   },
   "x-rpc": {
+    "customer_feedback_summary": [
+      "agent",
+      "coordinator",
+      "supervisor",
+      "medical_desk",
+      "client_manager",
+      "client_clinical"
+    ],
     "create_enquiry": [
       "agent",
       "coordinator",

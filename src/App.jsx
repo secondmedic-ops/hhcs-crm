@@ -33,6 +33,8 @@ const Invoice = lazy(() => import('./pages/Invoice.jsx'));
 const Knowledge = lazy(() => import('./pages/Knowledge.jsx'));
 const BmmWorkspace = lazy(() => import('./pages/BmmWorkspace.jsx'));
 const Email = lazy(() => import('./pages/Email.jsx'));
+const Feedback = lazy(() => import('./pages/Feedback.jsx'));
+const PublicFeedback = lazy(() => import('./pages/PublicFeedback.jsx'));
 
 function Boot({ children }) {
   const [ready, setReady] = useState(false);
@@ -81,6 +83,7 @@ function Routed() {
           <Route path="calls" element={g('/calls', <Calls />)} />
           <Route path="whatsapp" element={g('/whatsapp', <Whatsapp />)} />
           <Route path="email" element={g('/email', <Email />)} />
+          <Route path="feedback-list" element={g('/feedback-list', <Feedback />)} />
           <Route path="patients" element={g('/patients', <Patients />)} />
           <Route path="patients/:id" element={g('/patients', <PatientDetail />)} />
           <Route path="field" element={g('/field', <Field />)} />
@@ -110,6 +113,7 @@ export default function App() {
         <Routes>
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
+          <Route path="/feedback" element={<Suspense fallback={<Skeleton lines={5} />}><PublicFeedback /></Suspense>} />
           <Route path="*" element={<Boot><AuthProvider><Routed /></AuthProvider></Boot>} />
         </Routes>
       </ToastProvider>

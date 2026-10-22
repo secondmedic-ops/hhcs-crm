@@ -12,7 +12,7 @@ import { DEMO_USERS } from '../demo/seed.js';
 const GROUPS = [
   ['Book My Medicare', ['/bmm']],
   ['Operate', ['/', '/fulfilment', '/leads', '/console', '/cases', '/callbacks', '/calls', '/whatsapp', '/email', '/patients', '/field', '/my-visits', '/checklist', '/knowledge']],
-  ['Govern', ['/approvals', '/escalations', '/complaints', '/mis', '/audit']],
+  ['Govern', ['/approvals', '/escalations', '/complaints', '/feedback-list', '/mis', '/audit']],
   ['Configure', ['/settings']],
 ];
 

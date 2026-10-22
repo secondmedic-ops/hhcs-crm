@@ -59,6 +59,11 @@ const auth = read("cloudflare/src/api/auth.ts");
 const wrangler = read("cloudflare/wrangler.jsonc");
 if (!routes) errors.push("cloudflare/src/api/routes.ts is missing - every endpoint needs a role rule there");
 const PUBLIC_OK = new Set(["/api/v1/health", "/api/version", "/api/actuator/health", "/api/actuator/health/liveness"]);
+// Customer submission is a narrow capability boundary, never a public staff/data API.
+const FEEDBACK_TOKEN_OK = new Set(["/api/v1/feedback/open", "/api/v1/feedback/submit"]);
+for (const m of routes.matchAll(/method:\s*'(\w+)',\s*path:\s*'([^']+)',\s*access:\s*'feedback-token'/g)) {
+  if (m[1] !== 'POST' || !FEEDBACK_TOKEN_OK.has(m[2])) errors.push(`routes.ts: ${m[2]} cannot use feedback-token access`);
+}
 for (const m of routes.matchAll(/path:\s*'([^']+)',\s*access:\s*'public'/g)) {
   if (!PUBLIC_OK.has(m[1])) errors.push(`routes.ts: ${m[1]} is public - business endpoints must require login`);
 }

@@ -829,3 +829,14 @@ textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 6
   .inv-sign-block { break-inside: avoid !important; page-break-inside: avoid !important; }
   .inv-head { border-bottom-color: #000 !important; }
 }
+/* Customer call feedback */
+.feedback-public { max-width: 540px; margin: 40px auto; padding: 24px; border: 1px solid var(--line); background: var(--paper); }
+.feedback-public h1 { font-size: 25px; margin: 18px 0; }
+.feedback-public p { line-height: 1.6; }
+.feedback-stars { margin: 20px 0; padding: 12px; border: 1px solid var(--line); }
+.feedback-stars label { display: grid; justify-items: center; gap: 4px; padding: 6px; cursor: pointer; }
+.feedback-stars span { font-size: 27px; color: var(--muted); }
+.feedback-stars .selected span { color: var(--accent); }
+.feedback-comment { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 440px; min-width: 180px; }
+.feedback-error { color: var(--danger); }
+@media (max-width: 560px) { .feedback-public { margin: 16px; padding: 18px; } }

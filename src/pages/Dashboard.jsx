@@ -17,6 +17,7 @@ export default function Dashboard() {
   const { workspace, isClient, can } = useAuth();
   const [range, setRange] = useState('today');
   const now = useNow(30000);
+  const feedback = useLoad(() => rpc('customer_feedback_summary'), [], ['feedback_requests', 'feedback_responses']);
   const [from, to] = rangeOf(range);
   const live = ['calls', 'cases', 'callbacks', 'escalations', 'complaints', 'payments', 'approvals'];
   const { data: k, error } = useLoad(() => rpc('dashboard_kpis', { p_from: from, p_to: to }), [range], live);
@@ -42,6 +43,7 @@ export default function Dashboard() {
       {error && <div className="badge danger mb-12">{error}</div>}
 
       <div className="kpis">
+        <Kpi label="Customer Feedback" value={feedback.data && (feedback.data.responses ? `${Number(feedback.data.average).toFixed(2)} / 5` : 'No ratings yet')} detail={feedback.error || (feedback.data && `${feedback.data.responses} submitted responses · all time`)} to="/feedback-list" />
         <Kpi label="Calls" value={k && num(c.total)} detail={k && `${c.inbound} in · ${c.outbound} out`} to="/calls" />
         <Kpi label="Answered" value={k && pct(answeredPct)} detail={k && `${c.answered_30s} within 30 s`} tone={answeredPct != null && answeredPct < 90 ? 'warn' : 'ok'} to="/calls" />
         <Kpi label="Missed / abandoned" value={k && `${c.missed}/${c.abandoned}`} detail="auto-queued for callback" tone={c.missed + c.abandoned > 0 ? 'warn' : ''} to="/callbacks" />

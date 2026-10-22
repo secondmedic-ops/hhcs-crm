@@ -55,6 +55,7 @@ export function Privacy() {
         <li>Staff activity: logins, record views, edits, recording playback and exports.</li>
       </ul>
       <h2>Why we use it</h2>
+      <p>Customer feedback: a private link allows you to submit an optional call experience rating and comment without a CRM login. Responses are linked to the interaction and reviewed by authorized HHCS and SecondMedic staff to assess service experience. Please keep medical details and personal information out of comments. Each link expires and accepts one response.</p>
       <p>Only to deliver HHCS home services: responding to enquiries, quoting from the approved rate card, booking and deploying field staff, collecting samples and performing ECG and X-ray at home, delivering reports, collecting payments, handling complaints and escalations, and producing MIS for Hinduja. Data is not used for SecondMedic marketing or any independent purpose.</p>
       <h2>AI processing</h2>
       <p>Call recordings and case notes may be processed by an AI model to produce transcripts, summaries, quality scores and suggested next steps. Outputs are reviewed by staff, are not used to make clinical decisions, and are stored with the case. The AI provider is listed as a sub-processor in the DPA.</p>

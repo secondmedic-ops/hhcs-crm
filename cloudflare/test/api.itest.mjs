@@ -3,6 +3,7 @@ import { providerFulfilmentApiTests } from './provider-fulfilment.itest.mjs';
 // Covers: login required (missing / forged / expired / wrong-audience tokens), role rules per endpoint, Row Level
 // Security through the API, the case workflow, MyOperator webhooks + click-to-call, and live updates.
 import { staffSessionTests } from './staff-session.itest.mjs';
+import { feedbackApiTests } from './feedback.itest.mjs';
 import { rateApiTests } from './rates.itest.mjs';
 const WS = 'HHC';
 const U = {
@@ -798,5 +799,6 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await staffSessionTests({ call, sql, check, U, ws });
   await rateApiTests({ call, sql, check, U, ws });
   await providerFulfilmentApiTests({call,sql,check,U,ws,token,base});
+  await feedbackApiTests({ call, sql, check, U, ws });
   return { total, failed };
 }

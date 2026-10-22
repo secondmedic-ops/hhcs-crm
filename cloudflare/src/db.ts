@@ -129,6 +129,9 @@ export async function asSystem<T>(sql: Sql, fn: (tx: Tx) => Promise<T>): Promise
  * by the views and RPCs). The rehearsal checks them against the database built from supabase/migrations.
  */
 export const SCHEMA: Record<string, string[]> = {
+  feedback_requests: ['id', 'workspace_id', 'patient_id', 'call_id', 'case_id', 'token_hash', 'status', 'expires_at', 'submitted_at', 'delivery_status', 'delivery_attempted_at', 'delivery_error'],
+  feedback_responses: ['id', 'request_id', 'rating', 'comment', 'submitted_at'],
+  v_customer_feedback: ['id'],
   staff_sessions: ['id', 'workspace_id', 'supervisor_id', 'staff_id', 'expires_at', 'ended_at'],
   workspaces: ['id', 'code', 'settings'],
   profiles: ['id', 'workspace_id', 'full_name', 'email', 'phone', 'role', 'agent_code', 'myoperator_user_id', 'myoperator_extension', 'skills', 'active', 'provider_id', 'integration_only',

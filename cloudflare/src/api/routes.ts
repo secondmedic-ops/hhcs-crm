@@ -7,13 +7,14 @@ import { staffDirectory, startStaffSession, endStaffSession } from '../services/
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
 import { dial, recording, sendMessage, sendQuote, sendWhatsAppChat } from '../services/calls';
 import { sendEmailChat } from '../services/emailChat';
+import { issueFeedbackLink } from '../services/feedback';
 import { whatsappSession, whatsappSessionAction, testWaba } from '../services/myoperator';
 import { pingLocation } from '../services/field';
 import { aiStatus, caseBrief, command, extractEnquiry, summariseCall, liveCallToken, saveLiveTranscript } from '../services/ai';
 import { aiEnv } from '../services/ai-config';
 import { aiSettings, createUser, emailStatus, integrations, linkMoUsers, moSettings, moUsers, saveAiSettings, saveMoSettings, setTelephony, syncNow, testAi, testEmail, testMo, webhookEvents, webhookHealth } from '../services/admin';
 
-export type Access = 'public' | 'login' | readonly Role[];
+export type Access = 'public' | 'feedback-token' | 'login' | readonly Role[];
 export interface Route {
   method: 'GET' | 'POST';
   path: string;
@@ -36,6 +37,9 @@ const TECH: readonly Role[] = ['admin', 'supervisor'];
 const changing = (r: { body: unknown; changed: string[] }, c: Ctx) => { c.changed.push(...r.changed); return r.body; };
 
 export const routes: Route[] = [
+  { method: 'POST', path: '/api/v1/feedback/open', access: 'feedback-token', summary: 'Validate a single-use customer feedback capability' },
+  { method: 'POST', path: '/api/v1/feedback/submit', access: 'feedback-token', summary: 'Submit call experience feedback using a single-use capability' },
+  { method: 'POST', path: '/api/v1/feedback/link', access: CALL_VIEW, handler: (c, b) => issueFeedbackLink(c, b), summary: 'Generate a new feedback link for a visible request, invalidating the previous link' },
   { method: 'GET', path: '/api/v1/health', access: 'public', summary: 'Service and database status' },
   { method: 'GET', path: '/api/version', access: 'public', summary: 'Deployed commit' },
   { method: 'GET', path: '/api/actuator/health', access: 'public', summary: 'Health with database check' },
@@ -106,13 +110,13 @@ export function contract() {
     paths[r.path][r.method.toLowerCase()] = {
       summary: r.summary,
       'x-access': r.access,
-      security: r.access === 'public' ? [] : [{ supabase: [] }],
+      security: r.access === 'public' ? [] : r.access === 'feedback-token' ? [{ feedbackToken: [] }] : [{ supabase: [] }],
     };
   }
   return {
     openapi: '3.0.3',
     info: { title: 'CareDesk CRM API (Hinduja Home Care x SecondMedic)', version: '1' },
-    components: { securitySchemes: { supabase: { type: 'http', scheme: 'bearer', bearerFormat: 'Supabase ES256 JWT' } } },
+    components: { securitySchemes: { supabase: { type: 'http', scheme: 'bearer', bearerFormat: 'Supabase ES256 JWT' }, feedbackToken: { type: 'http', scheme: 'feedback-capability', description: 'A 256-bit capability sent in the JSON POST body as token; never in the URL' } } },
     paths,
     'x-tables-read': READ,
     'x-tables-write': WRITE,

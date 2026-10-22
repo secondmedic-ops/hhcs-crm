@@ -11,6 +11,8 @@ import {
 } from '../components/ui.jsx';
 import Icon, { channelIcon } from '../components/icons.jsx';
 import { AiCallState, SUMMARY_ROLES } from '../components/AiCallState.jsx';
+import { FeedbackHistory } from './Feedback.jsx';
+import FeedbackRequests from '../components/FeedbackRequests.jsx';
 
 const dash = (v) => (v == null || v === '' ? '–' : v);
 const GENDER = { M: 'Male', F: 'Female', O: 'Other' };
@@ -101,9 +103,11 @@ export default function PatientDetail() {
             ['timeline', 'Unified timeline', timeline.data?.length],
             ['cases', 'Cases', cases.data?.length],
             ['calls', 'Calls', calls.data?.length],
+            ['feedback', 'Feedback'],
             ...(canPay ? [['payments', 'Payments', pays.data?.length]] : []),
           ]} />
           {tab === 'timeline' && <Timeline load={timeline} caseNo={caseNo} onCase={(cid) => nav(`/cases/${cid}`)} />}
+          {tab === 'feedback' && <><FeedbackHistory patientId={id} /><FeedbackRequests patientId={id} /></>}
           {tab === 'cases' && <CasesTab load={cases} onOpen={(cid) => nav(`/cases/${cid}`)} />}
           {tab === 'calls' && <CallsTab load={calls} onCase={(cid) => nav(`/cases/${cid}`)} ai={ai.data} canRun={canSummarise} summarising={summarising} onSummarise={summarise} />}
           {tab === 'payments' && canPay && <PaymentsTab load={pays} caseNo={caseNo} onCase={(cid) => nav(`/cases/${cid}`)} />}
