@@ -32,6 +32,7 @@ test('security headers on HTTPS responses; WebSocket upgrades untouched', async 
   expect(csp).toContain('wss://hhcs-caredesk.smdevs.workers.dev');
   expect(csp).toContain('https://eilshdpbnhcohroujaui.supabase.co');
   expect(csp).toContain('wss://generativelanguage.googleapis.com');
+  expect(csp).toContain('https://*.tile.openstreetmap.org');
   expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   expect(csp).not.toMatch(/script-src[^;]*data:/);
   const local = contentSecurityPolicy(new URL('http://127.0.0.1:8787/'), {});

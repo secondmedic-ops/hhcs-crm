@@ -29,6 +29,28 @@ const MMR_LANDMARKS = [
   ['Navi Mumbai (Vashi)', 19.077, 72.998],
 ];
 
+const TILE_PROVIDERS = {
+  osm: {
+    label: 'OSM Standard',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options: {
+      maxZoom: 19,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
+    },
+  },
+  carto: {
+    label: 'Carto CDN',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    options: {
+      maxZoom: 19,
+      subdomains: 'abcd',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
+    },
+  },
+};
+
 const initials = (name) =>
   (name || 'FS')
     .split(' ')
@@ -46,6 +68,8 @@ export default function StaffMap({
   height = 400,
 }) {
   const [mode, setMode] = useState('street'); // 'street' (OpenStreetMap) | 'radar' (Vector)
+  const [tileProvider, setTileProvider] = useState('carto'); // 'carto' (Fast CDN) | 'osm' (OSM Standard)
+  const [mapReady, setMapReady] = useState(0);
   const [viewFilter, setViewFilter] = useState('all'); // 'all' | 'staff' | 'visits'
   const [selected, setSelected] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -53,6 +77,7 @@ export default function StaffMap({
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const layerGroupRef = useRef(null);
+  const tileLayerRef = useRef(null);
 
   // Filter valid coordinates
   const staffPts = useMemo(
@@ -79,52 +104,76 @@ export default function StaffMap({
     [visits]
   );
 
-  // Initialize Leaflet OpenStreetMap
+  // Initialize Leaflet map and container observers
   useEffect(() => {
     if (mode !== 'street' || !mapContainerRef.current) return;
 
-    if (!mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, {
-        center: [19.076, 72.8777], // Mumbai MMR
-        zoom: 11,
-        zoomControl: true,
-        attributionControl: true,
+    const map = L.map(mapContainerRef.current, {
+      center: [19.076, 72.8777], // Mumbai MMR
+      zoom: 11,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    const layer = L.layerGroup().addTo(map);
+    layerGroupRef.current = layer;
+    mapInstanceRef.current = map;
+
+    setMapReady((v) => v + 1);
+
+    // Ensure map tiles render correctly on mount, tab switches, and resizes
+    const t1 = setTimeout(() => map.invalidateSize(), 50);
+    const t2 = setTimeout(() => map.invalidateSize(), 200);
+    const t3 = setTimeout(() => map.invalidateSize(), 500);
+
+    const onResize = () => map.invalidateSize();
+    window.addEventListener('resize', onResize);
+
+    let ro = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      ro = new ResizeObserver(() => {
+        map.invalidateSize();
       });
-
-      // Free OpenStreetMap tile server (zero cost, zero API keys forever)
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
-      }).addTo(map);
-
-      const layer = L.layerGroup().addTo(map);
-      layerGroupRef.current = layer;
-      mapInstanceRef.current = map;
+      ro.observe(mapContainerRef.current);
     }
 
-    // Ensure map tiles render correctly on mount/unhide
-    const timer = setTimeout(() => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.invalidateSize();
-      }
-    }, 100);
-
     return () => {
-      clearTimeout(timer);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      window.removeEventListener('resize', onResize);
+      if (ro) ro.disconnect();
+      map.remove();
+      mapInstanceRef.current = null;
+      layerGroupRef.current = null;
+      tileLayerRef.current = null;
     };
   }, [mode]);
 
-  // Clean up Leaflet instance when leaving street mode or unmounting
+  // Manage tile layer and handle automatic fallback if provider is blocked or slow
   useEffect(() => {
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-        layerGroupRef.current = null;
+    if (mode !== 'street' || !mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+
+    const cfg = TILE_PROVIDERS[tileProvider] || TILE_PROVIDERS.carto;
+    let failCount = 0;
+    const tileLayer = L.tileLayer(cfg.url, cfg.options);
+
+    tileLayer.on('tileerror', () => {
+      failCount++;
+      // If tiles fail to load (e.g. adblocker, ISP block, rate limit), switch seamlessly to alternative provider
+      if (failCount >= 2) {
+        setTileProvider((curr) => (curr === 'carto' ? 'osm' : 'carto'));
       }
-    };
-  }, []);
+    });
+
+    tileLayer.addTo(map);
+    tileLayerRef.current = tileLayer;
+  }, [mode, tileProvider, mapReady]);
 
   // Update markers, trajectories, and bounds on OpenStreetMap
   useEffect(() => {
@@ -300,7 +349,7 @@ export default function StaffMap({
     } else if (boundsPoints.length === 1) {
       mapInstanceRef.current.setView(boundsPoints[0], 14);
     }
-  }, [mode, staffPts, visitPts, viewFilter, now]);
+  }, [mode, mapReady, staffPts, visitPts, viewFilter, now]);
 
   // Vector radar coordinate math for fallback mode
   const bounds = useMemo(() => {
@@ -425,6 +474,16 @@ export default function StaffMap({
         </div>
 
         <div className="row gap-6">
+          {mode === 'street' && (
+            <Button
+              size="xs"
+              kind="ghost"
+              onClick={() => setTileProvider((p) => (p === 'carto' ? 'osm' : 'carto'))}
+              title={`Switch map tile provider (Current: ${TILE_PROVIDERS[tileProvider]?.label || 'Carto CDN'})`}
+            >
+              Layer: {tileProvider === 'carto' ? 'Carto CDN' : 'OSM'}
+            </Button>
+          )}
           <Badge kind="ok" title="100% Free OpenStreetMap: No Google API billing, no credit card, no fees forever">
             100% Free Map
           </Badge>
