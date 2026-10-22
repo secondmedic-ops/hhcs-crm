@@ -35,7 +35,7 @@ export async function feedbackApiTests({ call, sql, check, U, ws }) {
   check(stored.token_hash===createHash('sha256').update(token).digest('hex') && stored.token_hash!==token,'feedback: only token hash is stored');
   check((await post(null,'open',{})).status===404 && (await post(null,'open',{token:'0'.repeat(64)})).status===404,'feedback: missing and invalid capabilities rejected');
   const opened = await post(null,'open',{token});
-  check(opened.status===200 && JSON.stringify(opened.body)==='{"ok":true}','feedback: public form reveals no patient, call or medical data');
+  check(opened.status===200 && opened.body.ok===true && Object.keys(opened.body).sort().join(',')==='experience,ok','feedback: public form reveals no patient, call or medical data');
   for (const rating of [0,6,2.5,'5',null]) check((await post(null,'submit',{token,rating})).status===400,`feedback: invalid rating ${rating} rejected`);
   check((await post(null,'submit',{token,rating:5,comment:'x'.repeat(2001)})).status===400,'feedback: long comments rejected');
   const attempts = await Promise.all([post(null,'submit',{token,rating:5,comment:'<script>test only</script>'}),post(null,'submit',{token,rating:5})]);

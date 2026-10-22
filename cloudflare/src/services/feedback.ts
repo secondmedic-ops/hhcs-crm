@@ -15,17 +15,22 @@ export function feedbackUrl(origin: string, token: string) {
   url.hash = token;
   return url.toString();
 }
+export function feedbackRequestText(id: string, experience: string, link: string, emailReply = false) {
+  const question = experience === 'service' ? 'How would you rate the service delivered by Hinduja Home Care Services?' : 'How would you rate your recent call interaction with our team?';
+  return `${question}\nPlease reply with Rating: 1 to Rating: 5 on the first line, followed by an optional comment.\nReference: FB-${id}\n${emailReply ? 'Keep the original message and private link quoted in your email reply.\n' : 'Quote this message when replying on WhatsApp, or include the reference.\n'}You can also submit here: ${link}\nPlease do not include medical details or personal information.`;
+}
 
 export async function issueFeedbackLink(c: Ctx, body: { request_id?: string }) {
   const id = body?.request_id;
   if (!id || !/^[a-f0-9-]{36}$/i.test(id)) throw new ApiError(400, 'Choose a feedback request');
-  const visible = await readAsUser(c.sql, c.user.id, tx => tx`select id from v_customer_feedback where id = ${id}::uuid`);
+  const visible = await readAsUser(c.sql, c.user.id, tx => tx`select id,experience from v_customer_feedback where id = ${id}::uuid`);
   if (!visible.length) throw new ApiError(404, 'Feedback request not found');
   const token = newToken();
   const hash = await hashFeedbackToken(token);
   const { result, changed } = await asUser(c.sql, c.user.id, tx => tx`select feedback_issue_link(${id}::uuid, ${hash}) as expires_at`);
   c.changed.push(...changed);
-  return { url: feedbackUrl(c.env.APP_URL || c.url.origin, token), expires_at: result[0].expires_at };
+  const url = feedbackUrl(c.env.APP_URL || c.url.origin, token);
+  return { url, expires_at: result[0].expires_at, message: feedbackRequestText(id,visible[0].experience,url) };
 }
 
 /** Capability-only endpoints: the token is in the POST body, never a path/query string or logs. */
@@ -54,7 +59,7 @@ export async function publicFeedback(req: Request, env: Env, exec: ExecutionCont
     const hash = await hashFeedbackToken(body.token);
     sql = connect(env);
     const { result, changed } = await asSystem(sql, async tx => {
-      const [r] = await tx`select id, status, expires_at <= now() as expired from feedback_requests where token_hash = ${hash} for update`;
+      const [r] = await tx`select id, status, experience, expires_at <= now() as expired from feedback_requests where token_hash = ${hash} for update`;
       if (!r) throw new ApiError(404, 'This feedback link is invalid');
       if (r.status === 'submitted') throw new ApiError(409, 'Feedback has already been submitted using this link. Thank you');
       if (r.expired) throw new ApiError(410, 'This feedback link has expired. Please ask our team for a new link');
@@ -62,7 +67,7 @@ export async function publicFeedback(req: Request, env: Env, exec: ExecutionCont
         await tx`insert into feedback_responses(request_id, rating, comment) values (${r.id}, ${body.rating}, ${body.comment?.trim() || null})`;
         await tx`update feedback_requests set status = 'submitted', submitted_at = now() where id = ${r.id}`;
       }
-      return { ok: true };
+      return { ok: true, experience: r.experience };
     });
     if (changed.length) notifyLive(env, exec, changed);
     return json(result);
@@ -74,14 +79,14 @@ export async function publicFeedback(req: Request, env: Env, exec: ExecutionCont
   }
 }
 
-export interface FeedbackEmailClaim { id: string; email: string; token: string }
+export interface FeedbackEmailClaim { id: string; email: string; token: string; experience?: string; reply_to?: string }
 export async function deliverFeedbackEmail(env: Env, sql: Sql, claim: FeedbackEmailClaim, send: typeof sendMail = sendMail) {
   let status = 'accepted', error: string | null = null;
   try {
     if (!isAddress(claim.email)) throw new ApiError(400, 'Recipient address is invalid');
     const link = feedbackUrl(env.APP_URL || '', claim.token);
-    await send(env, { to: [claim.email], subject: 'Share Your Feedback · Hinduja Home Care Services',
-      text: `Thank you for speaking with our team. Please rate your recent interaction with our team and share your feedback here: ${link}\n\nThis feedback is about your call experience. It does not confirm service delivery.` });
+    await send(env, { to: [claim.email], subject: `Share Your Feedback · ${claim.experience === 'service' ? 'Service' : 'Call'} [FB-${claim.id}]`,
+      replyTo: claim.reply_to && isAddress(claim.reply_to) ? claim.reply_to : env.EMAIL_REPLY_TO, text: feedbackRequestText(claim.id,claim.experience || 'call',link,true) });
   } catch (e) {
     status = e instanceof SmtpError && e.ambiguous ? 'unknown' : 'failed';
     error = safeSmtpError(e);

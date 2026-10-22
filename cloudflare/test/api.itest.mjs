@@ -4,6 +4,7 @@ import { providerFulfilmentApiTests } from './provider-fulfilment.itest.mjs';
 // Security through the API, the case workflow, MyOperator webhooks + click-to-call, and live updates.
 import { staffSessionTests } from './staff-session.itest.mjs';
 import { feedbackApiTests } from './feedback.itest.mjs';
+import { feedbackReplyApiTests } from './feedback-replies.itest.mjs';
 import { rateApiTests } from './rates.itest.mjs';
 const WS = 'HHC';
 const U = {
@@ -800,5 +801,6 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   await rateApiTests({ call, sql, check, U, ws });
   await providerFulfilmentApiTests({call,sql,check,U,ws,token,base});
   await feedbackApiTests({ call, sql, check, U, ws });
+  await feedbackReplyApiTests({ call, sql, check, U, ws, hook: ev => hook(ev, newKey) });
   return { total, failed };
 }

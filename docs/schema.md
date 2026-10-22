@@ -446,7 +446,7 @@
 | id | uuid | NO |
 | workspace_id | uuid | NO |
 | patient_id | uuid | NO |
-| call_id | uuid | NO |
+| call_id | uuid | YES |
 | case_id | uuid | YES |
 | channel | text | NO |
 | status | text | NO |
@@ -457,6 +457,7 @@
 | delivery_status | text | NO |
 | delivery_attempted_at | timestamp with time zone | YES |
 | delivery_error | text | YES |
+| experience | text | NO |
 
 ## feedback_responses
 | column | type | nullable |
@@ -466,6 +467,8 @@
 | rating | integer | NO |
 | comment | text | YES |
 | submitted_at | timestamp with time zone | NO |
+| source_channel | text | NO |
+| source_message_id | text | YES |
 
 ## inbound_emails
 | column | type | nullable |
@@ -1248,6 +1251,8 @@
 | comment | text | YES |
 | submitted_at | timestamp with time zone | YES |
 | call_started_at | timestamp with time zone | YES |
+| experience | text | YES |
+| source_channel | text | YES |
 
 ## v_deployments
 | column | type | nullable |

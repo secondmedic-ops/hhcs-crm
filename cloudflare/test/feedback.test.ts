@@ -26,7 +26,7 @@ test('feedback email records SMTP acceptance only after send succeeds', async ()
   const send: any = vi.fn().mockResolvedValue({ accepted:true });
   const r = await deliverFeedbackEmail(env,{} as any,claim,send);
   expect(r.status).toBe('accepted'); expect(updates[0][0]).toBe('accepted');
-  expect(send.mock.calls[0][1].text).toContain('recent interaction');
+  expect(send.mock.calls[0][1].text).toContain('call interaction');
   expect(send.mock.calls[0][1].text).toContain(`/feedback#${claim.token}`);
   expect(send.mock.calls[0][1].text).not.toContain('Patient');
 });

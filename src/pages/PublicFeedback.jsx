@@ -10,10 +10,11 @@ export default function PublicFeedback() {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  const [experience, setExperience] = useState('call');
   useEffect(() => {
     // Remove the capability from browser history after taking a memory-only copy.
     window.history.replaceState(null, '', '/feedback');
-    api.feedbackOpen(token).then(() => setState('ready')).catch(e => { setError(e.message); setState('unavailable'); });
+    api.feedbackOpen(token).then(r => { setExperience(r.experience); setState('ready'); }).catch(e => { setError(e.message); setState('unavailable'); });
   }, [token]);
   const submit = async e => {
     e.preventDefault(); setBusy(true); setError('');
@@ -27,8 +28,8 @@ export default function PublicFeedback() {
     {state === 'loading' ? <Skeleton lines={5} /> : state === 'done' ? <p role="status">Thank you for sharing your feedback.</p> : <>
       {error && <p role="alert" className="feedback-error">{error}</p>}
       {state === 'ready' && <form onSubmit={submit}>
-        <p>How would you rate your recent interaction with our team? Please select a rating and optionally share your feedback.</p>
-        <p className="small muted">This rates your call experience. It does not confirm that a service was delivered. Please do not include medical details or personal information.</p>
+        <p>{experience === 'service' ? 'How would you rate the service delivered by Hinduja Home Care Services?' : 'How would you rate your recent call interaction with our team?'} Please select a rating and optionally share your feedback.</p>
+        <p className="small muted">{experience === 'service' ? 'This rates your delivered service.' : 'This rates your call experience. It does not confirm that a service was delivered.'} Please do not include medical details or personal information.</p>
         <fieldset className="feedback-stars"><legend>Rating (required)</legend>
           <div className="row">{[1,2,3,4,5].map(n => <label key={n} className={rating >= n ? 'selected' : ''}>
             <input type="radio" name="rating" value={n} required checked={rating === n} onChange={() => setRating(n)} aria-label={`${n} ${n === 1 ? 'star' : 'stars'}`} />

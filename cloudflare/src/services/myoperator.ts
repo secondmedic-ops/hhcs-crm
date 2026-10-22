@@ -11,6 +11,7 @@ import type { Env } from '../env';
 import { notifyLive } from './live';
 import { missingCallingSettings, moEnv, wabaConfiguration } from './myoperator-config';
 import { ApiError } from '../domain/errors';
+import { parseFeedbackReply, receiveFeedbackReply } from './feedback-replies';
 
 const OBD_URL = 'https://obd-api.myoperator.co/obd-api-v1';
 type J = Record<string, any>;
@@ -190,7 +191,13 @@ export async function processEvents(sql: Sql, env: Env, env0: Env, exec: Executi
   let stored = 0, applied = 0, failed = 0;
   for (const ev of events) {
     const eventId = String(ev.event_id || `${ev.event_type}:${ev.session_id}:${ev.event_sequence ?? Date.now()}`);
-    const payload = ev.v1 || ev.incall || ev.raw || ev;
+    let payload = ev.v1 || ev.incall || ev.raw || ev;
+    if (String(ev.event_type || '').startsWith('message.')) {
+      const p = ev.payload || {};
+      const text = String(p.data?.context?.body || p.text || p.body || p.caption || '');
+      const feedback = parseFeedbackReply('', text);
+      if (feedback.reference || feedback.token || feedback.rating != null) payload = { feedback_reply: true, message_id: p.id || p.message_id || null };
+    }
     const fresh = await sql`insert into webhook_events (event_id, source, event_type, payload)
       values (${eventId}, ${ev.source || 'myoperator'}, ${ev.event_type ?? null}, ${sql.json(payload)}) on conflict do nothing returning event_id`;
     if (!fresh.length) continue; // already handled (MyOperator retry, or the same call from the other route)
@@ -215,7 +222,8 @@ export async function processEvents(sql: Sql, env: Env, env0: Env, exec: Executi
       }
     } catch (e) {
       failed++;
-      await sql`update webhook_events set error = ${String((e as Error).message || e)} where event_id = ${eventId}`;
+      const error = String(ev.event_type || '').startsWith('message.') ? 'Message processing failed' : String((e as Error).message || e);
+      await sql`update webhook_events set error = ${error} where event_id = ${eventId}`;
     }
   }
   return { stored, applied, failed, changed };
@@ -575,6 +583,14 @@ async function onMessageEvent(tx: Tx, env: Env, ev: J) {
   ).trim();
   const text = rawText || (mediaType !== 'text' ? `[${mediaType.toUpperCase()} attachment]` : '');
   const mediaUrl = p.data?.context?.link || p.data?.context?.url || p.media_url || null;
+  if (inbound) {
+    const contextId = p.context?.id || p.reply_to_message_id;
+    const [original] = contextId ? await tx`select i.body from interactions i join patients pt on pt.id=i.patient_id
+      where i.workspace_id=${ws}::uuid and i.channel='whatsapp' and i.direction='outbound'
+        and i.meta->>'message_id'=${String(contextId)} and pt.mobile=${number} order by i.occurred_at desc limit 1` : [];
+    const feedback = await receiveFeedbackReply(tx,{ workspace:ws, channel:'whatsapp',sender:number,text,messageId:msgId,contextText:original?.body });
+    if (feedback.handled) return;
+  }
 
   let [patient] = await tx`select id::text, full_name from patients where workspace_id = ${ws}::uuid and mobile = ${number} limit 1`;
   let [kase] = patient ? await tx`select id::text from cases where patient_id = ${patient.id}::uuid and stage not in ('closed','cancelled') order by created_at desc limit 1` : [];

@@ -5,17 +5,23 @@ import PostalMime from 'postal-mime';
 import { asSystem, connect } from '../db';
 import type { Env } from '../env';
 import { notifyLive } from './live';
+import { receiveFeedbackReply } from './feedback-replies';
 
 export async function handleEmail(message: ForwardableEmailMessage, env: Env, exec: ExecutionContext) {
   const raw = await new Response(message.raw).arrayBuffer();
   const mail = await PostalMime.parse(raw);
   const from = String(mail.from?.address || message.from || '').toLowerCase();
-  const text = String(mail.text || mail.html?.replace(/<[^>]+>/g, ' ') || '').trim().slice(0, 8000);
+  const rawHtml = String(mail.html || '');
+  const htmlLinks = rawHtml.match(/https?:\/\/[^\s"'<>]+/gi)?.join('\n') || '';
+  const bodyText = String(mail.text || rawHtml.replace(/<blockquote[\s\S]*?<\/blockquote>/gi, '').replace(/<[^>]+>/g, ' ')).trim();
+  const text = String(mail.text || `${bodyText}\n> Quoted:\n${htmlLinks}`).trim().slice(0, 8000);
   const sql = connect(env);
   try {
     const { changed } = await asSystem(sql, async (tx) => {
       const [w] = await tx`select id from workspaces where code = ${env.DEFAULT_WORKSPACE_CODE || 'HHC'}`;
       const ws = w.id;
+      const feedback = await receiveFeedbackReply(tx, { workspace: ws, channel: 'email', sender: from, subject: String(mail.subject || ''), text, messageId: mail.messageId });
+      if (feedback.handled) return;
       // case reference in subject/body wins, then sender email
       const ref = `${mail.subject} ${text}`.match(/[A-Z]{2,5}-\d{6}-\d{5}/)?.[0];
       let [kase] = ref ? await tx`select id, patient_id from cases where case_no = ${ref}` : [];

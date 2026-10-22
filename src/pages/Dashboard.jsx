@@ -43,7 +43,8 @@ export default function Dashboard() {
       {error && <div className="badge danger mb-12">{error}</div>}
 
       <div className="kpis">
-        <Kpi label="Customer Feedback" value={feedback.data && (feedback.data.responses ? `${Number(feedback.data.average).toFixed(2)} / 5` : 'No ratings yet')} detail={feedback.error || (feedback.data && `${feedback.data.responses} submitted responses · all time`)} to="/feedback-list" />
+        <Kpi label="Customer Feedback · Calls" value={feedback.data && (feedback.data.responses ? `${Number(feedback.data.average).toFixed(2)} / 5` : 'No ratings yet')} detail={feedback.error || (feedback.data && `${feedback.data.responses} submitted responses · all time`)} to="/feedback-list?experience=call" />
+        <Kpi label="Customer Feedback · Services" value={feedback.data && (feedback.data.service?.responses ? `${Number(feedback.data.service.average).toFixed(2)} / 5` : 'No ratings yet')} detail={feedback.error || (feedback.data && `${feedback.data.service?.responses || 0} submitted responses · all time`)} to="/feedback-list?experience=service" />
         <Kpi label="Calls" value={k && num(c.total)} detail={k && `${c.inbound} in · ${c.outbound} out`} to="/calls" />
         <Kpi label="Answered" value={k && pct(answeredPct)} detail={k && `${c.answered_30s} within 30 s`} tone={answeredPct != null && answeredPct < 90 ? 'warn' : 'ok'} to="/calls" />
         <Kpi label="Missed / abandoned" value={k && `${c.missed}/${c.abandoned}`} detail="auto-queued for callback" tone={c.missed + c.abandoned > 0 ? 'warn' : ''} to="/callbacks" />

@@ -52,9 +52,9 @@ export interface QueryResult { data: unknown; count: number | null; error: strin
 export interface BatchOp { kind?: 'select' | 'rpc'; spec?: unknown; fn?: string; args?: Record<string, unknown> }
 
 export const api = {
-  feedbackOpen: (token: string) => request<{ ok: boolean }>('/api/v1/feedback/open', { method: 'POST', body: { token }, capability: true }),
+  feedbackOpen: (token: string) => request<{ ok: boolean; experience: string }>('/api/v1/feedback/open', { method: 'POST', body: { token }, capability: true }),
   feedbackSubmit: (token: string, rating: number, comment: string) => request<{ ok: boolean }>('/api/v1/feedback/submit', { method: 'POST', body: { token, rating, comment }, capability: true }),
-  feedbackLink: (request_id: string) => request<{ url: string; expires_at: string }>('/api/v1/feedback/link', { method: 'POST', body: { request_id } }),
+  feedbackLink: (request_id: string) => request<{ url: string; expires_at: string; message: string }>('/api/v1/feedback/link', { method: 'POST', body: { request_id } }),
   health: () => request<{ status: string; database: string; auth: string }>('/api/v1/health'),
   me: () => request<{ userId: string; role: string; workspaceId: string; fullName: string; authMode: string; staffSession?: { id: string; staffName: string; supervisorName: string; expiresAt: string } | null }>('/api/v1/me'),
   staffDirectory: () => request<{ id: string; full_name: string; role: string; agent_code: string | null }[]>('/api/v1/staff-sessions/staff'),

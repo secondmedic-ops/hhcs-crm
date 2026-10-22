@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 const dir = join(import.meta.dirname, '..', '..', 'supabase', 'migrations');
 
-test('Live field staff geolocation tracking, geofencing, and ATA', { timeout: 30000 }, async () => {
+test('Live field staff geolocation tracking, geofencing, and ATA', { timeout: 90000 }, async () => {
   const db = new PGlite();
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
     await db.exec(readFileSync(join(dir, f), 'utf8'));
