@@ -9,6 +9,7 @@ import {
   PageHead, Panel, Kpi, Badge, Button, Modal, Field as F, Select, Input, Empty, TableSkeleton, Skeleton, Avatar, useAction,
 } from '../components/ui.jsx';
 import Icon from '../components/icons.jsx';
+import StaffMap from '../components/StaffMap.jsx';
 
 const ACTIVE = ['assigned', 'en_route', 'checked_in'];
 const TASK_FOR = { lab: 'phlebotomy', ecg: 'ecg', xray: 'xray' };
@@ -164,8 +165,23 @@ export default function Field() {
         </div>
 
         <div className="col gap-12">
-          <Panel title="Zone map" sub="Today's visits across MMR, coloured by status">
-            {!loaded ? <Skeleton height={300} /> : <ZoneMap rows={rows} now={now} onOpen={(id) => nav(`/cases/${id}`)} />}
+          <Panel
+            title="Zone map"
+            sub="Today's visits across MMR with live field staff GPS locations"
+            tight
+            actions={<Badge kind="ok">Live GPS</Badge>}
+          >
+            {!loaded ? (
+              <Skeleton height={380} />
+            ) : (
+              <StaffMap
+                staffLocations={locs.data || []}
+                visits={rows}
+                now={now}
+                onOpenCase={(id) => nav(`/cases/${id}`)}
+                height={380}
+              />
+            )}
           </Panel>
           <Panel title="Delay alerts" sub="Open delay escalations" tight
             actions={<a href="/escalations" className="small" onClick={(e) => { e.preventDefault(); nav('/escalations'); }}>All escalations</a>}>
@@ -217,9 +233,14 @@ function VisitCard({ a, now, loc, canAssign, onBackup, onOpen }) {
         )}
       </div>
       {a.delay_reason && <div className="tiny warn-text">Delay: {a.delay_reason}</div>}
-      <div className="row mt-4">
+      <div className="row mt-4 wrap gap-6">
         {canAssign && ['assigned', 'en_route'].includes(a.status) && <Button size="xs" icon="swap" onClick={onBackup}>Backup</Button>}
         <Button size="xs" kind="ghost" onClick={onOpen}>Open case</Button>
+        {loc?.lat != null && loc?.lng != null && (
+          <a className="btn xs ghost" href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`} target="_blank" rel="noreferrer" title="Open staff live GPS in Google Maps" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <Icon name="pin" /> Staff on map
+          </a>
+        )}
       </div>
     </div>
   );
@@ -269,49 +290,5 @@ function AssignModal({ c, backup, staff, load, onClose, onDone }) {
       </div>
       <div className="tiny muted mt-12">The technician is notified in the field app and the patient receives the ETA on approved template T-05.</div>
     </Modal>
-  );
-}
-
-// MMR bounding box: lat 18.90 to 19.30, lng 72.78 to 73.05 (equirectangular, scaled by cos(lat))
-const BOX = { lat0: 18.9, lat1: 19.3, lng0: 72.78, lng1: 73.05 };
-const W = 300, H = Math.round(W * ((BOX.lat1 - BOX.lat0) / ((BOX.lng1 - BOX.lng0) * Math.cos((19.1 * Math.PI) / 180))));
-const px = (lng) => ((lng - BOX.lng0) / (BOX.lng1 - BOX.lng0)) * W;
-const py = (lat) => H - ((lat - BOX.lat0) / (BOX.lat1 - BOX.lat0)) * H;
-const ZONES = [['Andheri', 19.119, 72.846], ['Bandra–Khar', 19.064, 72.836], ['Mahim–Dadar', 19.024, 72.843], ['Powai', 19.118, 72.906], ['Thane', 19.2, 72.972]];
-
-function ZoneMap({ rows, now, onOpen }) {
-  const pts = rows.filter((a) => a.patient_lat != null && a.patient_lng != null);
-  const counts = {};
-  rows.forEach((a) => { counts[a.zone_name] = (counts[a.zone_name] || 0) + 1; });
-  const legend = [['assigned', 'Assigned'], ['en_route', 'En route'], ['checked_in', 'On site'], ['completed', 'Completed'], ['late', 'Late']];
-  return (
-    <div className="fd-map">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: 420, display: 'block' }} role="img" aria-label="Map of today's visits">
-        <rect x="0" y="0" width={W} height={H} fill="var(--panel-2)" stroke="var(--line)" />
-        {[18.95, 19.0, 19.05, 19.1, 19.15, 19.2, 19.25].map((l) => (
-          <g key={l}><line x1="0" x2={W} y1={py(l)} y2={py(l)} stroke="var(--line-2)" /><text x="3" y={py(l) - 2} fontSize="7" fill="var(--faint)" fontFamily="var(--mono)">{l.toFixed(2)}N</text></g>
-        ))}
-        {[72.85, 72.9, 72.95, 73.0].map((l) => (
-          <g key={l}><line y1="0" y2={H} x1={px(l)} x2={px(l)} stroke="var(--line-2)" /><text x={px(l) + 2} y={H - 3} fontSize="7" fill="var(--faint)" fontFamily="var(--mono)">{l.toFixed(2)}E</text></g>
-        ))}
-        {ZONES.map(([n, lat, lng]) => <circle key={n} cx={px(lng)} cy={py(lat)} r="22" fill="none" stroke="var(--line)" strokeDasharray="2 2" />)}
-        {pts.map((a) => {
-          const late = isLate(a, now);
-          return (
-            <circle key={a.id} cx={px(a.patient_lng)} cy={py(a.patient_lat)} r="4.5" fill={late ? DOT.late : DOT[a.status] || 'var(--muted)'} stroke="var(--panel)" strokeWidth="1.2"
-              style={{ cursor: 'pointer' }} onClick={() => onOpen(a.case_id)}>
-              <title>{`${a.case_no} · ${a.patient_name} · ${STATUS[a.status]?.[0] || a.status}${late ? ' · late' : ''} · slot ${time(a.booked_slot)} · ${a.staff_name}`}</title>
-            </circle>
-          );
-        })}
-        {ZONES.map(([n, lat, lng]) => (
-          <text key={n} x={px(lng)} y={py(lat) - 25} fontSize="9" fontWeight="600" fill="var(--ink-2)" textAnchor="middle" stroke="var(--panel-2)" strokeWidth="3" paintOrder="stroke">{n}{counts[n] ? ` · ${counts[n]}` : ''}</text>
-        ))}
-      </svg>
-      <div className="row wrap mt-8 tiny muted">
-        {legend.map(([k, l]) => <span key={k} className="row gap-4"><span className="dot" style={{ color: DOT[k] }} />{l}</span>)}
-      </div>
-      {!pts.length && <div className="tiny faint mt-4">No visits with a pinned address today.</div>}
-    </div>
   );
 }

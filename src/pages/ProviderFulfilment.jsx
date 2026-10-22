@@ -90,11 +90,18 @@ function LiveLocation({jobs}) {
   if(!on || !job || isDemo) return;
   if(!navigator.geolocation) { setState({kind:'error',text:'This browser cannot share location.'}); return; }
   let last=0;
-  const send=() => {
+  const send=async () => {
    const p=fix.current;
    if(!p || Date.now()-last<55000) return;
    last=Date.now();
-   api.pingLocation({lat:p.latitude,lng:p.longitude,accuracy:p.accuracy,speed:p.speed,heading:p.heading,case_id:job.case_id})
+   let batteryPct=null;
+   try {
+     if(typeof navigator.getBattery === 'function') {
+       const b=await navigator.getBattery();
+       batteryPct=Math.round(b.level * 100);
+     }
+   } catch { /* battery unsupported */ }
+   api.pingLocation({lat:p.latitude,lng:p.longitude,accuracy:p.accuracy,speed:p.speed,heading:p.heading,battery_pct:batteryPct,case_id:job.case_id})
     .then((r) => setState({kind:'sent',at:r?.recorded_at}))
     .catch((e) => setState({kind:'error',text:e?.message || 'Location could not be sent.'}));
   };

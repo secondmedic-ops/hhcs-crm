@@ -31,3 +31,8 @@ MY-SETUP-DETAILS.json
 !docs/HHCS_CareDesk_Deployments_Report.xlsx
 !docs/B2B_Provider_Rates_Template.xlsx
 *.pptx
+
+# Android APK & Python cache
+*.apk
+__pycache__/
+*.pyc

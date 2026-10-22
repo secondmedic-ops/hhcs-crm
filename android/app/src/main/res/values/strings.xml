@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CareDesk</string>
+    <string name="title_activity_main">CareDesk</string>
+    <string name="package_name">com.secondmedic.caredesk</string>
+    <string name="custom_url_scheme">com.secondmedic.caredesk</string>
+</resources>

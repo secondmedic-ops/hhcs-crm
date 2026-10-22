@@ -77,7 +77,19 @@ export function createApiClient() {
     }
   };
   const enqueue = (op) => new Promise((resolve) => {
-    queue.push({ op, resolve });
+    const key = JSON.stringify(op);
+    const existing = queue.find((j) => j.key === key);
+    if (existing) {
+      existing.listeners.push(resolve);
+      return;
+    }
+    const listeners = [resolve];
+    queue.push({
+      op,
+      key,
+      listeners,
+      resolve: (res) => listeners.forEach((l) => l(res)),
+    });
     if (queue.length >= 40) { clearTimeout(timer); flush(); } else if (!timer) timer = setTimeout(flush, 0);
   });
 

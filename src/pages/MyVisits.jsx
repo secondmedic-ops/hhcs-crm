@@ -20,6 +20,75 @@ const mapsUrl = (a) => (a.patient_lat != null
   ? `https://www.google.com/maps/dir/?api=1&destination=${a.patient_lat},${a.patient_lng}`
   : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${a.address || ''} ${a.pincode || ''}`)}`);
 
+function useFieldStaffTracking(activeAssignment, reload) {
+  const [gpsState, setGpsState] = useState({ active: false, accuracy: null, error: null, lastSent: null });
+
+  useEffect(() => {
+    if (isDemo || !navigator.geolocation) {
+      if (!navigator.geolocation) setGpsState({ active: false, accuracy: null, error: 'Geolocation not supported', lastSent: null });
+      return;
+    }
+
+    let lastSent = 0;
+    const intervalMs = activeAssignment?.status === 'en_route' ? 12000 : 55000;
+
+    const ping = async (coords) => {
+      const now = Date.now();
+      if (now - lastSent < intervalMs) return;
+      lastSent = now;
+
+      let batteryPct = null;
+      try {
+        if (typeof navigator.getBattery === 'function') {
+          const b = await navigator.getBattery();
+          batteryPct = Math.round(b.level * 100);
+        }
+      } catch { /* battery API unavailable */ }
+
+      try {
+        const res = await api.pingLocation({
+          lat: coords.latitude,
+          lng: coords.longitude,
+          accuracy: coords.accuracy,
+          speed: coords.speed,
+          heading: coords.heading,
+          battery_pct: batteryPct,
+          assignment_id: activeAssignment?.id || null,
+          case_id: activeAssignment?.case_id || null,
+        });
+        setGpsState({
+          active: true,
+          accuracy: coords.accuracy,
+          error: null,
+          lastSent: res?.recorded_at || new Date().toISOString(),
+        });
+        if (res?.auto_arrived && reload) reload();
+      } catch (err) {
+        setGpsState((prev) => ({ ...prev, error: err?.message || 'Could not send GPS' }));
+      }
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => ping(pos.coords),
+      (err) => {
+        setGpsState({
+          active: false,
+          accuracy: null,
+          error: err.code === 1 ? 'Location permission denied' : 'Location unavailable',
+          lastSent: null,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [activeAssignment?.id, activeAssignment?.case_id, activeAssignment?.status, reload]);
+
+  return gpsState;
+}
+
 export default function MyVisits() {
   const { profile } = useAuth();
   const now = useNow(30000);
@@ -39,7 +108,10 @@ export default function MyVisits() {
   }, [visits.data, tomorrow]);
 
   const open = (visits.data || []).find((a) => a.id === openId);
-  if (open) return <div className="mobile-frame"><VisitDetail a={open} now={now} onBack={() => setOpenId(null)} reload={visits.reload} /></div>;
+  const activeJob = open || groups.today.find((a) => a.status === 'en_route') || groups.today.find((a) => a.status === 'checked_in') || groups.today[0];
+  const gps = useFieldStaffTracking(activeJob, visits.reload);
+
+  if (open) return <div className="mobile-frame"><VisitDetail a={open} now={now} onBack={() => setOpenId(null)} reload={visits.reload} gps={gps} /></div>;
 
   const list = groups[tab];
   const next = groups.today.find((a) => a.status !== 'completed');
@@ -52,6 +124,19 @@ export default function MyVisits() {
         </div>
         {next && <Button kind="primary" className="tap" onClick={() => setOpenId(next.id)}>Next visit</Button>}
       </div>
+      {gps.error ? (
+        <div className="badge danger mb-12" style={{ height: 'auto', padding: '6px 10px', whiteSpace: 'normal' }}>
+          {gps.error === 'Location permission denied'
+            ? '⚠️ Location access is blocked. Please allow location access in your browser settings so your manager can track visit arrival.'
+            : `⚠️ ${gps.error}`}
+        </div>
+      ) : gps.active ? (
+        <div className="row gap-4 tiny muted mb-8 font-mono">
+          <span className="dot" style={{ background: 'var(--ok)' }} />
+          <span>Live GPS active{gps.accuracy != null ? ` (±${Math.round(gps.accuracy)}m)` : ''}</span>
+          {gps.lastSent && <span>· Ping: {time(gps.lastSent)}</span>}
+        </div>
+      ) : null}
       <Tabs value={tab} onChange={setTab} tabs={[['today', 'Today', groups.today.length], ['upcoming', 'Upcoming', groups.upcoming.length], ['done', 'Done', groups.done.length]]} />
       {visits.error && <div className="badge danger mb-12">{visits.error}</div>}
       {visits.loading ? <div className="col gap-12">{[0, 1, 2].map((i) => <div key={i} className="mv-card"><Skeleton lines={4} /></div>)}</div>
@@ -84,7 +169,7 @@ function VisitCard({ a, now, onOpen }) {
   );
 }
 
-function VisitDetail({ a, now, onBack, reload }) {
+function VisitDetail({ a, now, onBack, reload, gps }) {
   const { workspace, profile } = useAuth();
   const toast = useToast();
   const [run, busy] = useAction();
@@ -102,34 +187,6 @@ function VisitDetail({ a, now, onBack, reload }) {
   const [modal, setModal] = useState(null);
 
   useEffect(() => { if (due != null) setPay((p) => ({ ...p, amount: p.amount === '' ? String(due) : p.amount })); }, [due]);
-
-  useEffect(() => {
-    if (a.status !== 'en_route' || !navigator.geolocation || isDemo) return;
-    let lastSent = 0;
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const t = Date.now();
-        if (t - lastSent < 10000) return;
-        lastSent = t;
-        api.pingLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          speed: pos.coords.speed,
-          heading: pos.coords.heading,
-          assignment_id: a.id,
-          case_id: a.case_id,
-        }).then((res) => {
-          if (res?.auto_arrived) reload();
-        }).catch(() => {});
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-    };
-  }, [a.id, a.case_id, a.status]);
 
   const status = a.status;
   const travelled = status !== 'assigned';

@@ -5,12 +5,15 @@
 // management open the same view of BMM to follow its work. What each login may read is still decided by the API and
 // the database (RLS), not by this page.
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api.ts';
 import { db, q, rpc } from '../lib/db.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useLoad } from '../lib/hooks.js';
 import { ROLE_LABEL, time, ago } from '../lib/fmt.js';
 import { PageHead, Panel, Tabs, Badge, Empty, ErrorNote, Skeleton, TableSkeleton, Button, Modal, Field as F, Input, useAction } from '../components/ui.jsx';
+import Icon from '../components/icons.jsx';
+import StaffMap from '../components/StaffMap.jsx';
 import Leads from './Leads.jsx';
 import ProviderFulfilment from './ProviderFulfilment.jsx';
 import Knowledge from './Knowledge.jsx';
@@ -68,8 +71,10 @@ export default function BmmWorkspace() {
 }
 
 function Team({ provider }) {
+  const nav = useNavigate();
   const { profile } = useAuth();
   const canAddStaff = ['provider', 'admin', 'supervisor'].includes(profile.role);
+  const [trackerMode, setTrackerMode] = useState('split');
   const [showAddModal, setShowAddModal] = useState(false);
   const [run, busy] = useAction();
   const setSharing = (p, on) => run(async () => { await rpc('set_location_sharing', { p_staff: p.id, p_on: on }); team.reload(); },
@@ -98,118 +103,154 @@ function Team({ provider }) {
   return (
     <div className="col gap-16">
       <Panel tight title="Live field staff tracker" sub="Live GPS breadcrumbs, actual time of arrival (ATA), and geofence verification for on-duty delivery staff."
-        actions={<Button size="sm" icon="refresh" onClick={() => { locs.reload(); board.reload(); team.reload(); }}>Refresh</Button>}>
+        actions={<>
+          <div className="row gap-4">
+            <Button size="xs" kind={trackerMode === 'map' ? 'primary' : 'ghost'} onClick={() => setTrackerMode('map')}>Map</Button>
+            <Button size="xs" kind={trackerMode === 'table' ? 'primary' : 'ghost'} onClick={() => setTrackerMode('table')}>Table</Button>
+            <Button size="xs" kind={trackerMode === 'split' ? 'primary' : 'ghost'} onClick={() => setTrackerMode('split')}>Split</Button>
+          </div>
+          <Button size="sm" icon="refresh" onClick={() => { locs.reload(); board.reload(); team.reload(); }}>Refresh</Button>
+        </>}>
         {(locs.error || board.error) && <ErrorNote error={locs.error || board.error} />}
         {team.loading || locs.loading ? <TableSkeleton rows={3} cols={6} /> : !fieldStaff.length ? (
           <Empty title="No field staff registered">No field or delivery staff assigned to {provider.name}.</Empty>
         ) : (
-          <div className="table-wrap"><table className="t">
-            <thead>
-              <tr>
-                <th>Field personnel</th>
-                <th>Active case / task</th>
-                <th>Status &amp; distance</th>
-                <th>Scheduled · ETA · ATA</th>
-                <th>Geofence</th>
-                <th>Last GPS ping</th>
-              </tr>
-            </thead>
-            <tbody>
-              {fieldStaff.map((s) => {
-                const a = asgByStaff[s.id];
-                const loc = locByStaff[s.id];
-                const ata = a?.actual_arrival_at || a?.checkin_at;
-                const liveDist = a?.status === 'en_route' && loc?.distance_to_patient_m != null ? loc.distance_to_patient_m : null;
-                const dist = a?.checkin_distance_m;
-                return (
-                  <tr key={s.id}>
-                    <td>
-                      <div className="small strong">{s.full_name}</div>
-                      <div className="tiny muted">{s.phone || '–'}{s.skills?.length ? ` · ${(s.skills || []).map((k) => TASK_LABEL[k] || k).join(', ')}` : ''}</div>
-                    </td>
-                    <td>
-                      {a ? (
-                        <>
-                          <div className="mono small">
-                            <a href={`/cases/${a.case_id}`}>{a.case_no}</a>
-                            {a.priority === 'urgent' && <Badge kind="danger" className="ml-4">Urgent</Badge>}
-                          </div>
-                          <div className="tiny muted truncate" style={{ maxWidth: 160 }}>{a.patient_name} · {TASK_LABEL[a.task] || a.task}</div>
-                          {a.zone_name && <div className="tiny faint">{a.zone_name}</div>}
-                        </>
-                      ) : (
-                        <span className="tiny faint">No active visit</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="row gap-4 wrap">
-                        {a?.delay_reason ? (
-                          <Badge kind="danger">Delayed</Badge>
-                        ) : a?.status === 'en_route' ? (
-                          <Badge kind="warn">En route</Badge>
-                        ) : a?.status === 'on_site' || a?.status === 'checked_in' ? (
-                          <Badge kind="ok">On site</Badge>
-                        ) : a?.status === 'assigned' ? (
-                          <Badge kind="info">Assigned</Badge>
-                        ) : a?.status === 'completed' ? (
-                          <Badge kind="ok">Completed</Badge>
-                        ) : s.available ? (
-                          <Badge kind="outline">Available</Badge>
-                        ) : (
-                          <Badge>Idle</Badge>
-                        )}
-                        {liveDist != null && <span className="tiny warn-text font-mono">{liveDist}m away</span>}
-                      </div>
-                      {a?.delay_reason && <div className="tiny danger-text mt-2">{a.delay_reason}</div>}
-                    </td>
-                    <td>
-                      {a ? (
-                        <div className="tiny col gap-2">
-                          <div><span className="faint">Slot:</span> <span className="mono">{slotLabel(a.booked_slot)}</span></div>
-                          <div><span className="faint">ETA:</span> <span className="mono">{time(a.eta)}</span></div>
-                          <div>
-                            <span className="faint">ATA:</span> <span className="mono strong">{ata ? time(ata) : '–'}</span>
-                            {a.eta_vs_ata_variance_min != null && (
-                              <span className={`ml-4 mono ${Math.abs(a.eta_vs_ata_variance_min) > 15 ? 'warn-text' : 'muted'}`}>
-                                ({a.eta_vs_ata_variance_min > 0 ? `+${a.eta_vs_ata_variance_min}` : a.eta_vs_ata_variance_min}m)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="tiny faint">–</span>
-                      )}
-                    </td>
-                    <td>
-                      {dist != null ? (
-                        <Badge kind={dist <= 200 ? 'ok' : 'warn'}>
-                          {dist <= 200 ? `Within pin (${dist}m)` : `Off-site (${dist}m)`}
-                        </Badge>
-                      ) : a?.status === 'en_route' && loc?.distance_to_patient_m != null ? (
-                        <span className="tiny muted">{loc.distance_to_patient_m <= 200 ? 'Inside 200m geofence' : `${loc.distance_to_patient_m}m to pin`}</span>
-                      ) : (
-                        <span className="tiny faint">–</span>
-                      )}
-                    </td>
-                    <td>
-                      {loc ? (
-                        <div className="tiny">
-                          <div className="muted">{ago(loc.recorded_at, now)}</div>
-                          <div className="faint font-mono">
-                            {loc.battery_pct != null && `${loc.battery_pct}% batt`}
-                            {loc.accuracy != null && ` · ±${Math.round(loc.accuracy)}m`}
-                            {loc.speed > 0 && ` · ${Math.round(loc.speed * 3.6)}km/h`}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="tiny faint">No telemetry</span>
-                      )}
-                    </td>
+          <div className="col">
+            {['map', 'split'].includes(trackerMode) && (
+              <div style={{ padding: '12px 14px', borderBottom: trackerMode === 'split' ? '1px solid var(--line-2)' : 'none' }}>
+                <StaffMap
+                  staffLocations={locs.data || []}
+                  visits={board.data || []}
+                  now={now}
+                  onOpenCase={(id) => nav(`/cases/${id}`)}
+                  height={320}
+                />
+              </div>
+            )}
+            {['table', 'split'].includes(trackerMode) && (
+              <div className="table-wrap"><table className="t">
+                <thead>
+                  <tr>
+                    <th>Field personnel</th>
+                    <th>Active case / task</th>
+                    <th>Status &amp; distance</th>
+                    <th>Scheduled · ETA · ATA</th>
+                    <th>Geofence</th>
+                    <th>Last GPS ping</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table></div>
+                </thead>
+                <tbody>
+                  {fieldStaff.map((s) => {
+                    const a = asgByStaff[s.id];
+                    const loc = locByStaff[s.id];
+                    const ata = a?.actual_arrival_at || a?.checkin_at;
+                    const liveDist = a?.status === 'en_route' && loc?.distance_to_patient_m != null ? loc.distance_to_patient_m : null;
+                    const dist = a?.checkin_distance_m;
+                    return (
+                      <tr key={s.id}>
+                        <td>
+                          <div className="small strong">{s.full_name}</div>
+                          <div className="tiny muted">{s.phone || '–'}{s.skills?.length ? ` · ${(s.skills || []).map((k) => TASK_LABEL[k] || k).join(', ')}` : ''}</div>
+                        </td>
+                        <td>
+                          {a ? (
+                            <>
+                              <div className="mono small">
+                                <a href={`/cases/${a.case_id}`}>{a.case_no}</a>
+                                {a.priority === 'urgent' && <Badge kind="danger" className="ml-4">Urgent</Badge>}
+                              </div>
+                              <div className="tiny muted truncate" style={{ maxWidth: 160 }}>{a.patient_name} · {TASK_LABEL[a.task] || a.task}</div>
+                              {a.zone_name && <div className="tiny faint">{a.zone_name}</div>}
+                            </>
+                          ) : (
+                            <span className="tiny faint">No active visit</span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="row gap-4 wrap">
+                            {a?.delay_reason ? (
+                              <Badge kind="danger">Delayed</Badge>
+                            ) : a?.status === 'en_route' ? (
+                              <Badge kind="warn">En route</Badge>
+                            ) : a?.status === 'on_site' || a?.status === 'checked_in' ? (
+                              <Badge kind="ok">On site</Badge>
+                            ) : a?.status === 'assigned' ? (
+                              <Badge kind="info">Assigned</Badge>
+                            ) : a?.status === 'completed' ? (
+                              <Badge kind="ok">Completed</Badge>
+                            ) : s.available ? (
+                              <Badge kind="outline">Available</Badge>
+                            ) : (
+                              <Badge>Idle</Badge>
+                            )}
+                            {liveDist != null && <span className="tiny warn-text font-mono">{liveDist}m away</span>}
+                          </div>
+                          {a?.delay_reason && <div className="tiny danger-text mt-2">{a.delay_reason}</div>}
+                        </td>
+                        <td>
+                          {a ? (
+                            <div className="tiny col gap-2">
+                              <div><span className="faint">Slot:</span> <span className="mono">{slotLabel(a.booked_slot)}</span></div>
+                              <div><span className="faint">ETA:</span> <span className="mono">{time(a.eta)}</span></div>
+                              <div>
+                                <span className="faint">ATA:</span> <span className="mono strong">{ata ? time(ata) : '–'}</span>
+                                {a.eta_vs_ata_variance_min != null && (
+                                  <span className={`ml-4 mono ${Math.abs(a.eta_vs_ata_variance_min) > 15 ? 'warn-text' : 'muted'}`}>
+                                    ({a.eta_vs_ata_variance_min > 0 ? `+${a.eta_vs_ata_variance_min}` : a.eta_vs_ata_variance_min}m)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="tiny faint">–</span>
+                          )}
+                        </td>
+                        <td>
+                          {dist != null ? (
+                            <Badge kind={dist <= 200 ? 'ok' : 'warn'}>
+                              {dist <= 200 ? `Within pin (${dist}m)` : `Off-site (${dist}m)`}
+                            </Badge>
+                          ) : a?.status === 'en_route' && loc?.distance_to_patient_m != null ? (
+                            <span className="tiny muted">{loc.distance_to_patient_m <= 200 ? 'Inside 200m geofence' : `${loc.distance_to_patient_m}m to pin`}</span>
+                          ) : (
+                            <span className="tiny faint">–</span>
+                          )}
+                        </td>
+                        <td>
+                          {loc ? (
+                            <div className="tiny">
+                              <div className="muted">{ago(loc.recorded_at, now)}</div>
+                              <div className="faint font-mono">
+                                {loc.battery_pct != null && `${loc.battery_pct}% batt`}
+                                {loc.accuracy != null && ` · ±${Math.round(loc.accuracy)}m`}
+                                {loc.speed > 0 && ` · ${Math.round(loc.speed * 3.6)}km/h`}
+                              </div>
+                              {loc.lat != null && loc.lng != null && (
+                                <div className="mt-4">
+                                  <a
+                                    href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="btn xs ghost"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                                    title="Open exact live GPS location in Google Maps"
+                                  >
+                                    <Icon name="pin" /> View on map
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="tiny faint">No telemetry</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table></div>
+            )}
+          </div>
         )}
       </Panel>
 

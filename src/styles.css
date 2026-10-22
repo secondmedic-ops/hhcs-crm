@@ -840,3 +840,18 @@ textarea.input { height: auto; padding: 8px 9px; resize: vertical; min-height: 6
 .feedback-comment { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 440px; min-width: 180px; }
 .feedback-error { color: var(--danger); }
 @media (max-width: 560px) { .feedback-public { margin: 16px; padding: 18px; } }
+
+
+/* Field dispatch zone map */
+.fd-map-wrap { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); overflow: hidden; position: relative; }
+.fd-map-wrap .gm-style-iw-d { overflow: auto !important; max-height: 280px !important; }
+.fd-map-wrap .gm-style-iw-c { padding: 10px 12px !important; border-radius: var(--r) !important; box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important; }
+@keyframes gmp-pulse {
+  0% { transform: scale(0.6); opacity: 0.85; }
+  70% { transform: scale(1.6); opacity: 0.2; }
+  100% { transform: scale(2.0); opacity: 0; }
+}
+
+.fd-map-wrap .leaflet-popup-content-wrapper { border-radius: var(--r); box-shadow: 0 3px 12px rgba(0,0,0,0.15); padding: 4px; border: 1px solid var(--line); }
+.fd-map-wrap .leaflet-popup-content { margin: 8px 10px; line-height: 1.4; }
+.custom-staff-marker, .custom-visit-marker { background: transparent !important; border: none !important; }

@@ -810,6 +810,8 @@ function Booking({ c, coordinators, templates, canAct, me }) {
 
 function FieldPanel({ c, items, asg, staff, canDispatch }) {
   const [modal, setModal] = useState(null);
+  const locs = useLoad(() => q(db.from('v_staff_locations').select('*').eq('case_id', c.id)), [c.id], ['staff_locations']);
+  const locByStaff = Object.fromEntries((locs.data || []).map((l) => [l.staff_id, l]));
   const rows = asg.data || [];
   const cats = [...new Set(items.map((i) => i.category))];
   const activeTasks = new Set(rows.filter((a) => !['cancelled', 'reassigned'].includes(a.status)).map((a) => a.task));
@@ -821,6 +823,7 @@ function FieldPanel({ c, items, asg, staff, canDispatch }) {
       {asg.loading ? <div className="panel-body"><TableSkeleton rows={2} cols={5} /></div> : rows.length ? rows.map((a) => {
         const ck = parseJson(a.checklist) || {};
         const live = !['completed', 'cancelled', 'reassigned'].includes(a.status);
+        const loc = locByStaff[a.staff_id];
         return (
           <div key={a.id} className={`cd-asg ${live ? '' : 'faded'}`}>
             <div className="row wrap gap-8">
@@ -842,6 +845,25 @@ function FieldPanel({ c, items, asg, staff, canDispatch }) {
                 <span className={`cd-tick ${a.patient_signoff ? 'ok' : ''}`}><Icon name={a.patient_signoff ? 'check' : 'x'} size={11} />Sign-off</span>
               </span>
             </div>
+            {loc?.lat != null && loc?.lng != null && (
+              <div className="row gap-8 mt-6 wrap">
+                <a
+                  href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn xs ghost"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  title="Open staff live GPS in Google Maps"
+                >
+                  <Icon name="pin" /> Staff on map
+                </a>
+                {loc.distance_to_patient_m != null && (
+                  <span className="tiny font-mono muted">
+                    ({loc.distance_to_patient_m <= 200 ? 'Within geofence' : `${loc.distance_to_patient_m}m to patient`})
+                  </span>
+                )}
+              </div>
+            )}
             {a.delay_reason && <div className="tiny warn-text mt-4">Delay: {a.delay_reason}</div>}
           </div>
         );

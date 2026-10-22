@@ -8,32 +8,71 @@ import Shell from './components/Shell.jsx';
 import Login from './pages/Login.jsx';
 import { Terms, Privacy } from './pages/Legal.jsx';
 
-const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
-const Console = lazy(() => import('./pages/Console.jsx'));
-const Cases = lazy(() => import('./pages/Cases.jsx'));
-const ProviderFulfilment = lazy(() => import('./pages/ProviderFulfilment.jsx'));
-const Leads = lazy(() => import('./pages/Leads.jsx'));
-const CaseDetail = lazy(() => import('./pages/CaseDetail.jsx'));
-const Callbacks = lazy(() => import('./pages/Callbacks.jsx'));
-const Calls = lazy(() => import('./pages/Calls.jsx'));
-const Whatsapp = lazy(() => import('./pages/Whatsapp.jsx'));
-const Patients = lazy(() => import('./pages/Patients.jsx'));
-const PatientDetail = lazy(() => import('./pages/PatientDetail.jsx'));
-const Field = lazy(() => import('./pages/Field.jsx'));
-const MyVisits = lazy(() => import('./pages/MyVisits.jsx'));
-const Approvals = lazy(() => import('./pages/Approvals.jsx'));
-const Escalations = lazy(() => import('./pages/Escalations.jsx'));
-const Complaints = lazy(() => import('./pages/Complaints.jsx'));
-const Mis = lazy(() => import('./pages/Mis.jsx'));
-const Audit = lazy(() => import('./pages/Audit.jsx'));
-const Settings = lazy(() => import('./pages/Settings.jsx'));
-const Find = lazy(() => import('./pages/Find.jsx'));
-const Checklist = lazy(() => import('./pages/Checklist.jsx'));
-const Invoice = lazy(() => import('./pages/Invoice.jsx'));
-const Knowledge = lazy(() => import('./pages/Knowledge.jsx'));
-const BmmWorkspace = lazy(() => import('./pages/BmmWorkspace.jsx'));
-const Email = lazy(() => import('./pages/Email.jsx'));
-const Feedback = lazy(() => import('./pages/Feedback.jsx'));
+export const routeLoaders = {
+  '/': () => import('./pages/Dashboard.jsx'),
+  '/console': () => import('./pages/Console.jsx'),
+  '/cases': () => import('./pages/Cases.jsx'),
+  'cases-detail': () => import('./pages/CaseDetail.jsx'),
+  '/fulfilment': () => import('./pages/ProviderFulfilment.jsx'),
+  '/leads': () => import('./pages/Leads.jsx'),
+  '/callbacks': () => import('./pages/Callbacks.jsx'),
+  '/calls': () => import('./pages/Calls.jsx'),
+  '/whatsapp': () => import('./pages/Whatsapp.jsx'),
+  '/email': () => import('./pages/Email.jsx'),
+  '/feedback-list': () => import('./pages/Feedback.jsx'),
+  '/patients': () => import('./pages/Patients.jsx'),
+  'patients-detail': () => import('./pages/PatientDetail.jsx'),
+  '/field': () => import('./pages/Field.jsx'),
+  '/my-visits': () => import('./pages/MyVisits.jsx'),
+  '/approvals': () => import('./pages/Approvals.jsx'),
+  '/escalations': () => import('./pages/Escalations.jsx'),
+  '/complaints': () => import('./pages/Complaints.jsx'),
+  '/mis': () => import('./pages/Mis.jsx'),
+  '/audit': () => import('./pages/Audit.jsx'),
+  '/settings': () => import('./pages/Settings.jsx'),
+  '/find': () => import('./pages/Find.jsx'),
+  '/checklist': () => import('./pages/Checklist.jsx'),
+  '/knowledge': () => import('./pages/Knowledge.jsx'),
+  '/invoice': () => import('./pages/Invoice.jsx'),
+  '/bmm': () => import('./pages/BmmWorkspace.jsx'),
+};
+
+export function preloadRoute(path) {
+  if (!path) return;
+  const p = path.split('?')[0].split('#')[0];
+  const loader = routeLoaders[p]
+    || (p.startsWith('/cases/') ? routeLoaders['cases-detail'] : null)
+    || (p.startsWith('/patients/') ? routeLoaders['patients-detail'] : null)
+    || (p.startsWith('/invoice/') ? routeLoaders['/invoice'] : null);
+  if (loader) loader();
+}
+
+const Dashboard = lazy(routeLoaders['/']);
+const Console = lazy(routeLoaders['/console']);
+const Cases = lazy(routeLoaders['/cases']);
+const ProviderFulfilment = lazy(routeLoaders['/fulfilment']);
+const Leads = lazy(routeLoaders['/leads']);
+const CaseDetail = lazy(routeLoaders['cases-detail']);
+const Callbacks = lazy(routeLoaders['/callbacks']);
+const Calls = lazy(routeLoaders['/calls']);
+const Whatsapp = lazy(routeLoaders['/whatsapp']);
+const Patients = lazy(routeLoaders['/patients']);
+const PatientDetail = lazy(routeLoaders['patients-detail']);
+const Field = lazy(routeLoaders['/field']);
+const MyVisits = lazy(routeLoaders['/my-visits']);
+const Approvals = lazy(routeLoaders['/approvals']);
+const Escalations = lazy(routeLoaders['/escalations']);
+const Complaints = lazy(routeLoaders['/complaints']);
+const Mis = lazy(routeLoaders['/mis']);
+const Audit = lazy(routeLoaders['/audit']);
+const Settings = lazy(routeLoaders['/settings']);
+const Find = lazy(routeLoaders['/find']);
+const Checklist = lazy(routeLoaders['/checklist']);
+const Invoice = lazy(routeLoaders['/invoice']);
+const Knowledge = lazy(routeLoaders['/knowledge']);
+const BmmWorkspace = lazy(routeLoaders['/bmm']);
+const Email = lazy(routeLoaders['/email']);
+const Feedback = lazy(routeLoaders['/feedback-list']);
 const PublicFeedback = lazy(() => import('./pages/PublicFeedback.jsx'));
 
 function Boot({ children }) {

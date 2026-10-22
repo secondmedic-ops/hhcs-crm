@@ -6,6 +6,7 @@ import { useKey, useLoad } from '../lib/hooks.js';
 import { ago, ROLE_LABEL } from '../lib/fmt.js';
 import Icon from './icons.jsx';
 import CommandBar from './CommandBar.jsx';
+import { preloadRoute } from '../App.jsx';
 import { Avatar, Button, Badge, useToast } from './ui.jsx';
 import { DEMO_USERS } from '../demo/seed.js';
 
@@ -36,6 +37,13 @@ export default function Shell() {
   }, [profile?.id], ['approvals', 'escalations', 'interactions', 'cases']);
 
   const items = NAV.filter((n) => roleAllows(n.roles, profile.role) && (!n.when || n.when(profile)));
+  useEffect(() => {
+    const t = setTimeout(() => {
+      items.forEach((item) => preloadRoute(item.to));
+      preloadRoute('cases-detail');
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [profile?.role]);
   return (
     <div className="shell">
       <aside className={`side ${menu ? 'open' : ''}`}>
@@ -54,7 +62,7 @@ export default function Shell() {
               <div key={g}>
                 <div className="nav-group">{g}</div>
                 {list.map((n) => (
-                  <NavLink key={n.to} to={n.to} end={n.to === '/'}>
+                  <NavLink key={n.to} to={n.to} end={n.to === '/'} onMouseEnter={() => preloadRoute(n.to)} onFocus={() => preloadRoute(n.to)} onTouchStart={() => preloadRoute(n.to)}>
                     <Icon name={n.icon} />{n.label}
                     {n.badge && counts.data?.[n.badge] > 0 && <span className="count">{counts.data[n.badge]}</span>}
                   </NavLink>
