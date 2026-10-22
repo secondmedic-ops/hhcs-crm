@@ -31,7 +31,7 @@ const MMR_LANDMARKS = [
 
 const TILE_PROVIDERS = {
   osm: {
-    label: 'OSM Standard',
+    label: 'OpenStreetMap',
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     options: {
       maxZoom: 19,
@@ -39,14 +39,14 @@ const TILE_PROVIDERS = {
         '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
     },
   },
-  carto: {
-    label: 'Carto CDN',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  hot: {
+    label: 'Humanitarian OSM',
+    url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
     options: {
       maxZoom: 19,
-      subdomains: 'abcd',
+      subdomains: 'abc',
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, Tiles courtesy of <a href="https://www.hotosm.org/" target="_blank" rel="noreferrer">Humanitarian OpenStreetMap Team</a>',
     },
   },
 };
@@ -68,7 +68,7 @@ export default function StaffMap({
   height = 400,
 }) {
   const [mode, setMode] = useState('street'); // 'street' (OpenStreetMap) | 'radar' (Vector)
-  const [tileProvider, setTileProvider] = useState('carto'); // 'carto' (Fast CDN) | 'osm' (OSM Standard)
+  const [tileProvider, setTileProvider] = useState('osm'); // 'osm' (OSM Standard) | 'hot' (Humanitarian OSM)
   const [mapReady, setMapReady] = useState(0);
   const [viewFilter, setViewFilter] = useState('all'); // 'all' | 'staff' | 'visits'
   const [selected, setSelected] = useState(null);
@@ -159,15 +159,15 @@ export default function StaffMap({
       tileLayerRef.current = null;
     }
 
-    const cfg = TILE_PROVIDERS[tileProvider] || TILE_PROVIDERS.carto;
+    const cfg = TILE_PROVIDERS[tileProvider] || TILE_PROVIDERS.osm;
     let failCount = 0;
     const tileLayer = L.tileLayer(cfg.url, cfg.options);
 
     tileLayer.on('tileerror', () => {
       failCount++;
-      // If tiles fail to load (e.g. adblocker, ISP block, rate limit), switch seamlessly to alternative provider
+      // If tiles fail to load from one mirror, switch seamlessly to the other free OSM mirror
       if (failCount >= 2) {
-        setTileProvider((curr) => (curr === 'carto' ? 'osm' : 'carto'));
+        setTileProvider((curr) => (curr === 'osm' ? 'hot' : 'osm'));
       }
     });
 
@@ -478,10 +478,10 @@ export default function StaffMap({
             <Button
               size="xs"
               kind="ghost"
-              onClick={() => setTileProvider((p) => (p === 'carto' ? 'osm' : 'carto'))}
-              title={`Switch map tile provider (Current: ${TILE_PROVIDERS[tileProvider]?.label || 'Carto CDN'})`}
+              onClick={() => setTileProvider((p) => (p === 'osm' ? 'hot' : 'osm'))}
+              title={`Switch map tile style (Current: ${TILE_PROVIDERS[tileProvider]?.label || 'OpenStreetMap'})`}
             >
-              Layer: {tileProvider === 'carto' ? 'Carto CDN' : 'OSM'}
+              Style: {tileProvider === 'osm' ? 'Standard' : 'Humanitarian'}
             </Button>
           )}
           <Badge kind="ok" title="100% Free OpenStreetMap: No Google API billing, no credit card, no fees forever">
