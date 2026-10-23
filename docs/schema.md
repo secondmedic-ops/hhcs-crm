@@ -239,15 +239,6 @@
 | price_version | integer | YES |
 | price_tax_basis | text | YES |
 | priced_at | timestamp with time zone | YES |
-| billing_category | text | YES |
-| actual_days | integer | YES |
-| billable_days | integer | YES |
-| min_rule_applied | boolean | NO |
-| min_days_applied | integer | YES |
-| override_min_applied | boolean | NO |
-| override_reason | text | YES |
-| override_by | uuid | YES |
-| override_at | timestamp with time zone | YES |
 
 ## case_journey_history
 | column | type | nullable |
@@ -846,7 +837,6 @@
 | updated_at | timestamp with time zone | NO |
 | unit | text | NO |
 | tax_basis | text | YES |
-| billing_category | text | YES |
 
 ## sla_policies
 | column | type | nullable |

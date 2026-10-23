@@ -1913,6 +1913,13 @@
         "supervisor",
         "medical_desk"
       ],
+      "update": [
+        "agent",
+        "telecaller",
+        "coordinator",
+        "supervisor",
+        "medical_desk"
+      ],
       "delete": [
         "agent",
         "telecaller",
