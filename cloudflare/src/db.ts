@@ -149,7 +149,7 @@ export const SCHEMA: Record<string, string[]> = {
   interactions: ['id', 'workspace_id', 'case_id', 'patient_id', 'channel', 'direction', 'actor_id', 'actor_label', 'call_id', 'summary', 'body', 'evidence', 'template_id', 'meta', 'occurred_at'],
   sla_policies: ['workspace_id', 'key', 'target_minutes'],
   templates: ['id', 'workspace_id', 'code', 'title', 'kind', 'status', 'body', 'provider_template_name'],
-  services: ['id', 'workspace_id', 'code', 'name', 'active', 'billing_category'],
+  services: ['id', 'workspace_id', 'code', 'name', 'active'],
   qa_reviews: ['workspace_id', 'call_id', 'agent_id', 'greeting', 'consent', 'price_accuracy', 'empathy', 'closure', 'total_pct', 'notes', 'ai_generated'],
   escalations: ['id', 'workspace_id', 'case_id', 'type', 'level', 'trigger_text', 'status', 'auto_raised'],
   webhook_events: ['event_id', 'source', 'event_type', 'payload', 'processed', 'error', 'received_at'],

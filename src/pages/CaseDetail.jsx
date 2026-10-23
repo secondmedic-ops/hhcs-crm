@@ -58,8 +58,14 @@ const TASK_SKILL = {
 const CAT_TASK = {
   lab: 'phlebotomy', ecg: 'ecg', xray: 'xray', nursing: 'nursing', physio: 'physio',
   icu: 'icu_care', eldercare: 'eldercare', equipment: 'delivery', consumables: 'delivery', visit: 'visit',
+  caretaker_attendant: 'eldercare', ambulance: 'delivery',
 };
-const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
+const CAT_LABEL = {
+  lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge',
+  nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care',
+  homecare: 'Home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other',
+  caretaker_attendant: 'Caretaker / Attendant', ambulance: 'Ambulance',
+};
 const HOPS = [
   ['collected_at', 'Collected'], ['handover_at', 'Handover'], ['dispatched_at', 'Dispatched'], ['transport_temp_c', 'Temp'],
   ['received_at', 'Received at lab'], ['accessioned_at', 'Accessioned'], ['report_released_at', 'Report released'], ['delivered_at', 'Delivered'],

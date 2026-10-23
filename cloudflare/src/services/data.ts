@@ -104,10 +104,6 @@ export const RPC: Record<string, readonly Role[]> = {
   rate_import_check: RATE_MANAGERS, submit_rate_import: RATE_MANAGERS, set_provider_rate: RATE_MANAGERS, end_provider_rate: RATE_MANAGERS,
   save_service_knowledge: RATE_MANAGERS, import_service_knowledge: RATE_MANAGERS,
   refresh_case_prices: OPS, set_item_provider: COMMERCIAL, case_margins: COMMERCIAL, margin_report: COMMERCIAL,
-  override_item_minimum: ['supervisor', 'admin', 'client_manager'],
-  set_min_equipment_billing_days: ['supervisor', 'admin', 'client_manager'],
-  get_min_equipment_billing_days: WITH_PROVIDER,
-  set_service_billing_category: RATE_MANAGERS,
 };
 /** Read-only actions that may ride in a batch. */
 export const READ_RPC = new Set(['customer_feedback_summary', 'provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
