@@ -196,7 +196,37 @@ export function Tabs({ tabs, value, onChange }) {
 export function Field({ label, hint, children, className = '' }) {
   return <label className={`f ${className}`}><span>{label}{hint && <span className="hint"> · {hint}</span>}</span>{children}</label>;
 }
-export const Input = ({ className = '', ...p }) => <input className={`input ${className}`} {...p} />;
+export function Input({ className = '', type, ...p }) {
+  const [show, setShow] = useState(false);
+  if (type === 'password') {
+    return (
+      <div className="input-password-wrap" style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+        <input className={`input ${className}`} type={show ? 'text' : 'password'} style={{ paddingRight: 38 }} {...p} />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={show ? 'Hide password' : 'Show password'}
+          style={{
+            position: 'absolute',
+            right: 8,
+            background: 'none',
+            border: 'none',
+            padding: 6,
+            cursor: 'pointer',
+            color: 'var(--muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => setShow((v) => !v)}
+        >
+          <Icon name={show ? 'eyeoff' : 'eye'} size={16} />
+        </button>
+      </div>
+    );
+  }
+  return <input className={`input ${className}`} type={type} {...p} />;
+}
 export const Textarea = ({ className = '', ...p }) => <textarea className={`input ${className}`} {...p} />;
 export function Select({ options, className = '', placeholder, ...p }) {
   return (

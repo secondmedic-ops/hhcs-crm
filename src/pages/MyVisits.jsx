@@ -86,7 +86,25 @@ function useFieldStaffTracking(activeAssignment, reload) {
     };
   }, [activeAssignment?.id, activeAssignment?.case_id, activeAssignment?.status, reload]);
 
-  return gpsState;
+  const requestPermission = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsState((prev) => ({ ...prev, active: true, error: null, accuracy: pos.coords.accuracy }));
+      },
+      (err) => {
+        setGpsState({
+          active: false,
+          accuracy: null,
+          error: err.code === 1 ? 'Location permission denied' : 'Location unavailable',
+          lastSent: null,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
+
+  return { ...gpsState, requestPermission };
 }
 
 export default function MyVisits() {
@@ -125,10 +143,13 @@ export default function MyVisits() {
         {next && <Button kind="primary" className="tap" onClick={() => setOpenId(next.id)}>Next visit</Button>}
       </div>
       {gps.error ? (
-        <div className="badge danger mb-12" style={{ height: 'auto', padding: '6px 10px', whiteSpace: 'normal' }}>
-          {gps.error === 'Location permission denied'
-            ? '⚠️ Location access is blocked. Please allow location access in your browser settings so your manager can track visit arrival.'
-            : `⚠️ ${gps.error}`}
+        <div className="badge danger mb-12 row between align-center wrap gap-8" style={{ height: 'auto', padding: '8px 12px', whiteSpace: 'normal' }}>
+          <span>
+            {gps.error === 'Location permission denied'
+              ? '⚠️ Location access is required for Field Staff to track visit arrival and route updates.'
+              : `⚠️ ${gps.error}`}
+          </span>
+          <Button size="xs" kind="primary" onClick={gps.requestPermission}>Enable Location</Button>
         </div>
       ) : gps.active ? (
         <div className="row gap-4 tiny muted mb-8 font-mono">

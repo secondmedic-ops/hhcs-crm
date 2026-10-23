@@ -55,6 +55,8 @@
 | delay_reason | text | YES |
 | actual_arrival_at | timestamp with time zone | YES |
 | eta_vs_ata_variance_min | integer | YES |
+| role | text | NO |
+| order_id | uuid | YES |
 
 ## audit_log
 | column | type | nullable |
@@ -347,6 +349,7 @@
 | requested_service_start_on | date | YES |
 | referral_subtype | text | YES |
 | action_taken | text | YES |
+| order_status | text | NO |
 
 ## complaints
 | column | type | nullable |
@@ -981,6 +984,9 @@
 | delay_reason | text | YES |
 | actual_arrival_at | timestamp with time zone | YES |
 | eta_vs_ata_variance_min | integer | YES |
+| role | text | YES |
+| order_id | uuid | YES |
+| visit_id | uuid | YES |
 | staff_name | text | YES |
 | staff_phone | text | YES |
 | staff_provider_id | uuid | YES |
@@ -988,6 +994,7 @@
 | booked_slot | timestamp with time zone | YES |
 | priority | text | YES |
 | stage | USER-DEFINED | YES |
+| order_status | text | YES |
 | address | text | YES |
 | pincode | text | YES |
 | patient_name | text | YES |
@@ -998,6 +1005,13 @@
 | patient_lng | double precision | YES |
 | zone_name | text | YES |
 | service_names | text | YES |
+| latest_log_text | text | YES |
+| latest_log_at | timestamp with time zone | YES |
+| backup_assignment_id | uuid | YES |
+| backup_staff_id | uuid | YES |
+| backup_staff_name | text | YES |
+| backup_status | text | YES |
+| backup_eta | timestamp with time zone | YES |
 
 ## v_audit
 | column | type | nullable |
@@ -1205,6 +1219,7 @@
 | requested_service_start_on | date | YES |
 | referral_subtype | text | YES |
 | action_taken | text | YES |
+| order_status | text | YES |
 
 ## v_complaints
 | column | type | nullable |

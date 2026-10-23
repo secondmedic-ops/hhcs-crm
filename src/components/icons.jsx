@@ -49,6 +49,8 @@ const P = {
   barcode: 'M2 3v10M4 3v10M6.5 3v10M8 3v10M10.5 3v10M12 3v10M14 3v10',
   hang: 'M1.5 9.5c3.8-3.4 9.2-3.4 13 0l-1.6 2-2.5-1V8.6a8.5 8.5 0 0 0-4.8 0v1.9l-2.5 1z',
   send: 'M14 2 2 7.2l4.8 2L9 14zM6.8 9.2 14 2',
+  eye: 'M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  eyeoff: 'M1 8s2.5-5 7-5c1.4 0 2.7.5 3.8 1.2M15 8s-2.5 5-7 5c-1.4 0-2.7-.5-3.8-1.2M2 2l12 12',
 };
 
 export default function Icon({ name, size = 16, stroke = 1.4, className, title }) {

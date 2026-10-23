@@ -48,13 +48,16 @@ export default function Field() {
   const live = ['assignments', 'cases', 'escalations', 'staff_locations'];
 
   const board = useLoad(async () => {
-    const cols = 'id,case_id,staff_id,staff_name,task,status,eta,checkin_at,actual_arrival_at,eta_vs_ata_variance_min,checkin_distance_m,checkout_at,delay_reason,backup_for,case_no,booked_slot,priority,stage,patient_name,zone_name,patient_lat,patient_lng,service_names,pincode';
+    const cols = 'id,visit_id,case_id,order_id,staff_id,staff_name,task,status,role,assignment_role,eta,checkin_at,actual_arrival_at,eta_vs_ata_variance_min,checkin_distance_m,checkout_at,delay_reason,backup_for,backup_staff_name,backup_status,backup_eta,case_no,booked_slot,priority,stage,order_status,patient_name,zone_name,patient_lat,patient_lng,service_names,pincode,latest_log_text';
     const [today, active] = await Promise.all([
       q(db.from('v_assignments').select(cols).gte('booked_slot', from).lt('booked_slot', to).limit(400)),
       q(db.from('v_assignments').select(cols).in('status', ACTIVE).limit(400)),
     ]);
     const map = new Map();
-    [...today, ...active].forEach((a) => map.set(a.id, a));
+    [...today, ...active].forEach((a) => {
+      const vid = a.visit_id || a.id;
+      if (!map.has(vid)) map.set(vid, a);
+    });
     return [...map.values()].filter((a) => !['cancelled', 'reassigned'].includes(a.status))
       .sort((a, b) => new Date(a.booked_slot || 0) - new Date(b.booked_slot || 0));
   }, [from], live);
@@ -62,16 +65,18 @@ export default function Field() {
   const staff = useLoad(() => q(db.from('profiles').select('id,full_name,skills,on_duty,phone,active').eq('role', 'field_staff').is('active', true).order('full_name')), [], []);
 
   const needs = useLoad(async () => {
-    const cases = await q(db.from('v_cases').select('id,case_no,patient_name,patient_age,patient_gender,zone_name,booked_slot,priority,stage,service_names,service_categories,pincode')
+    const cases = await q(db.from('v_cases').select('id,case_no,patient_name,patient_age,patient_gender,zone_name,booked_slot,priority,stage,order_status,service_names,service_categories,pincode')
       .in('stage', ['booking', 'deployment']).not('booking_confirmed_at', 'is', null).order('booked_slot', { ascending: true }).limit(200));
     if (!cases.length) return [];
-    const asg = await q(db.from('v_assignments').select('case_id,task,status').in('case_id', cases.map((c) => c.id)).not('status', 'in', '(cancelled,reassigned)'));
+    const asg = await q(db.from('v_assignments').select('id,visit_id,case_id,task,status,role,assignment_role').in('case_id', cases.map((c) => c.id)).not('status', 'in', '(cancelled,reassigned)'));
     return cases.map((c) => {
-      const have = new Set(asg.filter((a) => a.case_id === c.id).map((a) => a.task));
+      const activeAsg = asg.filter((a) => a.case_id === c.id);
+      const have = new Set(activeAsg.map((a) => a.task));
       const req = neededTasks(c.service_categories);
       const missing = req.length ? req.filter((t) => !have.has(t)) : (have.size ? [] : ['visit']);
-      return { ...c, missing };
-    }).filter((c) => c.missing.length);
+      const hasActive = activeAsg.some((a) => (a.role || a.assignment_role) === 'primary' || (!a.role && !a.assignment_role));
+      return { ...c, missing, hasActive };
+    }).filter((c) => c.missing.length && c.order_status !== 'assigned');
   }, [], live);
 
   const delays = useLoad(() => q(db.from('v_escalations').select('id,case_id,case_no,patient_name,level,trigger_text,raised_at,status,contacted_name,auto_raised')
@@ -95,7 +100,16 @@ export default function Field() {
   }), [rows, now, from, to]);
 
   const byStaff = useMemo(() => {
-    const list = (staff.data || []).map((s) => ({ ...s, visits: rows.filter((a) => a.staff_id === s.id) }));
+    const list = (staff.data || []).map((s) => {
+      const staffRows = rows.filter((a) => a.staff_id === s.id);
+      const visitMap = new Map();
+      staffRows.forEach((a) => {
+        const vid = a.visit_id || a.id;
+        if (!visitMap.has(vid)) visitMap.set(vid, a);
+      });
+      const visits = [...visitMap.values()];
+      return { ...s, visits };
+    });
     return list.sort((a, b) => b.visits.length - a.visits.length || a.full_name.localeCompare(b.full_name));
   }, [staff.data, rows]);
 
@@ -131,7 +145,11 @@ export default function Field() {
                     <td className="nowrap">{c.zone_name || '–'}<div className="tiny faint mono">{c.pincode}</div></td>
                     <td className="mono nowrap">{slotLabel(c.booked_slot)}<div className="tiny faint">{c.booked_slot ? ago(c.booked_slot, now) : ''}</div></td>
                     <td><div className="row wrap gap-4">{c.missing.map((t) => <Badge key={t} kind="outline">{TASK_LABEL[t]}</Badge>)}</div></td>
-                    <td className="right">{canAssign ? <Button size="sm" kind="primary" icon="plus" onClick={() => setAssignFor(c)}>Assign</Button> : <span className="tiny muted">Coordinator</span>}</td>
+                    <td className="right">{canAssign ? (
+                      <Button size="sm" kind={c.hasActive ? 'outline' : 'primary'} icon={c.hasActive ? 'swap' : 'plus'} onClick={() => setAssignFor(c)}>
+                        {c.hasActive ? 'Reassign' : 'Assign'}
+                      </Button>
+                    ) : <span className="tiny muted">Coordinator</span>}</td>
                   </tr>
                 ))}</tbody>
               </table></div>
@@ -200,7 +218,7 @@ export default function Field() {
       </div>
 
       {assignFor && <AssignModal c={assignFor} staff={staff.data || []} load={load} onClose={() => setAssignFor(null)} onDone={() => { setAssignFor(null); board.reload(); needs.reload(); }} />}
-      {backupFor && <AssignModal backup={backupFor} staff={staff.data || []} load={load} onClose={() => setBackupFor(null)} onDone={() => { setBackupFor(null); board.reload(); }} />}
+      {backupFor && <AssignModal backup={backupFor} staff={staff.data || []} load={load} onClose={() => setBackupFor(null)} onDone={() => { setBackupFor(null); board.reload(); needs.reload(); }} />}
     </>
   );
 }
@@ -210,17 +228,20 @@ function VisitCard({ a, now, loc, canAssign, onBackup, onOpen }) {
   const ata = a.actual_arrival_at || a.checkin_at;
   const dist = a.checkin_distance_m;
   const liveDist = a.status === 'en_route' && loc?.distance_to_patient_m != null ? loc.distance_to_patient_m : null;
+  const isBackup = a.role === 'backup' || a.assignment_role === 'backup' || !!a.backup_for;
   return (
     <div className={`fd-card ${late ? 'late' : ''} ${a.status === 'completed' ? 'done' : ''}`}>
       <div className="row between wrap gap-4">
         <span className="mono strong nowrap">{a.case_no}</span>
         <span className="row gap-4">
           <StatusBadge status={a.status} late={late} />
+          {isBackup && <Badge kind="outline">Backup</Badge>}
+          {a.backup_staff_name && <Badge kind="warn">Backup: {a.backup_staff_name}</Badge>}
           {liveDist != null && <Badge kind="warn">{liveDist}m away</Badge>}
         </span>
       </div>
       <div className="truncate">{a.patient_name}{a.priority === 'urgent' && <span className="danger-text"> · urgent</span>}</div>
-      <div className="tiny muted">{a.zone_name || '–'} · {TASK_LABEL[a.task]}{a.backup_for ? ' · backup' : ''}</div>
+      <div className="tiny muted">{a.zone_name || '–'} · {TASK_LABEL[a.task]}</div>
       <div className="fd-times">
         <span><span className="faint">Slot</span> <span className="mono">{slotLabel(a.booked_slot)}</span></span>
         <span><span className="faint">ETA</span> <span className="mono">{time(a.eta)}</span></span>
@@ -234,7 +255,7 @@ function VisitCard({ a, now, loc, canAssign, onBackup, onOpen }) {
       </div>
       {a.delay_reason && <div className="tiny warn-text">Delay: {a.delay_reason}</div>}
       <div className="row mt-4 wrap gap-6">
-        {canAssign && ['assigned', 'en_route'].includes(a.status) && <Button size="xs" icon="swap" onClick={onBackup}>Backup</Button>}
+        {canAssign && ['assigned', 'en_route'].includes(a.status) && !isBackup && <Button size="xs" icon="swap" onClick={onBackup}>Backup</Button>}
         <Button size="xs" kind="ghost" onClick={onOpen}>Open case</Button>
         {loc?.lat != null && loc?.lng != null && (
           <a className="btn xs ghost" href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`} target="_blank" rel="noreferrer" title="Open staff live GPS in Google Maps" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -249,7 +270,7 @@ function VisitCard({ a, now, loc, canAssign, onBackup, onOpen }) {
 function AssignModal({ c, backup, staff, load, onClose, onDone }) {
   const [run, busy] = useAction();
   const slot = backup ? backup.booked_slot : c.booked_slot;
-  const tasks = backup ? [backup.task] : c.missing;
+  const tasks = backup ? [backup.task] : (c.missing?.length ? c.missing : ['visit']);
   const [task, setTask] = useState(tasks[0] || 'visit');
   const eligible = staff.filter((s) => (task === 'visit' || (s.skills || []).includes(task)) && (!backup || s.id !== backup.staff_id))
     .sort((a, b) => (load[a.id] || 0) - (load[b.id] || 0));
@@ -260,12 +281,13 @@ function AssignModal({ c, backup, staff, load, onClose, onDone }) {
   const submit = () => run(async () => {
     await rpc('assign_staff', { p_case: backup ? backup.case_id : c.id, p_staff: pickDefault, p_task: task, p_eta: fromLocalInput(eta), p_backup_for: backup ? backup.id : null });
     onDone();
-  }, backup ? 'Backup technician assigned · original visit marked reassigned' : 'Technician assigned and notified');
+  }, backup ? 'Backup technician assigned' : (c?.hasActive ? 'Technician reassigned and notified' : 'Technician assigned and notified'));
   const head = backup || c;
+  const isReassign = !backup && !!c?.hasActive;
   return (
-    <Modal title={backup ? `Assign backup · ${backup.case_no}` : `Assign technician · ${c.case_no}`} onClose={onClose} footer={<>
-      <Button onClick={onClose}>Cancel</Button>
-      <Button kind="primary" disabled={busy || !pickDefault} onClick={submit}>{backup ? 'Assign backup' : 'Assign'}</Button>
+    <Modal title={backup ? `Assign backup · ${backup.case_no}` : isReassign ? `Reassign technician · ${c.case_no}` : `Assign technician · ${c.case_no}`} onClose={onClose} footer={<>
+      <Button onClick={onClose} disabled={busy}>Cancel</Button>
+      <Button kind="primary" disabled={busy || !pickDefault} onClick={submit}>{backup ? 'Assign backup' : isReassign ? 'Reassign' : 'Assign'}</Button>
     </>}>
       <dl className="kv mb-16">
         <dt>Patient</dt><dd>{head.patient_name}</dd>
