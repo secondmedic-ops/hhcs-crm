@@ -22,7 +22,9 @@ const CAT_LABELS = {
   equipment: 'Equipment',
   icu: 'ICU setup',
   consumables: 'Consumables',
-  other: 'Other'
+  other: 'Other',
+  caretaker_attendant: 'Caretaker / Attendant',
+  ambulance: 'Ambulance'
 };
 
 const DEFAULT_PROVIDERS = {
@@ -40,6 +42,8 @@ const DEFAULT_PROVIDERS = {
   consumables: 'BMM',
   homecare: 'BMM',
   other: 'BMM',
+  caretaker_attendant: 'BMM',
+  ambulance: 'BMM',
 };
 
 // Current date in IST (UTC+5:30)

@@ -28,7 +28,8 @@ const RELATIONS = [['self', 'Self'], ['son', 'Son'], ['daughter', 'Daughter'], [
 const GENDERS = [['M', 'Male'], ['F', 'Female'], ['O', 'Other']];
 const CHANNELS = [['phone', 'Phone'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['chat', 'Chat'], ['walkin', 'Walk-in'], ['referral', 'Referral']];
 const CATEGORY = { lab: 'Blood tests · sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy',
-  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home healthcare', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
+  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home healthcare', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables',
+  caretaker_attendant: 'Caretaker / Attendant', ambulance: 'Ambulance', other: 'Other' };
 const NURSING_SHIFTS = [['day', 'Day Shift'], ['night', 'Night Shift']];
 const PATIENT_KEYS = ['full_name', 'age', 'gender', 'mobile'];
 const FALLBACK_CONSENT = 'This call is recorded for quality and your records. May we record and use these details to arrange your service?';
@@ -215,7 +216,7 @@ export default function Console() {
       const cat = ['ecg', 'xray'].includes(s.category) ? 'diagnostic' : s.category;
       (g[cat] = g[cat] || []).push(s);
     });
-    const order = ['diagnostic', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'homecare', 'equipment', 'icu', 'consumables', 'visit', 'other'];
+    const order = ['diagnostic', 'lab', 'nursing', 'physio', 'beds', 'eldercare', 'caretaker_attendant', 'homecare', 'equipment', 'icu', 'consumables', 'ambulance', 'visit', 'other'];
     return Object.entries(g).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
   }, [services.data]);
   const categoryServices = svcGroups.find(([cat]) => cat === serviceCategory)?.[1] || [];

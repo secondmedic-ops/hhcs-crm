@@ -8,7 +8,7 @@ import { Panel, Input, Badge, Empty, Skeleton } from './ui.jsx';
 
 export const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing',
   physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home care', equipment: 'Equipment', icu: 'ICU setup',
-  consumables: 'Consumables', other: 'Other' };
+  consumables: 'Consumables', other: 'Other', caretaker_attendant: 'Caretaker / Attendant', ambulance: 'Ambulance' };
 
 export const KB_FIELDS = [
   ['summary', 'What it is'],

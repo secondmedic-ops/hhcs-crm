@@ -12,6 +12,7 @@ const CAT_LABEL = {
   lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge',
   nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care',
   homecare: 'Home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other',
+  caretaker_attendant: 'Caretaker / Attendant', ambulance: 'Ambulance',
 };
 
 export function getDeploymentInfo(item, allDeployments) {

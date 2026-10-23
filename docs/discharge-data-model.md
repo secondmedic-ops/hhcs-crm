@@ -181,7 +181,7 @@ The recommended item list is held in `case_items` with `recommended = true` (bel
 | id | uuid | no | PK |
 | code | text | no | Unique per workspace, for example NURSE-12H, HFNC, XR-CHEST |
 | name | text | no | |
-| category | text | no | lab, xray, ecg, visit, nursing, physio, beds, eldercare, homecare, equipment, icu, consumables, other. Decides the provider. |
+| category | text | no | lab, xray, ecg, visit, nursing, physio, beds, eldercare, homecare, equipment, icu, consumables, caretaker_attendant, ambulance, other. Decides the provider. |
 | price | numeric | no | B2C selling rate. Changed only through a rate-change or rate-import approval |
 | unit | text | no | shift, day, setup, unit, or the unit of an imported service (month, 12 hours, visit, ...). Never converted |
 | tax_basis | text | yes | incl_gst, excl_gst, no_gst; null = not confirmed |

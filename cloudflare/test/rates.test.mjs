@@ -193,6 +193,12 @@ const [{ o: ambOpt }] = await owner(`select options o from rate_imports where id
 check(subA.buying_applied === 1 && ambRate?.rate === 2100 && ambRate.code === 'BMM' && Number(ambOpt.buy_pct_of_sell) === 70 && ambOpt.provider_by_routing === true,
   'submitted: derived BMM buying rate saved, the rule kept with the import', { subA, ambRate, ambOpt });
 await as('client', `select decide_approval($1, false, 'Test only')`, [subA.approval_id]);
+const newCats = await preview([
+  { row: 2, service_code: 'CARE-TEST', unit: 'shift', b2c: '1200', effective_from: today, new_service: { code: 'CARE-TEST', name: 'Caretaker (test)', category: 'Caretaker / Attendant', unit: 'shift' } },
+  { row: 3, service_code: 'AMB2-TEST', unit: 'trip', b2c: '3000', effective_from: today, new_service: { code: 'AMB2-TEST', name: 'Ambulance 2 (test)', category: 'ambulance', unit: 'trip' } },
+], PCT);
+check(newCats.ok && rowOf(newCats, 2).category === 'caretaker_attendant' && rowOf(newCats, 2).provider_code === 'BMM'
+  && rowOf(newCats, 3).category === 'ambulance' && rowOf(newCats, 3).provider_code === 'BMM', 'categories "Caretaker / Attendant" and "ambulance" accepted and paid to BMM', newCats.rows);
 
 console.log('\nBuying-rate versions never overlap');
 await as('sup', `select set_provider_rate($1, $2, 1800, $3::date, 'no_gst', 'from next week')`, [prov.BMM, svc['NURSE-12H'], plus(10)]);

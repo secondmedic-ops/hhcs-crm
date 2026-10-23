@@ -15,6 +15,7 @@ const ACTIVE = ['assigned', 'en_route', 'checked_in'];
 const TASK_FOR = {
   lab: 'phlebotomy', ecg: 'ecg', xray: 'xray', nursing: 'nursing', physio: 'physio',
   icu: 'icu_care', eldercare: 'eldercare', equipment: 'delivery', consumables: 'delivery', visit: 'visit',
+  caretaker_attendant: 'eldercare', ambulance: 'delivery',
 };
 const TASK_LABEL = {
   visit: 'Visit',

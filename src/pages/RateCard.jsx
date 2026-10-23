@@ -15,7 +15,8 @@ import {
 export const RATE_MANAGERS = ['supervisor', 'admin'];
 const BUYING_VIEWERS = ['supervisor', 'coordinator', 'admin'];
 const CAT = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charges', nursing: 'Nursing', physio: 'Physiotherapy',
-  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
+  beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Other home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other',
+  caretaker_attendant: 'Caretaker / Attendant', ambulance: 'Ambulance' };
 const GST = { incl_gst: 'Includes GST', excl_gst: 'GST extra', no_gst: 'No GST charged' };
 const GST_OPTS = Object.entries(GST);
 const day = (d) => (d ? dateLong(`${String(d).slice(0, 10)}T00:00:00+05:30`) : '–');
@@ -243,7 +244,9 @@ const FIELDS = [
 const CAT_IN = { lab: 'lab', 'sample collection': 'lab', 'blood test': 'lab', 'blood tests': 'lab', xray: 'xray', 'x-ray': 'xray', 'portable x-ray': 'xray',
   ecg: 'ecg', 'ecg at home': 'ecg', visit: 'visit', 'visit charges': 'visit', nursing: 'nursing', physio: 'physio', physiotherapy: 'physio', beds: 'beds',
   'hospital beds': 'beds', eldercare: 'eldercare', 'elder care': 'eldercare', homecare: 'homecare', 'home care': 'homecare', 'other home care': 'homecare',
-  equipment: 'equipment', icu: 'icu', 'icu setup': 'icu', consumables: 'consumables', other: 'other' };
+  equipment: 'equipment', icu: 'icu', 'icu setup': 'icu', consumables: 'consumables', other: 'other',
+  'caretaker / attendant': 'caretaker_attendant', 'caretaker and attendant': 'caretaker_attendant', 'caretaker': 'caretaker_attendant', 'attendant': 'caretaker_attendant', caretaker_attendant: 'caretaker_attendant',
+  ambulance: 'ambulance' };
 const normHead = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const pad = (n) => String(n).padStart(2, '0');
 // rate-card codes: letters and digits joined by hyphens, at most 30, cut at a word where it can be
@@ -264,7 +267,7 @@ const unitWords = (u) => String(u || '').trim().replace(/^per\s+/i, '');
 function guessCategory(name) {
   const n = String(name || '').toLowerCase();
   const rules = [[/telemonitor|holter|abpm/, 'homecare'], [/x[- ]?ray/, 'xray'], [/\becg\b/, 'ecg'], [/physio/, 'physio'],
-    [/nurs|dressing|picc/, 'nursing'], [/attendant|caretaker|care taker|elder/, 'eldercare'], [/ambulance/, 'other'], [/doctor/, 'homecare'],
+    [/nurs|dressing|picc/, 'nursing'], [/attendant|caretaker|care taker/, 'caretaker_attendant'], [/elder/, 'eldercare'], [/ambulance/, 'ambulance'], [/doctor/, 'homecare'],
     [/\bbeds?\b/, 'beds'], [/oxygen|concentrator|cylinder|airvo|hfnc|monitor|ventilator|bipap|cpap|stellar|lumis|pump|suction|mattress|wheelchair|walker|commode/, 'equipment'],
     [/blood|\blab\b|sample/, 'lab']];
   return (rules.find(([re]) => re.test(n)) || [])[1] || '';
