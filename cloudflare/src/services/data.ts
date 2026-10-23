@@ -111,7 +111,7 @@ export const RPC: Record<string, readonly Role[]> = {
 };
 /** Read-only actions that may ride in a batch. */
 export const READ_RPC = new Set(['customer_feedback_summary', 'provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
-  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup', 'get_min_equipment_billing_days']);
+  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);
