@@ -524,7 +524,7 @@ begin
   select * into pt from patients where id = c.patient_id;
 
   if p_action in ('en_route', 'start', 'started') then
-    v_new_status := case when a.task = 'phlebotomy' then 'started' else 'en_route' end;
+    v_new_status := case when p_action in ('start', 'started') then 'started' else 'en_route' end;
     update assignments
     set status = v_new_status, eta = coalesce(nullif(p->>'eta','')::timestamptz, eta)
     where id = p_assignment;
@@ -538,7 +538,7 @@ begin
       v_dist := haversine_m(pt.lat, pt.lng, (p->>'lat')::float8, (p->>'lng')::float8);
     end if;
     v_var := round(extract(epoch from (v_now - coalesce(a.eta, a.window_start, c.booked_slot))) / 60)::int;
-    v_new_status := case when a.task = 'phlebotomy' then 'reached' else 'checked_in' end;
+    v_new_status := case when p_action = 'reached' then 'reached' else 'checked_in' end;
 
     update assignments
     set status = v_new_status,
@@ -673,3 +673,125 @@ left join lateral (
 grant select on v_assignments to caredesk_app;
 grant execute on function assign_staff(uuid, uuid, text, timestamptz, uuid, text, text) to caredesk_app;
 grant execute on function reassign_staff(uuid, uuid, uuid, text, timestamptz, text, text) to caredesk_app;
+
+-- 10. Update case_gates to support all field lifecycle statuses (reached, collected, handed_to_lab)
+create or replace function case_gates(p_case uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  c record;
+  p record;
+  v_to case_stage;
+  checks jsonb := '[]'::jsonb;
+  v_items int;
+  v_lab int;
+  v_samples int;
+  v_checked int;
+  v_open_asg int;
+  v_open_cmp int;
+  v_svc_done boolean;
+  v_pay_done boolean;
+  v_ref_done boolean;
+  v_dep_done boolean;
+  v_has_esc boolean;
+  v_needs_esc boolean;
+begin
+  select * into c from cases where id = p_case;
+  if not found then raise exception 'Case not found'; end if;
+  select * into p from patients where id = c.patient_id;
+  v_to := next_stage(c.stage);
+  select count(*) filter (where not excluded), count(*) filter (where category = 'lab' and not excluded)
+    into v_items, v_lab from case_items where case_id = p_case;
+
+  if c.stage = 'enquiry' then
+    checks := jsonb_build_array(
+      jsonb_build_object('label','Patient name and mobile', 'ok', p.full_name is not null and p.mobile is not null),
+      jsonb_build_object('label','Address and pincode', 'ok', coalesce(c.address,'') <> '' and coalesce(c.pincode,'') <> ''),
+      jsonb_build_object('label','Services requested noted', 'ok', coalesce(c.services_requested,'') <> '' or v_items > 0),
+      jsonb_build_object('label','Consent recorded', 'ok', p.consent_verbal_at is not null or p.consent_digital_at is not null));
+    if c.care_type = 'post_discharge' then
+      checks := checks || jsonb_build_array(
+        jsonb_build_object('label','Interaction reason recorded', 'ok', c.intake_disposition = 'requirement_captured'),
+        jsonb_build_object('label','Spoke with patient or decision-maker', 'ok', c.spoke_with in ('patient','decision_maker')),
+        jsonb_build_object('label','Expected discharge date', 'ok', c.expected_discharge_on is not null),
+        jsonb_build_object('label','On-site validation done, discharge ready', 'ok', c.validation_status = 'done'),
+        jsonb_build_object('label','Recommended item list', 'ok', exists (select 1 from case_items i where i.case_id = p_case and i.recommended)));
+    end if;
+  elsif c.stage = 'pricing' then
+    checks := jsonb_build_array(
+      jsonb_build_object('label','At least one rate-card service', 'ok', v_items > 0),
+      jsonb_build_object('label','Discount approved (if above band)', 'ok', c.quote_status in ('approved','sent')),
+      jsonb_build_object('label','Quote sent on approved template', 'ok', c.quote_status = 'sent'));
+    if c.care_type = 'post_discharge' then
+      checks := checks || jsonb_build_array(
+        jsonb_build_object('label','Family commercial sign-off', 'ok', c.signoff_at is not null));
+    end if;
+  elsif c.stage = 'booking' then
+    checks := jsonb_build_array(
+      jsonb_build_object('label','Slot booked', 'ok', c.booked_slot is not null),
+      jsonb_build_object('label','Address verified', 'ok', coalesce(c.address,'') <> ''),
+      jsonb_build_object('label','Confirmation sent to patient', 'ok', c.booking_confirmed_at is not null),
+      jsonb_build_object('label','Coordinator assigned', 'ok', c.coordinator_id is not null));
+  elsif c.stage = 'deployment' then
+    select count(*) into v_checked from assignments where case_id = p_case and status in ('checked_in', 'reached', 'collected', 'handed_to_lab', 'completed');
+    checks := jsonb_build_array(
+      jsonb_build_object('label','Field resource assigned', 'ok', exists(select 1 from assignments where case_id = p_case and status not in ('cancelled','reassigned'))),
+      jsonb_build_object('label','Geo-tagged check-in at address', 'ok', v_checked > 0));
+  elsif c.stage = 'completion' then
+    select count(*) into v_open_asg from assignments where case_id = p_case and status not in ('completed','handed_to_lab','cancelled','reassigned');
+    select count(*) into v_samples from samples where case_id = p_case and collected_at is not null;
+    checks := jsonb_build_array(
+      jsonb_build_object('label','All visits completed with patient sign-off', 'ok', v_open_asg = 0 and exists(select 1 from assignments where case_id = p_case and (status = 'completed' or status = 'handed_to_lab') and (patient_signoff or status = 'handed_to_lab'))),
+      jsonb_build_object('label','Samples barcoded / ECG / X-ray captured', 'ok', v_samples > 0 or v_lab = 0));
+  elsif c.stage = 'payment' then
+    checks := jsonb_build_array(
+      jsonb_build_object('label','Amount collected', 'ok', c.amount_collected >= c.total or c.payment_status = 'waived'),
+      jsonb_build_object('label','Reconciled against gateway / bank', 'ok', c.payment_status in ('reconciled','waived') or c.total = 0));
+  elsif c.stage = 'closure' then
+    select count(*) into v_open_cmp from complaints where case_id = p_case and status in ('open','acknowledged');
+
+    v_svc_done := (c.service_completed_at is not null);
+    v_pay_done := (c.payment_status in ('reconciled', 'waived')) or (c.total <= c.amount_collected);
+    v_ref_done := not exists (
+      select 1 from case_referrals
+      where case_id = p_case
+        and (status in ('new', 'accepted', 'scheduled', 'dispatched') or status not in ('completed', 'declined', 'cancelled'))
+    );
+    v_dep_done := not exists (
+      select 1 from partner_deployments
+      where case_id = p_case and status = 'dispatched'
+    );
+
+    v_has_esc := exists (
+      select 1 from escalations e join profiles rp on rp.id = e.resolved_by
+      where e.case_id = p_case and e.status = 'resolved'
+        and e.type in ('operational', 'billing')
+        and e.resolution_notes is not null
+        -- waiver = resolved by a supervisor / Hinduja management / administrator who did not raise it
+        and rp.role in ('supervisor', 'client_manager', 'administrator')
+        and e.resolved_by is distinct from e.raised_by
+    );
+
+    v_needs_esc := (not v_svc_done) or (c.total > c.amount_collected and c.payment_status not in ('reconciled', 'waived'));
+
+    checks := jsonb_build_array(
+      jsonb_build_object('label','Report delivered', 'ok', c.report_status in ('delivered','na')),
+      jsonb_build_object('label','No open complaints', 'ok', v_open_cmp = 0),
+      jsonb_build_object('label','Feedback captured', 'ok', c.feedback_rating is not null),
+      jsonb_build_object('label','Service completion', 'ok', v_svc_done or v_has_esc),
+      jsonb_build_object('label','Zero pending referrals', 'ok', v_ref_done),
+      jsonb_build_object('label','Equipment returned / active handover', 'ok', v_dep_done),
+      jsonb_build_object('label','Payment settled or waived', 'ok', v_pay_done or v_has_esc)
+    );
+
+    if v_needs_esc or v_has_esc then
+      checks := checks || jsonb_build_array(
+        jsonb_build_object('label','Pending payment/service documented & supervisor approved', 'ok', v_has_esc)
+      );
+    end if;
+  end if;
+
+  return jsonb_build_object('stage', c.stage, 'next', v_to, 'checks', checks,
+    'ready', not exists (select 1 from jsonb_array_elements(checks) x where (x->>'ok')::boolean = false));
+end $$;
+
+grant execute on function case_gates(uuid) to caredesk_app;

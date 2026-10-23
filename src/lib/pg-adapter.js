@@ -60,7 +60,7 @@ class Query {
 // write: after it returns every screen reloads, and a loader that calls it (my_pending_wrapup in the call bar,
 // provider_portal) then reloads itself in a loop, about once a second (21 Oct 2026: this used up the daily query budget).
 const READ_ONLY_RPC = new Set(['customer_feedback_summary', 'provider_portal', 'case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
-  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup']);
+  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup', 'get_min_equipment_billing_days']);
 
 // ---------------------------------------------------------------- production / local test: through the Worker
 export function createApiClient() {
