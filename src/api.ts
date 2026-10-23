@@ -13,6 +13,8 @@ const STAFF_SESSION_KEY = 'caredesk.staff-session';
 export const getStaffSession = () => sessionStorage.getItem(STAFF_SESSION_KEY);
 export const setStaffSession = (id: string | null) => { id ? sessionStorage.setItem(STAFF_SESSION_KEY, id) : sessionStorage.removeItem(STAFF_SESSION_KEY); };
 
+const API_BASE = (import.meta.env.VITE_API_URL as string || 'https://hhcs-caredesk.secondmedichost.workers.dev').replace(/\/+$/, '');
+
 async function headers(json: boolean): Promise<Record<string, string>> {
   const h: Record<string, string> = { Accept: 'application/json' };
   if (json) h['Content-Type'] = 'application/json';
@@ -25,7 +27,8 @@ async function headers(json: boolean): Promise<Record<string, string>> {
 }
 
 async function request<T>(path: string, opts: { method?: 'GET' | 'POST'; body?: unknown; raw?: boolean; capability?: boolean } = {}): Promise<T> {
-  const res = await fetch(path, {
+  const targetUrl = path.startsWith('http') ? path : `${API_BASE}${path}`;
+  const res = await fetch(targetUrl, {
     method: opts.method || 'GET',
     headers: opts.capability ? { Accept: 'application/json', 'Content-Type': 'application/json' } : await headers(opts.body !== undefined),
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
@@ -114,7 +117,9 @@ export function openLive(onTables: (tables: string[]) => void): () => void {
     const token = await accessToken();
     const proto = token ? token : localUser ? 'local.' + localUser : null;
     if (!proto) { timer = setTimeout(connect, 5000); return; }
-    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/live`;
+    const wsHost = API_BASE ? new URL(API_BASE).host : location.host;
+    const wsScheme = API_BASE ? (API_BASE.startsWith('https') ? 'wss' : 'ws') : (location.protocol === 'https:' ? 'wss' : 'ws');
+    const url = `${wsScheme}://${wsHost}/api/v1/live`;
     ws = new WebSocket(url, ['caredesk', proto]);
     ws.onmessage = (e) => {
       if (e.data === 'pong') return;

@@ -58,7 +58,18 @@ function localUserId(req: Request, url: URL): string | null {
 
 async function api(req: Request, env: Env, exec: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
-  if (req.method === 'OPTIONS') return noContent();
+  if (req.method === 'OPTIONS') {
+    const origin = req.headers.get('origin') || '*';
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, X-Local-User, X-Staff-Session',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
   const path = url.pathname;
 
   // Rehearsal-only helpers (EXPOSE_CONTRACT=1 is set by cloudflare/test/rehearse.mjs, never in production).

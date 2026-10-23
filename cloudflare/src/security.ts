@@ -49,6 +49,9 @@ export function secure(res: Response, url: URL, env: Pick<Env, 'SUPABASE_URL'>):
   h.set('X-Frame-Options', 'DENY');
   h.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   h.set('Permissions-Policy', 'microphone=(self), geolocation=(self), camera=(), payment=(), usb=()');
+  if (!h.has('Access-Control-Allow-Origin')) {
+    h.set('Access-Control-Allow-Origin', '*');
+  }
   return out;
 }
 

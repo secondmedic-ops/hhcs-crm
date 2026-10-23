@@ -40,6 +40,13 @@ export async function runScheduled(cron: string, env: Env, exec: ExecutionContex
         if (out.silence) console.log('webhook silence alert', out.silence);
         for (const [step, msg] of Object.entries(out.errors || {})) console.log('cron ' + step, msg);
       } catch (e) { console.log('cron minute', (e as Error).message); }
+      // sweep stale ringing calls (> 2 min) so orphaned calls never block agents or show false ringing
+      try {
+        const swept = await asSystem(sql, (tx) => tx`update calls set status = case when direction = 'inbound' then 'missed' else 'failed' end,
+          ended_at = now(), raw = coalesce(raw, '{}'::jsonb) || '{"sweep":"stale_ringing_expired"}'::jsonb
+          where status = 'ringing' and started_at < now() - interval '2 minutes' returning id`);
+        if (swept.result.length) changed.push('calls');
+      } catch (e) { console.log('stale call sweep', (e as Error).message); }
       // callback auto-dialer after the sync, so a missed call it just brought in can be dialled this minute
       try {
         const r = await runAutodial(env, sql, { mo, claims });

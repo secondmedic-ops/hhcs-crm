@@ -51,6 +51,11 @@ export async function dial(c: Ctx, body: J) {
   const { result, changed } = await asSystem(c.sql, async (tx) => {
     const [agent] = await tx`select id from profiles where id = ${c.user.id}::uuid and workspace_id = ${ws}::uuid and active for update`;
     if (!agent) throw new ApiError(409, 'Your agent account is inactive');
+    // Expire stale ringing calls for this agent where the call ended without a provider event (> 2 min)
+    await tx`update calls set status = case when direction = 'inbound' then 'missed' else 'failed' end, ended_at = now(),
+      raw = coalesce(raw, '{}'::jsonb) || '{"dial_outcome":"stale_ringing_expired"}'::jsonb
+      where agent_id = ${c.user.id}::uuid and status = 'ringing'
+        and started_at < now() - interval '2 minutes'`;
     const [active] = await tx`select id from calls where agent_id = ${c.user.id}::uuid and status in ('ringing','answered') limit 1`;
     if (active) throw new ApiError(409, 'You already have an active or unconfirmed call. Wait for its outcome before dialling again.');
     const [wrap] = await tx`select has_pending_wrapup(${c.user.id}::uuid) as pending`;
@@ -93,7 +98,7 @@ export async function dial(c: Ctx, body: J) {
       const updated = await tx`update calls set status = ${unconfirmed ? 'ringing' : 'failed'},
         ended_at = ${unconfirmed ? null : new Date().toISOString()},
         raw = coalesce(raw, '{}'::jsonb) || ${tx.json({ dial_outcome: unconfirmed ? 'unconfirmed' : 'rejected' })}
-        where id = ${result.callId} and status = 'ringing' and session_id = ${ref} returning id`;
+        where id = ${result.callId} and status = 'ringing' returning id`;
       if (!unconfirmed && updated.length && body.callback_id) {
         await tx`select callback_retry(${body.callback_id}::uuid, 'MyOperator rejected the dial')`;
       }

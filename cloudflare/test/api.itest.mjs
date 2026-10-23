@@ -412,7 +412,25 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   const rv = await one(`select count(*)::int n from access_log where action = 'reveal_number' and user_id = $1`, U.agent);
   check(back.status === 200 && back.body?.mode === 'api' && rv.n === 0 && !back.body.number,
     'old app setting ignored: API calls only, no number reveals', JSON.stringify(back.body));
-  await sql`update calls set status='completed',ended_at=now() where id=${back.body.call_id}`;
+  const refBack = obdCalls.at(-1)?.body.reference_id;
+  await hook({ event_type: 'call.end', session_id: 'provider-sess-rejected-1', direction: 'outbound',
+    payload: { reference_id: refBack, status: 'failed', legs: [{ dial_status: 'CANCEL', talk_duration: 0 }] } }, newKey);
+  const rejCall = await one(`select status, ended_at, session_id from calls where id = $1`, back.body.call_id);
+  check(rejCall?.status === 'failed' && rejCall.ended_at && rejCall.session_id === 'provider-sess-rejected-1',
+    'outbound call rejected by provider transitions to failed and updates session_id', JSON.stringify(rejCall));
+  await hook({ event_type: 'call.ringing', session_id: 'provider-sess-rejected-1', direction: 'outbound',
+    payload: { reference_id: refBack } }, newKey);
+  const lateRing = await one(`select status from calls where id = $1`, back.body.call_id);
+  check(lateRing?.status === 'failed', 'late ringing event does not overwrite failed status', JSON.stringify(lateRing));
+  await wrapAll('agent');
+  const activeDial = await call('agent', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  const refActive = obdCalls.at(-1)?.body.reference_id;
+  await hook({ event_type: 'call.ringing', session_id: 'provider-sess-active-1', direction: 'outbound',
+    payload: { reference_id: refActive } }, newKey);
+  const actRow = await one(`select status, session_id from calls where id = $1`, activeDial.body.call_id);
+  check(actRow?.status === 'ringing' && actRow.session_id === 'provider-sess-active-1',
+    'genuinely active call remains ringing and updates session_id', JSON.stringify(actRow));
+  await sql`update calls set status='completed',ended_at=now() where id=${activeDial.body.call_id}`;
   await wrapAll('agent');
   await rpc('agent', 'callback_update', { p_id: pendingCb.id, p_status: 'unreachable', p_note: 'No answer twice' });
   const dialAgain = await call('agent', 'POST', '/api/v1/calls/dial', { callback_id: pendingCb.id });

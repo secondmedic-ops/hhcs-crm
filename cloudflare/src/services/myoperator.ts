@@ -238,11 +238,24 @@ export function afterCallEvent(o: J, source = 'myoperator'): J {
 /** The CRM call for a provider session: by session id, else by our click-to-call reference, else a new one. */
 async function findOrCreateCall(tx: Tx, a: { ws: string; session: string; refId?: unknown; customer: string | null; direction: string;
   did: string | null; startedAt: string | null; providerCallId?: string | null; first: J; adoptRecent?: boolean }): Promise<J> {
-  await tx`select pg_advisory_xact_lock(hashtextextended(${a.ws + ':' + a.session}, 0))`;
+  const refStr = a.refId != null && String(a.refId).trim() ? String(a.refId).trim() : null;
+  await tx`select pg_advisory_xact_lock(hashtextextended(${a.ws + ':' + (refStr || a.session)}, 0))`;
   let [call] = await tx`select * from calls where provider = 'myoperator' and workspace_id = ${a.ws}::uuid
-    and (session_id = ${a.session} or (${a.providerCallId ?? null}::text is not null and provider_call_id = ${a.providerCallId ?? null})) limit 1 for update`;
-  if (!call && a.refId) {
-    [call] = await tx`update calls set session_id = ${a.session} where workspace_id = ${a.ws}::uuid and click_to_call_ref = ${String(a.refId)} returning *`;
+    and (session_id = ${a.session}
+      or (${a.providerCallId ?? null}::text is not null and provider_call_id = ${a.providerCallId ?? null})
+      or (${refStr}::text is not null and click_to_call_ref = ${refStr}))
+    limit 1 for update`;
+  if (call) {
+    const needsSession = a.session && call.session_id !== a.session;
+    const needsPid = a.providerCallId && !call.provider_call_id;
+    if (needsSession || needsPid) {
+      [call] = await tx`update calls set
+        session_id = ${needsSession ? a.session : call.session_id},
+        provider_call_id = ${needsPid ? a.providerCallId : call.provider_call_id}
+        where id = ${call.id} returning *`;
+    }
+  } else if (refStr) {
+    [call] = await tx`update calls set session_id = ${a.session}${a.providerCallId ? tx`, provider_call_id = ${a.providerCallId}` : tx``} where workspace_id = ${a.ws}::uuid and click_to_call_ref = ${refStr} returning *`;
   }
   if (!call && a.adoptRecent && a.customer) {
     // the in-call webhook may have opened this call under another id: take over a live call from the same number
@@ -327,7 +340,8 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
   const uid = (o._pm || []).find((x: J) => x?.ky === 'ui')?.vl;
   const session = String(uid || o._ai);
   const did = normMobile(o._did || o._vn) || (await soleLine(tx, ws));
-  let call = await findOrCreateCall(tx, { ws, session, refId: o._cri || o._ri, customer, direction, did, startedAt: toIso(o._st),
+  const refId = o._cri || o._ri || o.reference_id || o.client_ref_id || o.ref_id || o.client_reference_id || o.click_to_call_ref;
+  let call = await findOrCreateCall(tx, { ws, session, refId, customer, direction, did, startedAt: toIso(o._st),
     providerCallId: o._ai ? String(o._ai) : null, first: o, adoptRecent: true });
 
   const legs: J[] = Array.isArray(o._ld) ? o._ld : [];
@@ -343,6 +357,7 @@ async function onAfterCall(tx: Tx, env: Env, o: J): Promise<{ aiCallId?: string 
     talk_seconds: connected ? afterCallTalkSeconds(o) : 0,
     raw: tx.json({ ...(call.raw || {}), end: o }),
   };
+  if (call.status === 'completed' && !connected) delete patch.status;
   if (connected) {
     const t = settleTiming({ startedAt: toIso(o._st) || call.started_at, endedAt: patch.ended_at, talkSeconds: patch.talk_seconds, ...knownAnswer(call) });
     Object.assign(patch, { ended_at: t.ended_at, talk_seconds: t.talk_seconds, answered_at: t.answered_at, duration_flag: t.duration_flag });
@@ -376,13 +391,14 @@ async function onInCall(tx: Tx, env: Env, o: J) {
   const customer = normMobile(o.clid);
   const session = String(o.uid);
   const did = normMobile(o.did || o.did_number) || (await soleLine(tx, ws));
-  let call = await findOrCreateCall(tx, { ws, session, refId: o.client_ref_id || o.reference_id, customer, direction: 'inbound', did,
+  const refId = o.client_ref_id || o.reference_id || o.ref_id || o.client_reference_id || o.click_to_call_ref;
+  let call = await findOrCreateCall(tx, { ws, session, refId, customer, direction: 'inbound', did,
     startedAt: new Date().toISOString(), first: o });
   const users = (Array.isArray(o.users) ? o.users : o.users ? [o.users] : []).flatMap((u: unknown) =>
     u && typeof u === 'object' ? Object.values(u as J) : [u]);
   const agent = await matchAgent(tx, ws, [], {}, users);
   const patch: J = {};
-  if (agent && call.agent_id !== agent.id && call.status !== 'completed') { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
+  if (agent && call.agent_id !== agent.id && !['completed', 'failed', 'missed', 'abandoned'].includes(call.status)) { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
   if (Number(o.call_state) === 1 && call.status === 'ringing') {
     patch.status = 'answered';
     if (call.direction === 'inbound') {
@@ -408,7 +424,8 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
   const customer = normMobile(ev.customer_identifier || p.customer_number || p.caller_number || p.client_number);
   const direction = /out/i.test(ev.direction || p.direction || '') ? 'outbound' : 'inbound';
   const session = String(ev.session_id || p.session_id || p.id || ev.event_id);
-  const refId = p.client_ref_id || p.ref_id || ev.client_ref_id;
+  const refId = p.client_ref_id || p.reference_id || p.ref_id || p.client_reference_id || p.click_to_call_ref
+    || ev.client_ref_id || ev.reference_id || ev.ref_id || ev.client_reference_id || ev.click_to_call_ref;
 
   let call = await findOrCreateCall(tx, { ws, session, refId, customer, direction, did: normMobile(did),
     startedAt: toIso(p.started_at || ev.timestamp), providerCallId: p.id ? String(p.id) : null, first: ev });
@@ -418,6 +435,14 @@ async function onCallEvent(tx: Tx, env: Env, ev: J): Promise<{ aiCallId?: string
   if (agent && !call.agent_id) { patch.agent_id = agent.id; patch.agent_name = agent.full_name; }
 
   switch (ev.event_type) {
+    case 'call.initiated':
+    case 'call.ringing':
+    case 'call.dial_begin':
+    case 'call.dialing': {
+      if (['completed', 'failed', 'missed', 'abandoned'].includes(call.status)) break; // late ringing event must never overwrite terminal status
+      if (call.status !== 'answered') patch.status = 'ringing';
+      break;
+    }
     case 'call.answered': {
       if (!['ringing','answered'].includes(call.status)) break; // delayed answer must not reopen a finished call
       const answeredLegs = call.direction === 'outbound' ? customerLegs(legs, call.customer_number) : legs;

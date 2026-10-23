@@ -31,7 +31,7 @@ export async function localEnd(call) {
   const answered = !!call.answered_at;
   const talk = answered ? Math.max(5, Math.round((Date.now() - new Date(call.answered_at).getTime()) / 1000)) : 0;
   await hook({ event_type: 'call.end', session_id: call.session_id, direction: call.direction,
-    payload: { status: answered ? 'answered' : 'missed', ended_at: now(), recording_filename: answered ? 'local-test-recording.mp3' : null,
+    payload: { reference_id: call.click_to_call_ref || undefined, status: answered ? 'answered' : (call.direction === 'outbound' ? 'failed' : 'missed'), ended_at: now(), recording_filename: answered ? 'local-test-recording.mp3' : null,
       legs: [{ talk_duration: talk, ring_duration: call.ring_seconds || 0, dial_status: answered ? 'answered' : 'no-answer' }] } });
 }
 

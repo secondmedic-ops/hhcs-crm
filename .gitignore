@@ -42,3 +42,8 @@ __pycache__/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Keystores & temporary files
+*.jks
+sm-ra*
+smra/

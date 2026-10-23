@@ -66,3 +66,11 @@ test.each(['TimeoutError', 'TypeError'])('a %s never triggers an automatic secon
   await expect(clickToCall(env, target)).rejects.toMatchObject({ status: 504 });
   expect(send).toHaveBeenCalledTimes(1);
 });
+
+test('clickToCall includes referenceId in provider payload for webhook correlation', async () => {
+  const send = vi.fn().mockResolvedValue(Response.json({ status: 'success', code: 200 }));
+  vi.stubGlobal('fetch', send);
+  await clickToCall(env, { ...target, referenceId: 'crm-ref-12345' });
+  const reqBody = JSON.parse(send.mock.calls[0][1].body);
+  expect(reqBody.reference_id).toBe('crm-ref-12345');
+});
