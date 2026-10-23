@@ -6,7 +6,12 @@ import type { Db } from '../db';
 import { databaseUrl, isLocalDb } from '../db';
 import type { Env } from '../env';
 
-export const ROLES = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'administrator'] as const;
+export const ROLES = [
+  'agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk',
+  'client_manager', 'client_clinical', 'admin', 'provider', 'administrator',
+  'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant',
+  'delivery_executive', 'doctor', 'telecaller', 'lab_staff', 'accounts'
+] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Same rule as has_role() in the database: an administrator may do anything a senior role may (supervisor, Hinduja

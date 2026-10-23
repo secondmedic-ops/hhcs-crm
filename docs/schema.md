@@ -57,6 +57,14 @@
 | eta_vs_ata_variance_min | integer | YES |
 | role | text | NO |
 | order_id | uuid | YES |
+| tests_list | text | YES |
+| fasting_required | boolean | YES |
+| tube_count | integer | YES |
+| sample_barcodes | ARRAY | YES |
+| lab_handover_at | timestamp with time zone | YES |
+| override_reason | text | YES |
+| reassign_reason | text | YES |
+| reassign_note | text | YES |
 
 ## audit_log
 | column | type | nullable |
@@ -231,6 +239,15 @@
 | price_version | integer | YES |
 | price_tax_basis | text | YES |
 | priced_at | timestamp with time zone | YES |
+| billing_category | text | YES |
+| actual_days | integer | YES |
+| billable_days | integer | YES |
+| min_rule_applied | boolean | NO |
+| min_days_applied | integer | YES |
+| override_min_applied | boolean | NO |
+| override_reason | text | YES |
+| override_by | uuid | YES |
+| override_at | timestamp with time zone | YES |
 
 ## case_journey_history
 | column | type | nullable |
@@ -667,6 +684,9 @@
 | last_autodial_at | timestamp with time zone | YES |
 | integration_only | boolean | NO |
 | location_sharing | boolean | NO |
+| pincodes | ARRAY | YES |
+| area | text | YES |
+| shift_timings | text | YES |
 
 ## provider_fulfilment_events
 | column | type | nullable |
@@ -826,6 +846,7 @@
 | updated_at | timestamp with time zone | NO |
 | unit | text | NO |
 | tax_basis | text | YES |
+| billing_category | text | YES |
 
 ## sla_policies
 | column | type | nullable |
@@ -986,9 +1007,18 @@
 | eta_vs_ata_variance_min | integer | YES |
 | role | text | YES |
 | order_id | uuid | YES |
+| tests_list | text | YES |
+| fasting_required | boolean | YES |
+| tube_count | integer | YES |
+| sample_barcodes | ARRAY | YES |
+| lab_handover_at | timestamp with time zone | YES |
+| override_reason | text | YES |
+| reassign_reason | text | YES |
+| reassign_note | text | YES |
 | visit_id | uuid | YES |
 | staff_name | text | YES |
 | staff_phone | text | YES |
+| staff_role | USER-DEFINED | YES |
 | staff_provider_id | uuid | YES |
 | case_no | text | YES |
 | booked_slot | timestamp with time zone | YES |

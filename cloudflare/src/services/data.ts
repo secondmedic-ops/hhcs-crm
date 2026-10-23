@@ -10,8 +10,13 @@ import { buildQuery, QueryError, shape, type QuerySpec, ident, toParam } from '.
 import { asUser, readAsUser, type Tx } from '../db';
 import { missingCallingSettings, moEnv } from './myoperator-config';
 
-const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin'];
-const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
+const FIELD_ROLES: readonly Role[] = ['field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor'];
+const ALL: readonly Role[] = [
+  'agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk',
+  'client_manager', 'client_clinical', 'admin', 'accounts', 'lab_staff',
+  ...FIELD_ROLES,
+];
+const OPS: readonly Role[] = ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk'];
 const MANAGERS: readonly Role[] = ['supervisor', 'client_manager'];
 /** Manage the rate card and buying rates (platform admin: configuration only, no case data). */
 const RATE_MANAGERS: readonly Role[] = ['supervisor', 'admin'];
@@ -44,17 +49,17 @@ export const READ: Record<string, readonly Role[]> = {
 
 /** Who may write which table, by operation. Everything else changes only through RPCs (stage gates, pricing ...). */
 export const WRITE: Record<string, Partial<Record<'insert' | 'update' | 'upsert' | 'delete', readonly Role[]>>> = {
-  case_items: { insert: OPS, delete: OPS },
+  case_items: { insert: OPS, update: OPS, delete: OPS },
   complaints: { insert: [...OPS, 'client_manager'], update: ['supervisor', 'coordinator', 'client_manager'] },
-  escalations: { insert: [...OPS, 'field_staff', 'client_manager', 'client_clinical', 'provider'], update: ['supervisor', 'coordinator', 'medical_desk', 'client_manager', 'client_clinical'] },
+  escalations: { insert: [...OPS, ...FIELD_ROLES, 'client_manager', 'client_clinical', 'provider'], update: ['supervisor', 'coordinator', 'medical_desk', 'client_manager', 'client_clinical'] },
   escalation_matrix: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
-  interactions: { insert: [...OPS, 'field_staff', 'provider'] },
+  interactions: { insert: [...OPS, ...FIELD_ROLES, 'provider'] },
   notifications: { update: WITH_PROVIDER },
   providers: { update: ['admin', 'client_manager'] },
   patients: { update: OPS },
   profiles: { update: WITH_PROVIDER },
   qa_reviews: { insert: ['supervisor'] },
-  staff_locations: { insert: ['field_staff', 'coordinator', 'supervisor'] },
+  staff_locations: { insert: [...FIELD_ROLES, 'coordinator', 'supervisor'] },
   sla_policies: { update: ['admin', 'supervisor', 'client_manager'], insert: ['admin', 'supervisor', 'client_manager'] },
   templates: { insert: ['admin', 'supervisor'], update: ['admin', 'supervisor'] },
   workspaces: { update: ['admin', 'client_manager'] },
@@ -67,13 +72,14 @@ export const RPC: Record<string, readonly Role[]> = {
   customer_feedback_summary: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'],
   create_enquiry: OPS, advance_case: OPS, advance_stage: OPS, cancel_case: OPS, reopen_case: OPS, set_discount: OPS, confirm_booking: OPS,
   record_consent: OPS, callback_update: OPS, callback_close: OPS, set_my_availability: OPS,
-  set_autodial: ['supervisor', 'admin', 'client_manager'], set_webhook_alert_hours: ['supervisor'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: OPS,
+  set_autodial: ['supervisor', 'admin', 'client_manager'], set_webhook_alert_hours: ['supervisor'], autodial_settings: [...OPS, 'admin', 'client_manager'], capture_feedback: OPS, set_report_status: [...OPS, 'lab_staff'],
   cleanup_whatsapp_autogen: ['admin', 'supervisor'],
   assign_staff: ['coordinator', 'supervisor'],
-  field_update: ['field_staff', 'coordinator', 'supervisor'],
-  upsert_sample: [...OPS, 'field_staff'],
-  record_payment: [...OPS, 'field_staff'],
-  reconcile_payment: ['supervisor', 'coordinator'],
+  reassign_staff: ['coordinator', 'supervisor'],
+  field_update: [...FIELD_ROLES, 'coordinator', 'supervisor'],
+  upsert_sample: [...OPS, 'lab_staff', ...FIELD_ROLES],
+  record_payment: [...OPS, ...FIELD_ROLES, 'accounts'],
+  reconcile_payment: ['supervisor', 'coordinator', 'accounts'],
   decide_approval: ['client_manager', 'client_clinical', 'supervisor', 'coordinator', 'admin'],
   request_rate_change: ['admin', 'supervisor'],
   submit_template: ['admin', 'supervisor'],
@@ -82,7 +88,7 @@ export const RPC: Record<string, readonly Role[]> = {
   import_cases: ['supervisor', 'client_manager'],
   set_intake: OPS, set_item_scope: OPS, record_signoff: OPS, set_case_requirements: OPS, wrap_up_call: OPS, my_pending_wrapup: OPS, assign_coordinator: ['coordinator', 'supervisor'],
   schedule_validation: ['coordinator', 'supervisor', 'medical_desk'],
-  record_validation: ['coordinator', 'supervisor', 'medical_desk', 'field_staff'],
+  record_validation: ['coordinator', 'supervisor', 'medical_desk', ...FIELD_ROLES],
   import_referral_updates: ['provider', 'supervisor', 'client_manager'],
   provider_portal: ['provider','field_staff','supervisor','coordinator','agent','client_manager','client_clinical','medical_desk'],
   accept_provider_lead: ['provider','supervisor','coordinator'],
@@ -98,10 +104,14 @@ export const RPC: Record<string, readonly Role[]> = {
   rate_import_check: RATE_MANAGERS, submit_rate_import: RATE_MANAGERS, set_provider_rate: RATE_MANAGERS, end_provider_rate: RATE_MANAGERS,
   save_service_knowledge: RATE_MANAGERS, import_service_knowledge: RATE_MANAGERS,
   refresh_case_prices: OPS, set_item_provider: COMMERCIAL, case_margins: COMMERCIAL, margin_report: COMMERCIAL,
+  override_item_minimum: ['supervisor', 'admin', 'client_manager'],
+  set_min_equipment_billing_days: ['supervisor', 'admin', 'client_manager'],
+  get_min_equipment_billing_days: WITH_PROVIDER,
+  set_service_billing_category: RATE_MANAGERS,
 };
 /** Read-only actions that may ride in a batch. */
 export const READ_RPC = new Set(['customer_feedback_summary', 'provider_portal','case_gates', 'render_template', 'dashboard_kpis', 'mis_report', 'autodial_settings', 'transition_metrics', 'care_plan_sheet',
-  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup']);
+  'rate_import_check', 'case_margins', 'margin_report', 'my_pending_wrapup', 'get_min_equipment_billing_days']);
 
 const allowed = (roles: readonly Role[] | undefined, role: Role | null) => allows(roles, role);
 const deny = (what: string) => new ApiError(403, `Your role does not allow ${what}. Ask a supervisor.`);
@@ -111,10 +121,17 @@ export function dbMessage(e: unknown): ApiError | null {
   const pg = e as { code?: string; message?: string };
   if (e instanceof QueryError) return new ApiError(400, e.message);
   if (!pg || typeof pg.code !== 'string') return null;
-  if (pg.code === 'P0001') return new ApiError(400, String(pg.message));                                  // raise exception in an RPC
+  if (pg.code === 'P0001') {
+    const msg = String(pg.message || '');
+    if (msg.includes('already assigned to') || msg.includes('Conflict:')) return new ApiError(409, msg);
+    return new ApiError(400, msg);
+  }
   if (pg.code === '42501') return new ApiError(403, 'Not allowed: ' + String(pg.message).replace(/^new row violates /, ''));
   if (pg.code === '23505') {
     const msg = String(pg.message || '');
+    if (msg.includes('already assigned to')) return new ApiError(409, msg);
+    if (msg.includes('idx_assignments_unique_active_task')) return new ApiError(409, 'This task is already assigned. Use Reassign.');
+    if (msg.includes('idx_assignments_unique_active_backup')) return new ApiError(409, 'A backup is already assigned for this task. Only 1 backup allowed.');
     if (msg.includes('mobile')) return new ApiError(409, 'A patient with this mobile number already exists.');
     if (msg.includes('case_no')) return new ApiError(409, 'Case number already exists. Please submit again.');
     return new ApiError(409, 'That record already exists.');

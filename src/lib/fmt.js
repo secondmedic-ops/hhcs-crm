@@ -69,7 +69,7 @@ export const SLA_LABEL = {
 export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
   medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider',
-  administrator: 'Administrator',
+  administrator: 'Administrator', phlebotomist: 'Phlebotomist', nurse: 'Nurse', physiotherapist: 'Physiotherapist', icu_nurse: 'ICU / Critical-care nurse', eldercare_attendant: 'Elder-care attendant', delivery_executive: 'Delivery / Pickup executive', doctor: 'Doctor', telecaller: 'Tele-calling agent', lab_staff: 'Lab / Sample-tracking staff', accounts: 'Accounts / Billing',
 };
 export const DEPARTMENTS = [
   ['administrator', 'Administration', 'Full access: everything supervisors, Hinduja management and the platform admin can do; creates staff of any role.'],
@@ -77,6 +77,16 @@ export const DEPARTMENTS = [
   ['coordinator', 'Coordination', 'All active cases, booking, field and hospital-visit assignment, reconciliation.'],
   ['supervisor', 'Supervision', 'Everything operational: recordings, QA, MIS, audit, controlled export.'],
   ['field_staff', 'Field team', 'Only their assigned visits: check-in, samples, payment collection, hospital validation visits.'],
+  ['phlebotomist', 'Phlebotomy team', 'Home sample collection, tube barcoding and cold-chain lab handover.'],
+  ['nurse', 'Nursing team', 'Home nursing, injections, wound dressing, vitals and medication administration.'],
+  ['physiotherapist', 'Physiotherapy', 'Home physiotherapy sessions, rehab and mobility exercises.'],
+  ['icu_nurse', 'ICU / Critical care', 'Intensive home care, ventilator support, tracheostomy and critical monitoring.'],
+  ['eldercare_attendant', 'Elder care', 'Bedside attendant, hygiene, assisted feeding and senior companion care.'],
+  ['delivery_executive', 'Logistics & Delivery', 'Medicine delivery, medical equipment drop/pickup, and sample transport.'],
+  ['doctor', 'Doctors', 'Home doctor visits, clinical assessments, prescriptions and teleconsults.'],
+  ['telecaller', 'Tele-calling', 'Calls, enquiries, quotes, and callbacks.'],
+  ['lab_staff', 'Lab / Sample tracking', 'Sample accessioning, test tracking, report upload and release.'],
+  ['accounts', 'Accounts & Billing', 'Payment collection, receipt generation, reconciliation and billing ledger.'],
   ['medical_desk', 'Medical desk', 'Clinical triage and escalations.'],
   ['client_manager', 'Hinduja management', 'Full visibility, approvals (discounts, rate card, templates), export.'],
   ['client_clinical', 'Hinduja clinical', 'Clinical records, escalations, MIS.'],
@@ -84,6 +94,32 @@ export const DEPARTMENTS = [
   ['provider', 'Service partners', 'Partner staff (for example Book My Medicare): only the leads sent to their partner, never calls or recordings.'],
 ];
 export const CHANNEL_LABEL = { phone: 'Phone', whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email', chat: 'Chat', note: 'Note', system: 'System', crm_edit: 'CRM edit', field: 'Field', lab: 'Lab', payment: 'Payment', walkin: 'Walk-in', referral: 'Referral' };
+export const TASK_LABEL = {
+  visit: 'Visit',
+  phlebotomy: 'Sample collection (Phlebo)',
+  nursing: 'Nursing',
+  physio: 'Physio session',
+  icu_care: 'ICU care',
+  eldercare: 'Eldercare shift',
+  delivery: 'Delivery',
+  pickup: 'Pickup',
+  doctor_visit: 'Doctor visit',
+  ecg: 'ECG',
+  xray: 'Portable X-ray',
+};
+export const TASK_SKILL = {
+  visit: 'visit',
+  phlebotomy: 'phlebotomy',
+  nursing: 'nursing',
+  physio: 'physio',
+  icu_care: 'icu_care',
+  eldercare: 'eldercare',
+  delivery: 'delivery',
+  pickup: 'pickup',
+  doctor_visit: 'doctor',
+  ecg: 'ecg',
+  xray: 'xray',
+};
 // referring source when the channel is Referral (stored as shown; check in 20261015210000_referral_source_options)
 /** Call outcomes (calls.disposition): the fixed list agents pick from after every connected call (wrap_up_call checks it). */
 export const CALL_OUTCOMES = [['booked', 'Booked'], ['quote_sent', 'Quote sent'], ['callback_requested', 'Callback requested'], ['info_only', 'Information only'],

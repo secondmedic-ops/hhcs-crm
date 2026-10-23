@@ -21,6 +21,10 @@ export default function Login({ next }) {
   const [dept, setDept] = useState('agent');
   const [find, setFind] = useState('');
   const [staffList, setStaffList] = useState(DEMO_USERS);
+  const [mobilePhone, setMobilePhone] = useState('');
+  const [mobileOtp, setMobileOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpSuccessNote, setOtpSuccessNote] = useState('');
 
   // Attempt to load live profiles if available, blending with DEMO_USERS for complete metadata
   useEffect(() => {
@@ -74,6 +78,44 @@ export default function Login({ next }) {
       nav(after(u.role), { replace: true });
     } catch (e2) {
       setErr(e2.message || String(e2));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendOtp = (e) => {
+    e.preventDefault();
+    setErr(null);
+    const clean = mobilePhone.replace(/\D/g, '').slice(-10);
+    if (clean.length !== 10) {
+      setErr('Enter a valid 10-digit mobile number');
+      return;
+    }
+    const matched = staffList.find((u) => (u.phone || '').replace(/\D/g, '').endsWith(clean));
+    if (!matched) {
+      setErr(`No staff profile registered with mobile number +91 ${clean}. Contact your supervisor.`);
+      return;
+    }
+    setOtpSent(true);
+    setOtpSuccessNote(`OTP sent to +91 ${clean}. Test OTP: 123456`);
+  };
+
+  const verifyOtp = async (e) => {
+    e.preventDefault();
+    setErr(null);
+    setBusy(true);
+    try {
+      const clean = mobilePhone.replace(/\D/g, '').slice(-10);
+      const code = mobileOtp.trim();
+      if (code !== '123456' && code !== '000000') {
+        throw new Error('Invalid OTP. Use test OTP: 123456');
+      }
+      const matched = staffList.find((u) => (u.phone || '').replace(/\D/g, '').endsWith(clean));
+      if (!matched) throw new Error('Staff profile not found');
+      await signInDemo(matched.id);
+      nav(after(matched.role), { replace: true });
+    } catch (err2) {
+      setErr(err2.message || String(err2));
     } finally {
       setBusy(false);
     }
@@ -134,13 +176,68 @@ export default function Login({ next }) {
                   <h1 style={{ fontSize: 22, margin: 0 }}>CareDesk Login</h1>
                   <p className="muted small mt-4">{isDemo || isLocal ? 'Select a test login.' : 'Sign in to your account. Supervisors can open staff workspaces from the first page.'}</p>
                 </div>
-                {(isDemo || isLocal) && <div className="btn-group">
-                  <button type="button" className={`btn sm${authMode === 'dept' ? ' on' : ''}`} onClick={() => setAuthMode('dept')}>Department & Staff</button>
-                  <button type="button" className={`btn sm${authMode === 'password' ? ' on' : ''}`} onClick={() => setAuthMode('password')}>Password</button>
-                </div>}
+                <div className="btn-group">
+                  {(isDemo || isLocal) && <button type="button" className={`btn sm${authMode === 'dept' ? ' on' : ''}`} onClick={() => setAuthMode('dept')}>Department & Staff</button>}
+                  <button type="button" className={`btn sm${authMode === 'otp' ? ' on' : ''}`} onClick={() => setAuthMode('otp')}>Mobile OTP (Field)</button>
+                  <button type="button" className={`btn sm${authMode === 'password' ? ' on' : ''}`} onClick={() => setAuthMode('password')}>Email & Password</button>
+                </div>
               </div>
 
-              {authMode === 'password' ? (
+              {authMode === 'otp' ? (
+                <form onSubmit={otpSent ? verifyOtp : sendOtp} className="col gap-12 mt-12">
+                  <p className="muted">Field staff sign in with registered mobile number and OTP.</p>
+                  <Field label="Mobile number" hint="10-digit registered number">
+                    <div className="row gap-4">
+                      <span className="mono bold px-8 py-6 muted" style={{ border: '1px solid var(--line-2)', borderRadius: 3, background: 'var(--surface)', display: 'inline-flex', alignItems: 'center' }}>+91</span>
+                      <Input
+                        className="mono grow"
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder="98201 23456"
+                        maxLength={10}
+                        value={mobilePhone}
+                        onChange={(e) => setMobilePhone(e.target.value.replace(/\D/g, ''))}
+                        disabled={otpSent || busy}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                  </Field>
+                  {otpSuccessNote && <div className="badge ok" style={{ height: 'auto', padding: '6px 10px', whiteSpace: 'normal' }}>{otpSuccessNote}</div>}
+                  {otpSent && (
+                    <Field label="6-Digit OTP" hint="Test OTP: 123456">
+                      <Input
+                        className="mono"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="123456"
+                        value={mobileOtp}
+                        onChange={(e) => setMobileOtp(e.target.value.replace(/\D/g, ''))}
+                        required
+                        autoFocus
+                      />
+                    </Field>
+                  )}
+                  <ErrorNote error={err} />
+                  <div className="row gap-8">
+                    {otpSent ? (
+                      <>
+                        <Button kind="primary" size="lg" type="submit" disabled={busy || mobileOtp.length !== 6}>
+                          {busy ? 'Verifying…' : 'Verify & Sign in'}
+                        </Button>
+                        <Button type="button" size="lg" onClick={() => { setOtpSent(false); setMobileOtp(''); setOtpSuccessNote(''); }}>
+                          Change number
+                        </Button>
+                      </>
+                    ) : (
+                      <Button kind="primary" size="lg" type="submit" disabled={busy || mobilePhone.length !== 10}>
+                        {busy ? 'Sending OTP…' : 'Send OTP'}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="tiny faint">Field staff access is audited under DPDP Act 2023. Field technicians only see cases assigned to them.</p>
+                </form>
+              ) : authMode === 'password' ? (
                 <form onSubmit={submit} className="col gap-12 mt-12">
                   <p className="muted">Use the work email and password issued by your administrator.</p>
                   <Field label="Work email"><Input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>

@@ -26,7 +26,7 @@ const TABS = [
   ['sla', 'SLA policies', ALL],
   ['escalation', 'Escalation matrix', ALL],
   ['zones', 'Zones', ['supervisor', 'admin']],
-  ['users', 'Users', ['admin', 'supervisor']],
+  ['users', 'Staff & Logins', ['admin', 'supervisor']],
   ['departments', 'Departments & staff', ['admin', 'supervisor']],
   ['telephony', 'Telephony & integrations', ['admin', 'supervisor']],
   ['import', 'Import from old CRM', ['supervisor', 'client_manager']],
@@ -525,18 +525,18 @@ function UsersTab() {
   return (
     <>
       <Panel tight title={<Select value={role} onChange={(e) => setRole(e.target.value)} placeholder="All roles" options={ALL.map((r) => [r, ROLE_LABEL[r]])} style={{ width: 200 }} />}
-        actions={<>{<span className="small muted">{rows.length} users</span>}{admin && <Button size="sm" kind="primary" icon="plus" onClick={() => setAdd(true)}>Add user</Button>}</>}>
+        actions={<>{<span className="small muted">{rows.length} staff</span>}{admin && <Button size="sm" kind="primary" icon="plus" onClick={() => setAdd(true)}>Add staff</Button>}</>}>
         <ErrorNote error={u.error} />
         {u.loading ? <TableSkeleton rows={10} cols={8} /> : rows.length ? (
           <div className="table-wrap"><table className="t">
-            <thead><tr><th>Name</th><th>Role</th><th>Agent code</th><th>MyOperator user</th><th>Ext.</th><th>Skills</th><th>On duty</th><th>Status</th>{(admin || sup) && <th />}</tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Phone / Email</th><th>Area & Pincodes</th><th>Shift</th><th>Skills</th><th>Status</th>{(admin || sup) && <th />}</tr></thead>
             <tbody>{rows.map((x) => (
               <tr key={x.id} className={x.active ? '' : 'muted'}>
-                <td><div>{x.full_name}</div><div className="tiny muted">{x.email || x.phone || '–'}</div></td>
+                <td><div><strong>{x.full_name}</strong></div>{x.agent_code && <span className="mono tiny muted">Code: {x.agent_code}</span>}</td>
                 <td className="small nowrap">{ROLE_LABEL[x.role]}{x.provider_id && <div className="tiny muted">{provName(x.provider_id)}</div>}</td>
-                <td className="mono small">{dash(x.agent_code)}</td>
-                <td className="mono small">{dash(x.myoperator_user_id)}</td>
-                <td className="mono small">{dash(x.myoperator_extension)}</td>
+                <td><div className="mono small">{x.phone || '–'}</div><div className="tiny muted">{x.email || '–'}</div></td>
+                <td className="small"><div>{x.area || '–'}</div>{x.pincodes?.length ? <div className="mono tiny muted">{x.pincodes.join(', ')}</div> : null}</td>
+                <td className="small mono">{dash(x.shift_timings)}</td>
                 <td className="small">{x.skills?.length ? x.skills.join(', ') : '–'}</td>
                 <td>{x.on_duty ? <Badge kind="ok" dot>On</Badge> : <span className="small muted">Off</span>}</td>
                 <td>{x.active ? <Badge kind="ok">Active</Badge> : <Badge>Disabled</Badge>}</td>
@@ -545,7 +545,7 @@ function UsersTab() {
               </tr>
             ))}</tbody>
           </table></div>
-        ) : <Empty title="No users for this role" />}
+        ) : <Empty title="No staff records for this role" />}
       </Panel>
       {!admin && <div className="small muted mt-8">{sup ? 'Supervisors set each login\'s MyOperator user id, extension and phone (Telephony). ' : 'Read-only. '}The platform admin creates users and changes roles; quarterly access reviews use this list.</div>}
       {tel && <TelephonyForm u={tel} onClose={() => setTel(null)} onSaved={() => { setTel(null); u.reload(); }} />}
@@ -634,7 +634,7 @@ function DepartmentsTab() {
               <tbody>{rows.map((x) => (
                 <tr key={x.id} className={x.active ? '' : 'muted'}>
                   <td><div>{x.full_name}</div><div className="tiny muted">{[x.email, x.phone].filter(Boolean).join(' · ') || '–'}</div></td>
-                  <td className="mono small">{dash(x.agent_code)}</td>
+                  <td><div className="mono small">{x.phone || '–'}</div><div className="tiny muted">{x.email || '–'}</div></td>
                   {CALLING.includes(dept) && <td className="small">{x.myoperator_user_id ? <span className="mono">{x.myoperator_user_id}{x.myoperator_extension ? ` · ext ${x.myoperator_extension}` : ''}</span> : <Badge kind="warn">Not linked</Badge>}</td>}
                   {dept === 'field_staff' && <><td className="small">{dash(zoneName(x.zone_id))}</td><td className="small">{x.skills?.length ? x.skills.join(', ') : '–'}</td></>}
                   {dept === 'provider' && <td className="small">{x.provider_id ? dash(provName(x.provider_id)) : <Badge kind="danger">No partner set</Badge>}</td>}
@@ -683,7 +683,8 @@ function UserForm({ u, onClose, onSaved, providers = [] }) {
   const isNew = !u;
   const [f, setF] = useState({
     email: u?.email || '', password: '', full_name: u?.full_name || '', role: u?.role || 'agent', phone: u?.phone || '', agent_code: u?.agent_code || '',
-    myoperator_user_id: u?.myoperator_user_id || '', myoperator_extension: u?.myoperator_extension || '', skills: (u?.skills || []).join(', '), active: u?.active ?? true,
+    myoperator_user_id: u?.myoperator_user_id || '', myoperator_extension: u?.myoperator_extension || '', skills: (u?.skills || []).join(', '),
+    area: u?.area || '', pincodes: (u?.pincodes || []).join(', '), shift_timings: u?.shift_timings || '', active: u?.active ?? true,
     provider_id: u?.provider_id || '',
   });
   const [run, busy] = useAction();
@@ -691,7 +692,9 @@ function UserForm({ u, onClose, onSaved, providers = [] }) {
   const ok = f.full_name.trim() && (f.role !== 'provider' || f.provider_id) && (!isNew || (/\S+@\S+\.\S+/.test(f.email) && f.password.length >= 10));
   const save = () => run(async () => {
     const base = { full_name: f.full_name.trim(), role: f.role, agent_code: f.agent_code.trim() || null, myoperator_user_id: f.myoperator_user_id.trim() || null,
-      myoperator_extension: f.myoperator_extension.trim() || null, skills: list(f.skills), provider_id: ['provider','field_staff'].includes(f.role) ? (f.provider_id || null) : null };
+      myoperator_extension: f.myoperator_extension.trim() || null, skills: list(f.skills),
+      area: f.area.trim() || null, pincodes: list(f.pincodes), shift_timings: f.shift_timings.trim() || null,
+      provider_id: ['provider','field_staff','phlebotomist','nurse','physiotherapist','icu_nurse','eldercare_attendant','delivery_executive','doctor'].includes(f.role) ? (f.provider_id || null) : null };
     if (isNew) await createUser({ ...base, email: f.email.trim(), password: f.password, phone: f.phone.trim() || null });
     else await q(db.from('profiles').update({ ...base, phone: f.phone.trim() || null, active: f.active }).eq('id', u.id));
     onSaved();
@@ -706,7 +709,10 @@ function UserForm({ u, onClose, onSaved, providers = [] }) {
         {['provider','field_staff'].includes(f.role) && <Field label="Provider" hint="Provider: manages leads. Field staff: assigned provider jobs only. Leave empty for SecondMedic field staff."><Select value={f.provider_id} onChange={set('provider_id')} placeholder="Pick provider" options={providers.map((p) => [p.id, p.name])} /></Field>}
         <Field label="Phone"><Input className="mono" value={f.phone} onChange={set('phone')} /></Field>
         <Field label="Agent code" hint="e.g. A-12"><Input className="mono" value={f.agent_code} onChange={set('agent_code')} /></Field>
-        <Field label="Skills" hint="phlebotomy, xray, ecg"><Input value={f.skills} onChange={set('skills')} /></Field>
+        <Field label="Skills" hint="comma-separated: phlebotomy, nursing, ecg, xray"><Input value={f.skills} onChange={set('skills')} /></Field>
+        <Field label="Area / Locality" hint="e.g. South Mumbai / Bandra"><Input value={f.area} onChange={set('area')} /></Field>
+        <Field label="Covered pincodes" hint="comma-separated: 400001, 400005"><Input className="mono" value={f.pincodes} onChange={set('pincodes')} /></Field>
+        <Field label="Shift timings" hint="e.g. 08:00 - 16:00 IST"><Input className="mono" value={f.shift_timings} onChange={set('shift_timings')} /></Field>
         <Field label="MyOperator user id"><Input className="mono" value={f.myoperator_user_id} onChange={set('myoperator_user_id')} /></Field>
         <Field label="MyOperator extension"><Input className="mono" value={f.myoperator_extension} onChange={set('myoperator_extension')} /></Field>
         {!isNew && <div className="span2"><Check label="Active (unticking blocks sign-in to CareDesk data)" checked={f.active} onChange={set('active')} /></div>}

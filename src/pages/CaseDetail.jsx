@@ -27,10 +27,38 @@ const LIVE = ['cases', 'interactions', 'case_items', 'assignments', 'samples', '
 const DASH = '–';
 const QUOTE_KIND = { draft: ['', 'Draft'], pending_approval: ['warn', 'Awaiting approval'], approved: ['ok', 'Approved'], rejected: ['danger', 'Rejected'], sent: ['accent', 'Sent'] };
 const PAY_KIND = { unpaid: ['', 'Unpaid'], partial: ['warn', 'Part paid'], paid: ['accent', 'Paid, not reconciled'], reconciled: ['ok', 'Reconciled'], refund: ['danger', 'Refund'], waived: ['info', 'Waived'] };
-const ASG_KIND = { assigned: 'info', en_route: 'warn', checked_in: 'accent', completed: 'ok', cancelled: '', reassigned: '' };
-const ASG_LABEL = { assigned: 'Assigned', en_route: 'En route', checked_in: 'Checked in', completed: 'Completed', cancelled: 'Cancelled', reassigned: 'Reassigned' };
-const TASK_LABEL = { phlebotomy: 'Phlebotomy', xray: 'Portable X-ray', ecg: 'ECG', visit: 'Visit' };
-const CAT_TASK = { lab: 'phlebotomy', ecg: 'ecg', xray: 'xray' };
+const ASG_KIND = { assigned: 'info', en_route: 'warn', started: 'warn', checked_in: 'accent', reached: 'accent', collected: 'accent', handed_to_lab: 'ok', completed: 'ok', cancelled: '', reassigned: '' };
+const ASG_LABEL = { assigned: 'Assigned', en_route: 'En route', started: 'Started', checked_in: 'Checked in', reached: 'Reached', collected: 'Collected', handed_to_lab: 'Handed to lab', completed: 'Completed', cancelled: 'Cancelled', reassigned: 'Reassigned' };
+const TASK_LABEL = {
+  visit: 'Visit',
+  phlebotomy: 'Sample collection (Phlebo)',
+  nursing: 'Nursing',
+  physio: 'Physio session',
+  icu_care: 'ICU care',
+  eldercare: 'Eldercare shift',
+  delivery: 'Delivery',
+  pickup: 'Pickup',
+  doctor_visit: 'Doctor visit',
+  ecg: 'ECG',
+  xray: 'Portable X-ray',
+};
+const TASK_SKILL = {
+  visit: 'visit',
+  phlebotomy: 'phlebotomy',
+  nursing: 'nursing',
+  physio: 'physio',
+  icu_care: 'icu_care',
+  eldercare: 'eldercare',
+  delivery: 'delivery',
+  pickup: 'pickup',
+  doctor_visit: 'doctor',
+  ecg: 'ecg',
+  xray: 'xray',
+};
+const CAT_TASK = {
+  lab: 'phlebotomy', ecg: 'ecg', xray: 'xray', nursing: 'nursing', physio: 'physio',
+  icu: 'icu_care', eldercare: 'eldercare', equipment: 'delivery', consumables: 'delivery', visit: 'visit',
+};
 const CAT_LABEL = { lab: 'Sample collection', xray: 'Portable X-ray', ecg: 'ECG at home', visit: 'Visit charge', nursing: 'Nursing', physio: 'Physiotherapy', beds: 'Hospital beds', eldercare: 'Elder care', homecare: 'Home care', equipment: 'Equipment', icu: 'ICU setup', consumables: 'Consumables', other: 'Other' };
 const HOPS = [
   ['collected_at', 'Collected'], ['handover_at', 'Handover'], ['dispatched_at', 'Dispatched'], ['transport_temp_c', 'Temp'],
@@ -66,7 +94,7 @@ export default function CaseDetail() {
   const cs = L(() => q(db.from('v_cases').select('*').eq('id', id).maybeSingle()));
   const hist = L(() => q(db.from('case_stage_history').select('id,from_stage,to_stage,changed_at,note').eq('case_id', id).order('changed_at')));
   const items = L(() => q(db.from('case_items').select('*').eq('case_id', id).order('created_at')));
-  const asg = L(() => q(db.from('v_assignments').select('id,staff_id,staff_name,staff_phone,task,status,assigned_at,eta,checkin_at,checkin_distance_m,checkout_at,checklist,patient_signoff,backup_for,delay_reason').eq('case_id', id).order('assigned_at')));
+  const asg = L(() => q(db.from('v_assignments').select('id,staff_id,staff_name,staff_phone,staff_role,task,role,status,assigned_at,eta,checkin_at,checkin_distance_m,checkout_at,checklist,patient_signoff,backup_for,backup_staff_name,delay_reason,reassign_reason,reassign_note').eq('case_id', id).order('assigned_at')));
   const samples = L(() => q(db.from('samples').select('*').eq('case_id', id).order('collected_at')));
   const pays = L(() => q(db.from('payments').select('*').eq('case_id', id).order('collected_at')));
   const appr = L(() => q(db.from('v_approvals').select('*').eq('case_id', id).order('requested_at', { ascending: false })));
@@ -78,7 +106,8 @@ export default function CaseDetail() {
   const refs = L(() => q(db.from('v_referrals').select('id,case_id,case_no,provider_id,provider_code,provider_name,status,categories,service_names,services_requested,patient_name,scheduled_at,accepted_at,completed_at,decline_reason,last_note,assigned_name,preferred_slot,created_at,fulfilment_managed').eq('case_id', id).order('created_at')));
   const services = useLoad(() => q(db.from('services').select('id,code,name,category,price,tat_hours,unit,version').is('active', true).order('category').order('price')), []);
   const templates = useLoad(() => q(db.from('templates').select('id,kind,code,title,body,status,version').eq('status', 'approved').order('code')), []);
-  const people = useLoad(() => q(db.from('profiles').select('id,full_name,role,skills,on_duty,agent_code,zone_id').in('role', ['coordinator', 'field_staff']).is('active', true).order('full_name')), []);
+  const people = useLoad(() => q(db.from('profiles').select('id,full_name,role,skills,on_duty,agent_code,zone_id').in('role', ['coordinator', 'supervisor', 'field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor']).is('active', true).order('full_name')), []);
+  const activeBookings = useLoad(() => q(db.from('v_assignments').select('id,staff_id,case_id,case_no,task,eta,booked_slot,status').in('status', ['assigned', 'en_route', 'started', 'checked_in', 'reached'])), [], ['assignments']);
 
   const c = cs.data;
   // case_gates is a read-only RPC: refresh it when the case or its dependents change (not via live events)
@@ -187,7 +216,7 @@ export default function CaseDetail() {
           <ServicesQuote c={c} items={items} services={services.data || []} templates={tpl} approvals={appr.data || []} canAct={canAct} band={workspace?.discount_band_pct} workspace={workspace} />
           {can('supervisor', 'coordinator') && (items.data || []).length > 0 && <CaseMargins c={c} />}
           {phase >= 2 && <Booking c={c} coordinators={(people.data || []).filter((p) => p.role === 'coordinator')} templates={tpl} canAct={canAct} me={profile} />}
-          {phase >= 2 && <FieldPanel c={c} items={items.data || []} asg={asg} staff={(people.data || []).filter((p) => p.role === 'field_staff')} canDispatch={canDispatch && open} />}
+          {phase >= 2 && <FieldPanel c={c} items={items.data || []} asg={asg} staff={(people.data || []).filter((p) => ['field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor'].includes(p.role))} activeBookings={activeBookings.data || []} canDispatch={canDispatch && open} isSupervisor={can('supervisor')} />}
           {(phase >= 3 || (samples.data || []).length > 0) && <LabPanel c={c} samples={samples} canAct={canAct && open} />}
           {(phase >= 2 || (pays.data || []).length > 0) && <PaymentPanel c={c} pays={pays} canAct={canAct && open} canReconcile={can('supervisor', 'coordinator')} allowCash={!!workspace?.settings?.allow_cash} templates={tpl} />}
           {(c.stage === 'closure' || c.feedback_rating != null) && <Feedback c={c} canAct={canAct && c.stage === 'closure'} />}
@@ -808,32 +837,81 @@ function Booking({ c, coordinators, templates, canAct, me }) {
 
 /* =========================================================== field */
 
-function FieldPanel({ c, items, asg, staff, canDispatch }) {
+function findStaffClash(staffId, targetEtaIso, activeBookings, currentCaseId) {
+  if (!staffId || !targetEtaIso) return null;
+  const targetTime = new Date(targetEtaIso).getTime();
+  if (Number.isNaN(targetTime)) return null;
+  const bufferMs = 45 * 60 * 1000;
+  return activeBookings.find((b) => {
+    if (b.staff_id !== staffId || b.case_id === currentCaseId) return false;
+    const bTime = new Date(b.eta || b.booked_slot).getTime();
+    if (Number.isNaN(bTime)) return false;
+    return Math.abs(bTime - targetTime) <= bufferMs;
+  });
+}
+
+function FieldPanel({ c, items, asg, staff, activeBookings = [], canDispatch, isSupervisor }) {
   const [modal, setModal] = useState(null);
   const locs = useLoad(() => q(db.from('v_staff_locations').select('*').eq('case_id', c.id)), [c.id], ['staff_locations']);
   const locByStaff = Object.fromEntries((locs.data || []).map((l) => [l.staff_id, l]));
   const rows = asg.data || [];
   const cats = [...new Set(items.map((i) => i.category))];
-  const activeTasks = new Set(rows.filter((a) => !['cancelled', 'reassigned'].includes(a.status)).map((a) => a.task));
-  const needed = cats.map((k) => CAT_TASK[k]).filter(Boolean);
-  const defTask = needed.find((t) => !activeTasks.has(t)) || needed[0] || 'visit';
+  const needed = [...new Set(cats.map((k) => CAT_TASK[k]).filter(Boolean))];
+  if (!needed.length) needed.push('visit');
+
+  const activeRows = rows.filter((a) => !['cancelled', 'reassigned', 'completed'].includes(a.status));
+  const activePrimaryByTask = Object.fromEntries(
+    activeRows.filter((a) => (a.role || 'primary') === 'primary').map((a) => [a.task, a])
+  );
+  const activeBackupByTask = Object.fromEntries(
+    activeRows.filter((a) => a.role === 'backup' || !!a.backup_for).map((a) => [a.task, a])
+  );
+
+  const allAssigned = needed.length > 0 && needed.every((t) => !!activePrimaryByTask[t]);
+  const defTask = needed.find((t) => !activePrimaryByTask[t]) || 'visit';
+
   return (
     <Panel title="Field visit" sub="Dispatch, geo-tagged check-in, checklist and sign-off"
-      actions={canDispatch && <Button size="sm" icon="plus" onClick={() => setModal({ task: defTask })}>Assign</Button>} tight>
+      actions={canDispatch && (
+        <Button
+          size="sm"
+          icon="plus"
+          disabled={allAssigned}
+          title={allAssigned ? 'All tasks assigned' : 'Assign field staff'}
+          onClick={() => setModal({ mode: 'assign', task: defTask })}
+        >
+          Assign
+        </Button>
+      )} tight>
       {asg.loading ? <div className="panel-body"><TableSkeleton rows={2} cols={5} /></div> : rows.length ? rows.map((a) => {
         const ck = parseJson(a.checklist) || {};
         const live = !['completed', 'cancelled', 'reassigned'].includes(a.status);
+        const isPrimary = (a.role || 'primary') === 'primary';
         const loc = locByStaff[a.staff_id];
+        const backupAsg = activeBackupByTask[a.task] || (a.backup_staff_name ? { staff_name: a.backup_staff_name } : null);
+
         return (
           <div key={a.id} className={`cd-asg ${live ? '' : 'faded'}`}>
             <div className="row wrap gap-8">
               <strong>{a.staff_name}</strong>
               <Badge kind="outline">{TASK_LABEL[a.task] || a.task}</Badge>
               <Badge kind={ASG_KIND[a.status]}>{ASG_LABEL[a.status] || a.status}</Badge>
-              {a.backup_for && <Badge kind="plum">Backup</Badge>}
+              {!isPrimary && <Badge kind="plum">Backup</Badge>}
               <span className="grow" />
-              {canDispatch && live && <Button size="xs" icon="return" onClick={() => setModal({ task: a.task, backup: a })}>Assign backup</Button>}
+              {canDispatch && live && isPrimary && (
+                <div className="row gap-4">
+                  <Button size="xs" icon="return" onClick={() => setModal({ mode: 'reassign', assignment: a, task: a.task })}>Reassign</Button>
+                  {!backupAsg && <Button size="xs" kind="ghost" icon="plus" onClick={() => setModal({ mode: 'backup', assignment: a, task: a.task })}>Assign backup</Button>}
+                </div>
+              )}
             </div>
+
+            {backupAsg && (
+              <div className="small muted mt-4">
+                Backup: <strong style={{ color: 'var(--ink)' }}>{backupAsg.staff_name}</strong>
+              </div>
+            )}
+
             <div className="cd-asg-grid small">
               <span><span className="muted">ETA</span> {a.eta ? dateTime(a.eta) : DASH}</span>
               <span><span className="muted">Check-in</span> {a.checkin_at ? <>{time(a.checkin_at)}{a.checkin_distance_m != null && <Badge kind={a.checkin_distance_m > 250 ? 'warn' : 'ok'} className="ml-4">{a.checkin_distance_m} m</Badge>}</> : DASH}</span>
@@ -845,6 +923,7 @@ function FieldPanel({ c, items, asg, staff, canDispatch }) {
                 <span className={`cd-tick ${a.patient_signoff ? 'ok' : ''}`}><Icon name={a.patient_signoff ? 'check' : 'x'} size={11} />Sign-off</span>
               </span>
             </div>
+
             {loc?.lat != null && loc?.lng != null && (
               <div className="row gap-8 mt-6 wrap">
                 <a
@@ -865,39 +944,276 @@ function FieldPanel({ c, items, asg, staff, canDispatch }) {
               </div>
             )}
             {a.delay_reason && <div className="tiny warn-text mt-4">Delay: {a.delay_reason}</div>}
+            {a.status === 'reassigned' && (
+              <div className="tiny muted mt-4">
+                Reassigned{a.reassign_reason ? ` · Reason: ${a.reassign_reason}` : ''}{a.reassign_note ? ` (${a.reassign_note})` : ''}
+              </div>
+            )}
           </div>
         );
       }) : <Empty title="No field staff assigned">{canDispatch ? `Assign a ${TASK_LABEL[defTask].toLowerCase()} technician once the slot is confirmed.` : 'The coordinator assigns field staff after booking.'}</Empty>}
-      {modal && <AssignModal c={c} staff={staff} task={modal.task} backup={modal.backup} onClose={() => setModal(null)} />}
+
+      {modal?.mode === 'assign' && (
+        <AssignModal
+          c={c}
+          staff={staff}
+          activePrimaryByTask={activePrimaryByTask}
+          activeBookings={activeBookings}
+          task={modal.task}
+          isSupervisor={isSupervisor}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.mode === 'reassign' && (
+        <ReassignModal
+          c={c}
+          staff={staff}
+          assignment={modal.assignment}
+          activeBookings={activeBookings}
+          isSupervisor={isSupervisor}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.mode === 'backup' && (
+        <BackupModal
+          c={c}
+          staff={staff}
+          assignment={modal.assignment}
+          activeBookings={activeBookings}
+          isSupervisor={isSupervisor}
+          onClose={() => setModal(null)}
+        />
+      )}
     </Panel>
   );
 }
 
-function AssignModal({ c, staff, task: t0, backup, onClose }) {
+function AssignModal({ c, staff, activePrimaryByTask = {}, activeBookings = [], task: t0, isSupervisor, onClose }) {
   const [run, busy] = useAction();
   const [task, setTask] = useState(t0);
-  const fit = staff.filter((s) => task === 'visit' || (s.skills || []).includes(task));
+  const requiredSkill = TASK_SKILL[task] || task;
+  const fit = staff.filter((s) => s.active !== false && (task === 'visit' || (s.skills || []).includes(requiredSkill)));
   const [who, setWho] = useState('');
   const [eta, setEta] = useState(toLocalInput(c.booked_slot || new Date(Date.now() + 3600e3).toISOString()));
+  const [overrideClash, setOverrideClash] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+
   useEffect(() => { if (!fit.some((s) => s.id === who)) setWho(''); }, [task]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clash = who ? findStaffClash(who, fromLocalInput(eta), activeBookings, c.id) : null;
+  const clashBlocked = clash && (!isSupervisor || !overrideClash || !overrideReason.trim());
+
+  // Task choices: filter out or disable tasks with active assignments
+  const taskOptions = Object.entries(TASK_LABEL).map(([val, label]) => {
+    const existing = activePrimaryByTask[val];
+    return [val, existing ? `${label} — already assigned to ${existing.staff_name}` : label];
+  });
+
   const save = async () => {
-    const r = await run(() => rpc('assign_staff', { p_case: c.id, p_staff: who, p_task: task, p_eta: fromLocalInput(eta), p_backup_for: backup?.id || null }),
-      backup ? 'Backup assigned · original visit marked reassigned' : 'Field staff assigned · notified on their phone');
+    const r = await run(() => rpc('assign_staff', {
+      p_case: c.id,
+      p_staff: who,
+      p_task: task,
+      p_eta: fromLocalInput(eta),
+      p_override_reason: overrideClash && overrideReason.trim() ? overrideReason.trim() : null,
+    }), 'Field staff assigned · notified on their phone');
     if (r !== undefined) onClose();
   };
+
   return (
-    <Modal title={backup ? `Assign backup for ${backup.staff_name}` : `Assign field staff · ${c.case_no}`} onClose={onClose}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!who || busy} onClick={save}>{backup ? 'Assign backup' : 'Assign'}</Button></>}>
+    <Modal title={`Assign field staff · ${c.case_no}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!who || busy || clashBlocked} onClick={save}>Assign</Button></>}>
       <div className="form-grid">
-        <Field label="Task"><Select value={task} onChange={(e) => setTask(e.target.value)} options={Object.entries(TASK_LABEL)} /></Field>
+        <Field label="Task"><Select value={task} onChange={(e) => setTask(e.target.value)} options={taskOptions} /></Field>
         <Field label="ETA" hint="IST"><Input type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} /></Field>
         <Field label={`Staff with ${TASK_LABEL[task].toLowerCase()} skill`} className="span2">
           <Select value={who} onChange={(e) => setWho(e.target.value)} placeholder={fit.length ? 'Choose staff' : 'Nobody has this skill'}
-            options={fit.filter((s) => s.id !== backup?.staff_id).map((s) => [s.id, `${s.full_name}${s.on_duty ? ' · on duty' : ''} · ${(s.skills || []).join(', ') || 'no skills listed'}`])} />
+            options={fit.map((s) => {
+              const csh = findStaffClash(s.id, fromLocalInput(eta), activeBookings, c.id);
+              const statusStr = csh ? `Busy (${csh.case_no} @ ${time(csh.eta || csh.booked_slot)})` : 'Free';
+              return [s.id, `${s.full_name} · ${statusStr}${s.on_duty ? ' · on duty' : ''} · ${(s.skills || []).join(', ') || 'no skills listed'}`];
+            })} />
         </Field>
       </div>
-      {backup && <p className="small muted mt-12">The current visit is marked reassigned and the backup takes over the same window.</p>}
+
+      {clash && (
+        <div className="badge warn mt-12 mb-8" style={{ height: 'auto', padding: '8px 12px', whiteSpace: 'normal' }}>
+          <strong>⚠️ Schedule Conflict:</strong> Selected staff already has a visit scheduled for {clash.case_no} at {time(clash.eta || clash.booked_slot)}.
+          {!isSupervisor ? (
+            <div className="tiny danger-text mt-4">Clash detected. Only supervisors can override scheduling conflicts.</div>
+          ) : (
+            <div className="mt-8 col gap-6">
+              <label className="row gap-6 align-center small pointer">
+                <input type="checkbox" checked={overrideClash} onChange={(e) => setOverrideClash(e.target.checked)} />
+                <span>Override schedule clash (Supervisor)</span>
+              </label>
+              {overrideClash && (
+                <Field label="Override reason (mandatory)" className="span2">
+                  <Input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="e.g. Nearby locality / urgent requirement" autoFocus />
+                </Field>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {c.booked_slot && <p className="tiny muted mt-8">Booked slot {dateTime(c.booked_slot)} · arrival SLA ±15 min</p>}
+    </Modal>
+  );
+}
+
+function ReassignModal({ c, staff, assignment, activeBookings = [], isSupervisor, onClose }) {
+  const [run, busy] = useAction();
+  const task = assignment.task;
+  const requiredSkill = TASK_SKILL[task] || task;
+  const fit = staff.filter((s) => s.id !== assignment.staff_id && s.active !== false && (task === 'visit' || (s.skills || []).includes(requiredSkill)));
+  const [who, setWho] = useState('');
+  const [eta, setEta] = useState(toLocalInput(assignment.eta || c.booked_slot || new Date().toISOString()));
+  const [reason, setReason] = useState('staff_unavailable');
+  const [note, setNote] = useState('');
+  const [overrideClash, setOverrideClash] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+
+  const clash = who ? findStaffClash(who, fromLocalInput(eta), activeBookings, c.id) : null;
+  const clashBlocked = clash && (!isSupervisor || !overrideClash || !overrideReason.trim());
+  const needNote = reason === 'other';
+  const ready = who && (!needNote || note.trim()) && !clashBlocked && !busy;
+
+  const save = async () => {
+    const r = await run(() => rpc('reassign_staff', {
+      p_case: c.id,
+      p_assignment: assignment.id,
+      p_staff: who,
+      p_reason: reason,
+      p_eta: fromLocalInput(eta),
+      p_note: note.trim() || null,
+      p_override_reason: overrideClash && overrideReason.trim() ? overrideReason.trim() : null,
+    }), 'Visit reassigned and both staff notified');
+    if (r !== undefined) onClose();
+  };
+
+  return (
+    <Modal title={`Reassign ${TASK_LABEL[task]} · ${c.case_no}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!ready} onClick={save}>Reassign</Button></>}>
+      <p className="small muted mb-12">
+        Currently assigned to <strong>{assignment.staff_name}</strong>. Reassigning keeps this record in history and dispatches a new team member.
+      </p>
+
+      <div className="form-grid">
+        <Field label="Reassignment reason (mandatory)">
+          <Select value={reason} onChange={(e) => setReason(e.target.value)} options={[
+            ['staff_unavailable', 'Staff unavailable'],
+            ['patient_request', 'Patient request'],
+            ['no_show', 'No-show'],
+            ['other', 'Other (requires note)'],
+          ]} />
+        </Field>
+        <Field label="ETA" hint="IST"><Input type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} /></Field>
+        {needNote && (
+          <Field label="Reason note (mandatory)" className="span2">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Specify why staff is being reassigned" autoFocus />
+          </Field>
+        )}
+        <Field label={`New staff with ${TASK_LABEL[task].toLowerCase()} skill`} className="span2">
+          <Select value={who} onChange={(e) => setWho(e.target.value)} placeholder={fit.length ? 'Choose replacement staff' : 'Nobody available with this skill'}
+            options={fit.map((s) => {
+              const csh = findStaffClash(s.id, fromLocalInput(eta), activeBookings, c.id);
+              const statusStr = csh ? `Busy (${csh.case_no} @ ${time(csh.eta || csh.booked_slot)})` : 'Free';
+              return [s.id, `${s.full_name} · ${statusStr}${s.on_duty ? ' · on duty' : ''} · ${(s.skills || []).join(', ') || 'no skills'}`];
+            })} />
+        </Field>
+      </div>
+
+      {clash && (
+        <div className="badge warn mt-12 mb-8" style={{ height: 'auto', padding: '8px 12px', whiteSpace: 'normal' }}>
+          <strong>⚠️ Schedule Conflict:</strong> Selected staff already has a visit scheduled for {clash.case_no} at {time(clash.eta || clash.booked_slot)}.
+          {!isSupervisor ? (
+            <div className="tiny danger-text mt-4">Clash detected. Only supervisors can override scheduling conflicts.</div>
+          ) : (
+            <div className="mt-8 col gap-6">
+              <label className="row gap-6 align-center small pointer">
+                <input type="checkbox" checked={overrideClash} onChange={(e) => setOverrideClash(e.target.checked)} />
+                <span>Override schedule clash (Supervisor)</span>
+              </label>
+              {overrideClash && (
+                <Field label="Override reason (mandatory)" className="span2">
+                  <Input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="e.g. Nearby locality / urgent requirement" autoFocus />
+                </Field>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function BackupModal({ c, staff, assignment, activeBookings = [], isSupervisor, onClose }) {
+  const [run, busy] = useAction();
+  const task = assignment.task;
+  const requiredSkill = TASK_SKILL[task] || task;
+  const fit = staff.filter((s) => s.id !== assignment.staff_id && s.active !== false && (task === 'visit' || (s.skills || []).includes(requiredSkill)));
+  const [who, setWho] = useState('');
+  const [eta, setEta] = useState(toLocalInput(assignment.eta || c.booked_slot || new Date().toISOString()));
+  const [overrideClash, setOverrideClash] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+
+  const clash = who ? findStaffClash(who, fromLocalInput(eta), activeBookings, c.id) : null;
+  const clashBlocked = clash && (!isSupervisor || !overrideClash || !overrideReason.trim());
+
+  const save = async () => {
+    const r = await run(() => rpc('assign_staff', {
+      p_case: c.id,
+      p_staff: who,
+      p_task: task,
+      p_eta: fromLocalInput(eta),
+      p_backup_for: assignment.id,
+      p_role: 'backup',
+      p_override_reason: overrideClash && overrideReason.trim() ? overrideReason.trim() : null,
+    }), 'Backup technician assigned');
+    if (r !== undefined) onClose();
+  };
+
+  return (
+    <Modal title={`Assign backup · ${c.case_no}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button kind="primary" disabled={!who || busy || clashBlocked} onClick={save}>Assign backup</Button></>}>
+      <p className="small muted mb-12">
+        Standby backup for <strong>{assignment.staff_name}</strong> ({TASK_LABEL[task]}). Max 1 backup per task.
+      </p>
+
+      <div className="form-grid">
+        <Field label="Task"><Input value={TASK_LABEL[task]} disabled /></Field>
+        <Field label="ETA" hint="IST"><Input type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} /></Field>
+        <Field label={`Backup staff with ${TASK_LABEL[task].toLowerCase()} skill`} className="span2">
+          <Select value={who} onChange={(e) => setWho(e.target.value)} placeholder={fit.length ? 'Choose backup staff' : 'Nobody available with this skill'}
+            options={fit.map((s) => {
+              const csh = findStaffClash(s.id, fromLocalInput(eta), activeBookings, c.id);
+              const statusStr = csh ? `Busy (${csh.case_no} @ ${time(csh.eta || csh.booked_slot)})` : 'Free';
+              return [s.id, `${s.full_name} · ${statusStr}${s.on_duty ? ' · on duty' : ''} · ${(s.skills || []).join(', ') || 'no skills'}`];
+            })} />
+        </Field>
+      </div>
+
+      {clash && (
+        <div className="badge warn mt-12 mb-8" style={{ height: 'auto', padding: '8px 12px', whiteSpace: 'normal' }}>
+          <strong>⚠️ Schedule Conflict:</strong> Selected staff already has a visit scheduled for {clash.case_no} at {time(clash.eta || clash.booked_slot)}.
+          {!isSupervisor ? (
+            <div className="tiny danger-text mt-4">Clash detected. Only supervisors can override scheduling conflicts.</div>
+          ) : (
+            <div className="mt-8 col gap-6">
+              <label className="row gap-6 align-center small pointer">
+                <input type="checkbox" checked={overrideClash} onChange={(e) => setOverrideClash(e.target.checked)} />
+                <span>Override schedule clash (Supervisor)</span>
+              </label>
+              {overrideClash && (
+                <Field label="Override reason (mandatory)" className="span2">
+                  <Input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="e.g. Nearby locality / urgent requirement" autoFocus />
+                </Field>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }

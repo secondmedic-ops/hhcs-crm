@@ -43,9 +43,11 @@ export async function createUser(c: Ctx, b: J) {
   if (!r.ok) throw new ApiError(r.status === 422 ? 409 : 502, u.msg || u.message || 'Could not create the login');
   const { result, changed } = await asSystem(c.sql, async (tx) => {
     const rawSkills = Array.isArray(b.skills) ? b.skills : typeof b.skills === 'string' ? b.skills.split(',').map((s) => s.trim()).filter(Boolean) : [];
-    const [p] = await tx`insert into profiles (id, workspace_id, full_name, email, phone, role, agent_code, myoperator_user_id, myoperator_extension, skills, provider_id)
+    const rawPins = Array.isArray(b.pincodes) ? b.pincodes : typeof b.pincodes === 'string' ? b.pincodes.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const [p] = await tx`insert into profiles (id, workspace_id, full_name, email, phone, role, agent_code, myoperator_user_id, myoperator_extension, skills, pincodes, area, shift_timings, provider_id)
       values (${u.id}, ${c.user.workspaceId}, ${b.full_name}, ${b.email}, ${normMobile(b.phone)}, ${b.role}, ${c.user.role === 'provider' ? null : (b.agent_code || null)},
         ${c.user.role === 'provider' ? null : (b.myoperator_user_id || null)}, ${c.user.role === 'provider' ? null : (b.myoperator_extension || null)}, ${pgArray((rawSkills as string[]).map(String))}::text[],
+        ${pgArray((rawPins as string[]).map(String))}::text[], ${b.area ? String(b.area).trim() : null}, ${b.shift_timings ? String(b.shift_timings).trim() : null},
         ${['provider','field_staff'].includes(b.role) ? (targetProviderId || null) : null}::uuid) returning *`;
     return p;
   });

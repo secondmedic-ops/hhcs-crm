@@ -23,8 +23,9 @@ export interface Route {
   summary?: string;
 }
 
-const ALL: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider'];
-const OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk'];
+const FIELD_ROLES: readonly Role[] = ['field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor'];
+const ALL: readonly Role[] = ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'accounts', 'lab_staff', ...FIELD_ROLES];
+const OPS: readonly Role[] = ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk'];
 const WA_OPS: readonly Role[] = ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'admin'];
 const RECORDINGS: readonly Role[] = ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'];
 const AI_CALLS: readonly Role[] = ['supervisor', 'coordinator', 'agent', 'client_manager', 'medical_desk'];
@@ -53,7 +54,7 @@ export const routes: Route[] = [
   { method: 'POST', path: '/api/v1/batch', access: ALL, handler: (c, b) => batch(c, b), summary: 'Several reads in one transaction (RLS per user)' },
   { method: 'POST', path: '/api/v1/data/{table}', access: ALL, handler: async (c, b) => changing(await write(c, c.params.table, b), c), summary: 'One read or write on an allowed table' },
   { method: 'POST', path: '/api/v1/rpc/{fn}', access: ALL, handler: async (c, b) => changing(await rpc(c, c.params.fn, b ?? {}), c), summary: 'One business action' },
-  { method: 'POST', path: '/api/v1/field/ping-location', access: ['field_staff', 'supervisor', 'coordinator'], handler: (c, b) => pingLocation(c, b), summary: 'Persist field staff location ping and breadcrumbs' },
+  { method: 'POST', path: '/api/v1/field/ping-location', access: [...FIELD_ROLES, 'supervisor', 'coordinator'], handler: (c, b) => pingLocation(c, b), summary: 'Persist field staff location ping and breadcrumbs' },
   { method: 'POST', path: '/api/v1/calls/dial', access: OPS, handler: (c, b) => dial(c, b ?? {}), summary: 'MyOperator click-to-call' },
   { method: 'GET', path: '/api/v1/calls/{id}/recording', access: RECORDINGS, handler: (c) => recording(c), summary: 'Call recording audio (logged)' },
   { method: 'POST', path: '/api/v1/cases/{id}/quote', access: OPS, handler: (c, b) => sendQuote(c, b ?? {}), summary: 'Send the quote on an approved template' },

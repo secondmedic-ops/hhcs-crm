@@ -8,22 +8,22 @@ export const useAuth = () => useContext(AuthCtx);
 
 // What each role can open. Mirrors the RLS role matrix (slide 20).
 export const NAV = [
-  { to: '/feedback-list', label: 'Customer feedback', icon: 'chat', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/feedback-list', label: 'Customer feedback', icon: 'chat', roles: ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   // Book My Medicare's own workspace (leads, jobs, products, team). `when` hides it from field staff with no provider.
   { to: '/bmm', label: 'BMM workspace', icon: 'board', roles: ['provider', 'field_staff', 'supervisor', 'coordinator', 'client_manager'], when: (p) => p.role !== 'field_staff' || !!p.provider_id },
   { to: '/fulfilment', label: 'Provider fulfilment', icon: 'swap', roles: ['provider','field_staff','supervisor','coordinator','agent','client_manager','client_clinical','medical_desk'] },
   { to: '/', label: 'Live dashboard', icon: 'pulse', roles: ['supervisor', 'coordinator', 'client_manager', 'client_clinical', 'medical_desk'] },
-  { to: '/console', label: 'Agent console', icon: 'headset', roles: ['agent', 'supervisor', 'coordinator'] },
+  { to: '/console', label: 'Agent console', icon: 'headset', roles: ['agent', 'telecaller', 'supervisor', 'coordinator'] },
   { to: '/leads', label: 'Provider leads', icon: 'swap', roles: ['provider', 'supervisor', 'coordinator', 'client_manager', 'agent'] },
-  { to: '/cases', label: 'Cases', icon: 'folder', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical', 'provider'] },
-  { to: '/callbacks', label: 'Callback queue', icon: 'return', roles: ['agent', 'coordinator', 'supervisor', 'client_manager'] },
-  { to: '/calls', label: 'Calls & recordings', icon: 'phone', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/cases', label: 'Cases', icon: 'folder', roles: ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical', 'provider', 'accounts', 'lab_staff', 'doctor'] },
+  { to: '/callbacks', label: 'Callback queue', icon: 'return', roles: ['agent', 'telecaller', 'coordinator', 'supervisor', 'client_manager'] },
+  { to: '/calls', label: 'Calls & recordings', icon: 'phone', roles: ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/whatsapp', label: 'WhatsApp chats', icon: 'chat', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'whatsapp' },
   { to: '/email', label: 'Email', icon: 'mail', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'email' },
-  { to: '/patients', label: 'Patients', icon: 'person', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/patients', label: 'Patients', icon: 'person', roles: ['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/field', label: 'Dispatch board', icon: 'pin', roles: ['coordinator', 'supervisor', 'client_manager'] },
-  { to: '/my-visits', label: 'My visits', icon: 'pin', roles: ['field_staff'] },
-  { to: '/checklist', label: 'Assessment checklist', icon: 'list', roles: ['coordinator', 'field_staff', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
+  { to: '/my-visits', label: 'My visits', icon: 'pin', roles: ['field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor'] },
+  { to: '/checklist', label: 'Assessment checklist', icon: 'list', roles: ['coordinator', 'field_staff', 'nurse', 'physiotherapist', 'icu_nurse', 'doctor', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'] },
   { to: '/knowledge', label: 'Product knowledge', icon: 'note', roles: ['agent', 'coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'field_staff'] },
   { to: '/approvals', label: 'Approvals', icon: 'stamp', roles: ['client_manager', 'supervisor', 'coordinator', 'admin'], badge: 'approvals' },
   { to: '/escalations', label: 'Escalations', icon: 'flag', roles: ['coordinator', 'supervisor', 'medical_desk', 'client_manager', 'client_clinical'], badge: 'escalations' },
@@ -39,7 +39,8 @@ export const NAV = [
 const SENIOR = ['supervisor', 'client_manager', 'client_clinical', 'coordinator', 'medical_desk', 'admin'];
 export const roleAllows = (roles, role) => !!role && (roles.includes(role) || (role === 'administrator' && roles.some((r) => SENIOR.includes(r))));
 
-export const homeFor = (role, providerId) => role === 'field_staff' && providerId ? '/bmm' : ({ agent: '/console', field_staff: '/my-visits', admin: '/settings', provider: '/bmm' }[role] || '/');
+const FIELD_ROLES = ['field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor'];
+export const homeFor = (role, providerId) => (role === 'field_staff' && providerId ? '/bmm' : FIELD_ROLES.includes(role) ? '/my-visits' : ({ agent: '/console', telecaller: '/console', admin: '/settings', provider: '/bmm', accounts: '/cases', lab_staff: '/cases' }[role] || '/'));
 
 export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
@@ -194,7 +195,7 @@ export function AuthProvider({ children }) {
   };
   const can = (...roles) => !!profile && roleAllows(roles, profile.role);
   const isClient = profile && ['client_manager', 'client_clinical'].includes(profile.role);
-  const isOps = profile && roleAllows(['agent', 'coordinator', 'supervisor', 'medical_desk'], profile.role);
+  const isOps = profile && roleAllows(['agent', 'telecaller', 'coordinator', 'supervisor', 'medical_desk'], profile.role);
 
   return (
     <AuthCtx.Provider value={{ profile, workspace, loading, mfa, noProfile, verifyMfa, signIn, signInDemo, switchUser, staffSession, returnToSupervisor, signOut, can, isClient, isOps, reload: () => load(profile?.id), retry: async () => { const { data } = await supabase.auth.getSession(); await load(data.session?.user?.id); } }}>

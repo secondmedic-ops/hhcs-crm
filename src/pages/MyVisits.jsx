@@ -9,10 +9,26 @@ import { ago, time, date, inr, istDayRange, toLocalInput, fromLocalInput } from 
 import { Badge, Button, Tabs, Modal, Field as F, Input, Select, Textarea, Check, Segmented, Empty, Skeleton, useAction, useToast } from '../components/ui.jsx';
 import Icon from '../components/icons.jsx';
 
-const TASK_LABEL = { phlebotomy: 'Sample collection', ecg: 'ECG at home', xray: 'Portable X-ray', visit: 'Home visit' };
-const KIND_FOR = { phlebotomy: 'blood', ecg: 'ecg', xray: 'xray', visit: 'other' };
+const TASK_LABEL = {
+  visit: 'Home visit',
+  phlebotomy: 'Sample collection (Phlebo)',
+  nursing: 'Nursing visit',
+  physio: 'Physiotherapy session',
+  icu_care: 'ICU care',
+  eldercare: 'Elder-care shift',
+  delivery: 'Delivery',
+  pickup: 'Pickup',
+  doctor_visit: 'Doctor visit',
+  ecg: 'ECG at home',
+  xray: 'Portable X-ray',
+};
+const KIND_FOR = { phlebotomy: 'blood', ecg: 'ecg', xray: 'xray', visit: 'other', nursing: 'other', physio: 'other', icu_care: 'other', eldercare: 'other', delivery: 'other', pickup: 'other', doctor_visit: 'other' };
 const CODE_LABEL = { phlebotomy: 'Sample tube barcode', ecg: 'ECG capture ID', xray: 'X-ray image ID', visit: 'Reference code' };
-const STATUS = { assigned: ['Assigned', 'info'], en_route: ['En route', 'warn'], checked_in: ['On site', 'accent'], completed: ['Completed', 'ok'] };
+const STATUS = {
+  assigned: ['Assigned', 'info'], en_route: ['Started', 'warn'], started: ['Started', 'warn'],
+  checked_in: ['Reached', 'accent'], reached: ['Reached', 'accent'],
+  collected: ['Collected', 'warn'], handed_to_lab: ['Handed to lab', 'ok'], completed: ['Completed', 'ok'],
+};
 const DELAY_REASONS = ['Traffic', 'Previous visit overran', 'Patient not reachable', 'Address hard to find', 'Vehicle issue', 'Equipment pickup'];
 const EMERGENCY_SIGNS = ['Chest pain', 'Breathlessness', 'Collapsed or unconscious', 'Heavy bleeding', 'Fainted during collection'];
 
@@ -119,20 +135,20 @@ export default function MyVisits() {
   const groups = useMemo(() => {
     const all = visits.data || [];
     return {
-      today: all.filter((a) => a.status !== 'completed' && (!a.booked_slot || new Date(a.booked_slot) < new Date(tomorrow))),
-      upcoming: all.filter((a) => a.status !== 'completed' && a.booked_slot && new Date(a.booked_slot) >= new Date(tomorrow)),
-      done: all.filter((a) => a.status === 'completed').reverse(),
+      today: all.filter((a) => !['completed', 'handed_to_lab'].includes(a.status) && (!a.booked_slot || new Date(a.booked_slot) < new Date(tomorrow))),
+      upcoming: all.filter((a) => !['completed', 'handed_to_lab'].includes(a.status) && a.booked_slot && new Date(a.booked_slot) >= new Date(tomorrow)),
+      done: all.filter((a) => ['completed', 'handed_to_lab'].includes(a.status)).reverse(),
     };
   }, [visits.data, tomorrow]);
 
   const open = (visits.data || []).find((a) => a.id === openId);
-  const activeJob = open || groups.today.find((a) => a.status === 'en_route') || groups.today.find((a) => a.status === 'checked_in') || groups.today[0];
+  const activeJob = open || groups.today.find((a) => ['en_route', 'started'].includes(a.status)) || groups.today.find((a) => ['checked_in', 'reached', 'collected'].includes(a.status)) || groups.today[0];
   const gps = useFieldStaffTracking(activeJob, visits.reload);
 
   if (open) return <div className="mobile-frame"><VisitDetail a={open} now={now} onBack={() => setOpenId(null)} reload={visits.reload} gps={gps} /></div>;
 
   const list = groups[tab];
-  const next = groups.today.find((a) => a.status !== 'completed');
+  const next = groups.today.find((a) => !['completed', 'handed_to_lab'].includes(a.status));
   return (
     <div className="mobile-frame">
       <div className="mv-head">
@@ -172,12 +188,16 @@ export default function MyVisits() {
 
 function VisitCard({ a, now, onOpen }) {
   const [l, k] = STATUS[a.status] || [a.status, ''];
-  const late = a.booked_slot && !a.checkin_at && ['assigned', 'en_route'].includes(a.status) && now > new Date(a.booked_slot).getTime() + 15 * 60000;
+  const late = a.booked_slot && !a.checkin_at && ['assigned', 'en_route', 'started'].includes(a.status) && now > new Date(a.booked_slot).getTime() + 15 * 60000;
   return (
     <button type="button" className="mv-card click" onClick={onOpen}>
       <div className="row between">
         <span className="mv-slot mono">{time(a.booked_slot)}<span className="tiny muted"> {date(a.booked_slot)}</span></span>
-        <span className="row gap-4">{late && <Badge kind="danger">Late</Badge>}<Badge kind={k}>{l}</Badge></span>
+        <span className="row gap-4">
+          {a.fasting_required && <Badge kind="warn">Fasting</Badge>}
+          {late && <Badge kind="danger">Late</Badge>}
+          <Badge kind={k}>{l}</Badge>
+        </span>
       </div>
       <div className="strong mt-4">{a.patient_name} <span className="muted small">{a.patient_age ?? '–'}{a.patient_gender || ''}</span></div>
       <div className="small muted">{a.address || '–'}{a.landmark ? ` · ${a.landmark}` : ''} · <span className="mono">{a.pincode}</span></div>
@@ -185,7 +205,12 @@ function VisitCard({ a, now, onOpen }) {
         <span>{TASK_LABEL[a.task]}<span className="muted"> · {a.service_names || '–'}</span></span>
         <span className="mono faint nowrap">{a.case_no}</span>
       </div>
-      {a.status === 'completed' && <div className="tiny muted mt-4">Completed {ago(a.checkout_at, now)}</div>}
+      {['completed', 'handed_to_lab'].includes(a.status) && (
+        <div className="tiny muted mt-4">
+          {a.status === 'handed_to_lab' ? `Handed to lab ${ago(a.lab_handover_at || a.checkout_at, now)}` : `Completed ${ago(a.checkout_at, now)}`}
+          {a.tube_count ? ` · ${a.tube_count} tubes` : ''}
+        </div>
+      )}
     </button>
   );
 }
@@ -197,9 +222,19 @@ function VisitDetail({ a, now, onBack, reload, gps }) {
   const cs = useLoad(() => q(db.from('v_cases').select('id,total,amount_collected,payment_status,patient_locality,consent_digital_at').eq('id', a.case_id).maybeSingle()), [a.case_id], ['cases']);
   const samples = useLoad(() => q(db.from('samples').select('id,barcode,kind,collected_at').eq('case_id', a.case_id).order('collected_at', { ascending: true })), [a.case_id], ['samples']);
 
+  const isPhlebo = a.task === 'phlebotomy';
   const [eta, setEta] = useState(toLocalInput(a.eta || new Date(Date.now() + 20 * 60000)));
   const [checkin, setCheckin] = useState(null); // {distance, demo}
-  const [checks, setChecks] = useState({ consent: !!a.checklist?.consent, id_check: !!a.checklist?.id_check, procedure: !!a.checklist?.procedure });
+  const [checks, setChecks] = useState({
+    consent: !!a.checklist?.consent,
+    id_check: !!a.checklist?.id_check,
+    procedure: !!a.checklist?.procedure,
+    tubes_labelled: !!a.checklist?.tubes_labelled,
+    cold_chain: !!a.checklist?.cold_chain,
+  });
+  const [tubeCount, setTubeCount] = useState(a.tube_count || 1);
+  const [labHandoverAt, setLabHandoverAt] = useState(toLocalInput(a.lab_handover_at || new Date()));
+  const [labName, setLabName] = useState('Hinduja Hospital Main Lab, Mahim');
   const [barcode, setBarcode] = useState('');
   const codeRef = useRef(null);
   const due = cs.data ? Math.max(0, Number(cs.data.total) - Number(cs.data.amount_collected)) : null;
@@ -210,15 +245,20 @@ function VisitDetail({ a, now, onBack, reload, gps }) {
   useEffect(() => { if (due != null) setPay((p) => ({ ...p, amount: p.amount === '' ? String(due) : p.amount })); }, [due]);
 
   const status = a.status;
-  const travelled = status !== 'assigned';
-  const onSite = ['checked_in', 'completed'].includes(status);
-  const done = status === 'completed';
+  const travelled = !['assigned'].includes(status);
+  const onSite = ['checked_in', 'reached', 'collected', 'handed_to_lab', 'completed'].includes(status);
+  const collected = ['collected', 'handed_to_lab', 'completed'].includes(status);
+  const handedToLab = ['handed_to_lab', 'completed'].includes(status);
+  const done = status === 'completed' || status === 'handed_to_lab';
   const codes = samples.data || [];
-  const needCode = a.task === 'phlebotomy';
+  const needCode = isPhlebo;
   const checklistOk = checks.consent && checks.id_check && checks.procedure && (!needCode || codes.length > 0);
   const canComplete = onSite && !done && checklistOk && signoff;
 
-  const startTravel = () => run(async () => { await rpc('field_update', { p_assignment: a.id, p_action: 'en_route', p: { eta: fromLocalInput(eta) } }); reload(); }, 'Marked en route · patient gets your ETA');
+  const startTravel = () => run(async () => {
+    await rpc('field_update', { p_assignment: a.id, p_action: isPhlebo ? 'started' : 'en_route', p: { eta: fromLocalInput(eta) } });
+    reload();
+  }, isPhlebo ? 'Journey started · patient notified' : 'Marked en route · patient gets your ETA');
 
   const getPosition = () => new Promise((resolve) => {
     const fallback = () => resolve({
@@ -227,20 +267,49 @@ function VisitDetail({ a, now, onBack, reload, gps }) {
     if (isDemo || !navigator.geolocation) { fallback(); return; }
     navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, demo: false }), fallback, { timeout: 8000, enableHighAccuracy: true, maximumAge: 30000 });
   });
+
   const doCheckin = () => run(async () => {
     const pos = await getPosition();
     if (pos.lat == null || Number.isNaN(pos.lat)) throw new Error('Location unavailable. Turn on GPS and try again.');
-    const r = await rpc('field_update', { p_assignment: a.id, p_action: 'checkin', p: { lat: pos.lat, lng: pos.lng } });
+    const r = await rpc('field_update', { p_assignment: a.id, p_action: isPhlebo ? 'reached' : 'checkin', p: { lat: pos.lat, lng: pos.lng } });
     setCheckin({ distance: r?.distance_m, demo: pos.demo });
     reload();
-  }, 'Checked in at patient address');
+  }, isPhlebo ? 'Reached patient location · geo-tagged check-in' : 'Checked in at patient address');
 
   const saveCode = () => run(async () => {
     const code = barcode.trim().toUpperCase();
     if (code.length < 4) throw new Error('Enter the full code printed on the label');
-    await rpc('upsert_sample', { p: { case_id: a.case_id, barcode: code, kind: KIND_FOR[a.task], collected_at: new Date().toISOString() } });
+    await rpc('upsert_sample', { p: { case_id: a.case_id, barcode: code, kind: KIND_FOR[a.task] || 'blood_sample', collected_at: new Date().toISOString() } });
     setBarcode(''); samples.reload();
   }, 'Saved to chain of custody');
+
+  const markCollected = () => run(async () => {
+    if (codes.length === 0) throw new Error('Please scan and save at least one barcode before completing collection');
+    const tubes = Math.max(1, Number(tubeCount) || codes.length);
+    await rpc('field_update', {
+      p_assignment: a.id,
+      p_action: 'collected',
+      p: {
+        tube_count: tubes,
+        sample_barcodes: codes.map((c) => c.barcode),
+        checklist: checks,
+      },
+    });
+    reload();
+  }, 'Samples marked as collected');
+
+  const markHandover = () => run(async () => {
+    await rpc('field_update', {
+      p_assignment: a.id,
+      p_action: 'handed_to_lab',
+      p: {
+        lab_handover_at: fromLocalInput(labHandoverAt),
+        lab_notes: labName,
+        signoff,
+      },
+    });
+    reload();
+  }, 'Handed over to lab · task closed');
 
   const collect = () => run(async () => {
     const amt = Number(pay.amount);
@@ -289,14 +358,14 @@ function VisitDetail({ a, now, onBack, reload, gps }) {
           <div className="tiny muted mt-8">Calling the patient is not available in the field app. The HHCS desk ({workspace?.support_number || '–'}) can reach the family for you.</div>
         </div>
 
-        {step(1, 'Start travel', st(travelled, !travelled), travelled
-          ? <div className="small muted">{status === 'en_route' ? 'En route' : 'Travelled'}{a.eta ? ` · ETA ${time(a.eta)}` : ''}</div>
+        {step(1, isPhlebo ? 'Start journey' : 'Start travel', st(travelled, !travelled), travelled
+          ? <div className="small muted">{status === 'en_route' || status === 'started' ? (isPhlebo ? 'Started journey' : 'En route') : 'Travelled'}{a.eta ? ` · ETA ${time(a.eta)}` : ''}</div>
           : <>
             <F label="Your ETA at the patient" hint="IST"><Input type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} /></F>
-            <Button kind="primary" className="tap block" disabled={busy} onClick={startTravel}>Start travel</Button>
+            <Button kind="primary" className="tap block" disabled={busy} onClick={startTravel}>{isPhlebo ? 'Start journey' : 'Start travel'}</Button>
           </>)}
 
-        {step(2, 'Check in at address', st(onSite, travelled && !onSite), onSite
+        {step(2, isPhlebo ? 'Reached patient location' : 'Check in at address', st(onSite, travelled && !onSite), onSite
           ? <div className="small">
             <div><strong>ATA: {time(a.actual_arrival_at || a.checkin_at)}</strong> <span className="muted">· Checked in {time(a.checkin_at)}</span></div>
             {a.eta_vs_ata_variance_min != null && <div className={Math.abs(a.eta_vs_ata_variance_min) > 15 ? 'tiny warn-text mt-4' : 'tiny muted mt-4'}>ETA vs ATA variance: {a.eta_vs_ata_variance_min > 0 ? `+${a.eta_vs_ata_variance_min}` : a.eta_vs_ata_variance_min} min</div>}
@@ -305,30 +374,71 @@ function VisitDetail({ a, now, onBack, reload, gps }) {
             {dist > 200 && <div className="tiny warn-text mt-4">More than 200 m from the registered pin. Confirm the address with the desk.</div>}
           </div>
           : <>
-            <div className="small muted">Your GPS position streams automatically while en route, and is recorded on check-in as proof of arrival.</div>
-            <Button kind="primary" className="tap block" disabled={busy || !travelled} onClick={doCheckin}><Icon name="pin" /> Check in here</Button>
+            <div className="small muted">Your GPS position streams automatically while en route, and is recorded on arrival as proof.</div>
+            <Button kind="primary" className="tap block" disabled={busy || !travelled} onClick={doCheckin}><Icon name="pin" /> {isPhlebo ? 'Reached address' : 'Check in here'}</Button>
           </>)}
 
-        {step(3, 'Visit checklist', st(done || (onSite && checklistOk), onSite && !done), <>
-          <div className="mv-checks">
-            <Check label="Consent taken (digital)" checked={checks.consent} disabled={!onSite || done} onChange={(e) => setChecks({ ...checks, consent: e.target.checked })} />
-            <Check label="Patient ID verified" checked={checks.id_check} disabled={!onSite || done} onChange={(e) => setChecks({ ...checks, id_check: e.target.checked })} />
-            <Check label={`${TASK_LABEL[a.task]} done`} checked={checks.procedure} disabled={!onSite || done} onChange={(e) => setChecks({ ...checks, procedure: e.target.checked })} />
-          </div>
-          <F label={CODE_LABEL[a.task]} hint={needCode ? 'required, one per tube' : 'optional'}>
-            <div className="row">
-              <input ref={codeRef} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="e.g. HHC24871032" disabled={!onSite || done}
-                inputMode="text" autoCapitalize="characters" onKeyDown={(e) => e.key === 'Enter' && barcode && saveCode()} className="input mono" />
-              <Button className="tap" disabled={!onSite || done} onClick={() => codeRef.current?.focus()} aria-label="Scan"><Icon name="barcode" /> Scan</Button>
+        {isPhlebo ? (
+          step(3, 'Sample collection & barcodes', st(collected, onSite && !collected), <>
+            <div className="col gap-8 mb-8">
+              {a.fasting_required ? (
+                <div className="badge warn" style={{ height: 'auto', padding: '6px 10px' }}>⚠️ Patient must be fasting (8–10 hours). Confirm before drawing sample.</div>
+              ) : (
+                <div className="badge info" style={{ height: 'auto', padding: '6px 10px' }}>ℹ️ Non-fasting / Random blood collection.</div>
+              )}
+              <div className="small"><strong>Required tests:</strong> {a.tests_list && a.tests_list.length ? a.tests_list.join(', ') : a.service_names || 'Standard lab panel'}</div>
             </div>
-          </F>
-          {barcode && <Button className="tap block" disabled={busy} onClick={saveCode}>Save {barcode.trim().toUpperCase()}</Button>}
-          {samples.loading ? <Skeleton lines={1} /> : codes.length > 0 && (
-            <div className="col gap-4">{codes.map((s) => (
-              <div key={s.id} className="row between small"><span className="mono strong">{s.barcode}</span><span className="muted">{s.kind} · {time(s.collected_at)}</span></div>
-            ))}</div>
-          )}
-        </>)}
+            <div className="mv-checks">
+              <Check label="Consent taken (digital)" checked={checks.consent} disabled={!onSite || collected} onChange={(e) => setChecks({ ...checks, consent: e.target.checked })} />
+              <Check label="Patient ID verified" checked={checks.id_check} disabled={!onSite || collected} onChange={(e) => setChecks({ ...checks, id_check: e.target.checked })} />
+              <Check label="Sample drawn as per Hinduja protocol" checked={checks.procedure} disabled={!onSite || collected} onChange={(e) => setChecks({ ...checks, procedure: e.target.checked })} />
+              <Check label="Barcodes labelled on tubes" checked={checks.tubes_labelled} disabled={!onSite || collected} onChange={(e) => setChecks({ ...checks, tubes_labelled: e.target.checked })} />
+            </div>
+            <div className="row gap-8">
+              <F label="Tubes collected"><Input type="number" min="1" value={tubeCount} onChange={(e) => setTubeCount(e.target.value)} disabled={!onSite || collected} className="mono" style={{ width: 100 }} /></F>
+            </div>
+            <F label="Sample barcodes" hint="Scan each tube label">
+              <div className="row">
+                <input ref={codeRef} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="e.g. HHC-SAMP-102" disabled={!onSite || collected}
+                  inputMode="text" autoCapitalize="characters" onKeyDown={(e) => e.key === 'Enter' && barcode && saveCode()} className="input mono" />
+                <Button className="tap" disabled={!onSite || collected} onClick={() => codeRef.current?.focus()} aria-label="Scan"><Icon name="barcode" /> Scan</Button>
+              </div>
+            </F>
+            {barcode && <Button className="tap block" disabled={busy} onClick={saveCode}>Save barcode {barcode.trim().toUpperCase()}</Button>}
+            {samples.loading ? <Skeleton lines={1} /> : codes.length > 0 && (
+              <div className="col gap-4">{codes.map((s) => (
+                <div key={s.id} className="row between small"><span className="mono strong">{s.barcode}</span><span className="muted">{s.kind} · {time(s.collected_at)}</span></div>
+              ))}</div>
+            )}
+            {!collected && onSite && (
+              <Button kind="primary" className="tap block mt-8" disabled={busy || codes.length === 0 || !checks.consent || !checks.id_check || !checks.procedure} onClick={markCollected}>
+                Mark samples collected ({codes.length} {codes.length === 1 ? 'tube' : 'tubes'})
+              </Button>
+            )}
+            {collected && <div className="small ok-text">Collected {a.tube_count || codes.length} tubes · Ready for lab handover</div>}
+          </>)
+        ) : (
+          step(3, 'Visit checklist', st(done || (onSite && checklistOk), onSite && !done), <>
+            <div className="mv-checks">
+              <Check label="Consent taken (digital)" checked={checks.consent} disabled={!onSite || done} onChange={(e) => setChecks({ ...checks, consent: e.target.checked })} />
+              <Check label="Patient ID verified" checked={checks.id_check} disabled={!onSite || done} onChange={(e) => setChecks({ ...checks, id_check: e.target.checked })} />
+              <Check label={`${TASK_LABEL[a.task]} done`} checked={checks.procedure} disabled={!onSite || done} onChange={(e) => setChecks({ ...checks, procedure: e.target.checked })} />
+            </div>
+            <F label={CODE_LABEL[a.task]} hint={needCode ? 'required, one per tube' : 'optional'}>
+              <div className="row">
+                <input ref={codeRef} value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="e.g. HHC24871032" disabled={!onSite || done}
+                  inputMode="text" autoCapitalize="characters" onKeyDown={(e) => e.key === 'Enter' && barcode && saveCode()} className="input mono" />
+                <Button className="tap" disabled={!onSite || done} onClick={() => codeRef.current?.focus()} aria-label="Scan"><Icon name="barcode" /> Scan</Button>
+              </div>
+            </F>
+            {barcode && <Button className="tap block" disabled={busy} onClick={saveCode}>Save {barcode.trim().toUpperCase()}</Button>}
+            {samples.loading ? <Skeleton lines={1} /> : codes.length > 0 && (
+              <div className="col gap-4">{codes.map((s) => (
+                <div key={s.id} className="row between small"><span className="mono strong">{s.barcode}</span><span className="muted">{s.kind} · {time(s.collected_at)}</span></div>
+              ))}</div>
+            )}
+          </>)
+        )}
 
         {step(4, 'Payment', st(due === 0, onSite && !done && due > 0), cs.loading ? <Skeleton lines={2} /> : due === 0
           ? <div className="small ok-text">Nothing due · {inr(cs.data?.amount_collected)} collected ({cs.data?.payment_status})</div>
@@ -343,13 +453,24 @@ function VisitDetail({ a, now, onBack, reload, gps }) {
             <div className="tiny muted">Cash is not accepted. If the family prefers to pay later, the desk sends a payment link.</div>
           </>)}
 
-        {step(5, 'Patient sign-off and complete', st(done, onSite && !done), done
-          ? <div className="small ok-text">Completed {time(a.checkout_at)} · sign-off {a.patient_signoff ? 'yes' : 'no'}</div>
-          : <>
-            <Check label="Patient or family confirmed the visit was completed" checked={signoff} disabled={!onSite} onChange={(e) => setSignoff(e.target.checked)} />
-            {onSite && !checklistOk && <div className="tiny warn-text">Tick all checklist items{needCode ? ' and save at least one barcode' : ''} to complete.</div>}
-            <Button kind="primary" className="tap block" disabled={busy || !canComplete} onClick={complete}>Complete visit</Button>
-          </>)}
+        {isPhlebo ? (
+          step(5, 'Handover to lab', st(handedToLab, collected && !handedToLab), handedToLab
+            ? <div className="small ok-text">Handed to lab at {time(a.lab_handover_at || a.checkout_at)} · {a.tube_count || codes.length} tubes</div>
+            : <>
+              <F label="Lab destination"><Input value={labName} onChange={(e) => setLabName(e.target.value)} disabled={!collected} /></F>
+              <F label="Handover time" hint="IST"><Input type="datetime-local" value={labHandoverAt} onChange={(e) => setLabHandoverAt(e.target.value)} disabled={!collected} /></F>
+              <Check label="Patient or family confirmed blood draw completed" checked={signoff} disabled={!collected} onChange={(e) => setSignoff(e.target.checked)} />
+              <Button kind="primary" className="tap block" disabled={busy || !collected || !signoff} onClick={markHandover}>Confirm handover to lab</Button>
+            </>)
+        ) : (
+          step(5, 'Patient sign-off and complete', st(done, onSite && !done), done
+            ? <div className="small ok-text">Completed {time(a.checkout_at)} · sign-off {a.patient_signoff ? 'yes' : 'no'}</div>
+            : <>
+              <Check label="Patient or family confirmed the visit was completed" checked={signoff} disabled={!onSite} onChange={(e) => setSignoff(e.target.checked)} />
+              {onSite && !checklistOk && <div className="tiny warn-text">Tick all checklist items to complete.</div>}
+              <Button kind="primary" className="tap block" disabled={busy || !canComplete} onClick={complete}>Complete visit</Button>
+            </>)
+        )}
 
         {!done && (
           <div className="mv-foot">

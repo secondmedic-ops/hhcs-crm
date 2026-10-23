@@ -19,10 +19,23 @@ export const DEMO_USERS = [
   { id: 'a0000000-0000-4000-8000-000000000017', full_name: 'Demo Administrator', role: 'administrator', email: 'administrator@secondmedic.demo' },
   { id: 'a0000000-0000-4000-8000-000000000015', full_name: 'Ritu Sawant', role: 'provider', provider: 'BMM', email: 'ritu@bookmymedicare.demo' },
   { id: 'a0000000-0000-4000-8000-000000000016', full_name: 'Sachin Bhalerao', role: 'provider', provider: 'BMM', email: 'sachin@bookmymedicare.demo' },
+  { id: 'a0000000-0000-4000-8000-000000000021', full_name: 'Pritesh Sonawane', role: 'phlebotomist', skills: ['phlebotomy'], phone: '+919820000021', email: 'pritesh.phlebo@demo.local', area: 'South Mumbai', pincodes: ['400001', '400005', '400020'], shift_timings: '07:00 - 15:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000022', full_name: 'Sunita D\'Souza', role: 'nurse', skills: ['nursing', 'injections', 'wound_dressing'], phone: '+919820000022', email: 'sunita.nurse@demo.local', area: 'Bandra - Khar', pincodes: ['400050', '400052'], shift_timings: '08:00 - 16:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000023', full_name: 'Dr. Rajesh Varma (PT)', role: 'physiotherapist', skills: ['physio', 'rehabilitation'], phone: '+919820000023', email: 'rajesh.physio@demo.local', area: 'Andheri - Juhu', pincodes: ['400053', '400058'], shift_timings: '09:00 - 17:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000024', full_name: 'Anthony Paul', role: 'icu_nurse', skills: ['icu_care', 'nursing', 'ventilator'], phone: '+919820000024', email: 'anthony.icu@demo.local', area: 'Dadar - Prabhadevi', pincodes: ['400025', '400028'], shift_timings: '08:00 - 20:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000025', full_name: 'Ramesh Kamble', role: 'eldercare_attendant', skills: ['eldercare', 'patient_mobility'], phone: '+919820000025', email: 'ramesh.eldercare@demo.local', area: 'Mahim - Matunga', pincodes: ['400016', '400019'], shift_timings: '08:00 - 20:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000026', full_name: 'Nilesh Shinde', role: 'delivery_executive', skills: ['delivery', 'pickup'], phone: '+919820000026', email: 'nilesh.delivery@demo.local', area: 'Western Suburbs', pincodes: ['400050', '400058'], shift_timings: '08:00 - 18:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000027', full_name: 'Dr. Kavita Raman', role: 'doctor', skills: ['doctor_visit', 'teleconsult'], phone: '+919820000027', email: 'dr.kavita@demo.local', area: 'Greater Mumbai', pincodes: ['400001', '400050'], shift_timings: '10:00 - 18:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000028', full_name: 'Pooja Sharma', role: 'telecaller', agent_code: 'TC-01', phone: '+919820000028', email: 'pooja.telecaller@demo.local', myoperator_user_id: '5010', shift_timings: '09:00 - 18:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000029', full_name: 'Vikas More', role: 'lab_staff', agent_code: 'LAB-01', phone: '+919820000029', email: 'vikas.lab@demo.local', area: 'Central Lab', shift_timings: '08:00 - 16:00 IST' },
+  { id: 'a0000000-0000-4000-8000-000000000030', full_name: 'Sandeep Nair', role: 'accounts', phone: '+919820000030', email: 'sandeep.accounts@demo.local', shift_timings: '09:30 - 18:30 IST' },
 ];
 
 export const ROLE_LABEL = {
   agent: 'Contact centre agent', coordinator: 'Coordinator', supervisor: 'Supervisor', field_staff: 'Field staff',
+  phlebotomist: 'Phlebotomist', nurse: 'Home nurse', physiotherapist: 'Physiotherapist', icu_nurse: 'ICU nurse',
+  eldercare_attendant: 'Eldercare attendant', delivery_executive: 'Delivery / Pickup', doctor: 'Visiting doctor',
+  telecaller: 'Tele-calling agent', lab_staff: 'Lab technician', accounts: 'Accounts & billing',
   medical_desk: 'Medical desk', client_manager: 'Hinduja management', client_clinical: 'Hinduja clinical', admin: 'Platform admin', provider: 'Service provider', administrator: 'Administrator',
 };
 
@@ -87,6 +100,7 @@ export function buildSeedSql({ ws, services, templates, zones, now = new Date() 
   ins('profiles', DEMO_USERS.filter((u) => u.role !== 'provider').map((u) => ({
     id: u.id, workspace_id: ws, full_name: u.full_name, email: u.email || null, phone: u.phone || null, role: u.role,
     agent_code: u.agent_code || null, myoperator_user_id: u.myoperator_user_id || null, skills: u.skills || [],
+    area: u.area || null, pincodes: u.pincodes || [], shift_timings: u.shift_timings || null,
     zone_id: null, on_duty: true, active: true,
   })));
   // provider logins point at their provider (made by the migrations)

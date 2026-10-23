@@ -12,8 +12,37 @@ import Icon from '../components/icons.jsx';
 import StaffMap from '../components/StaffMap.jsx';
 
 const ACTIVE = ['assigned', 'en_route', 'checked_in'];
-const TASK_FOR = { lab: 'phlebotomy', ecg: 'ecg', xray: 'xray' };
-const TASK_LABEL = { phlebotomy: 'Sample collection', ecg: 'ECG', xray: 'Portable X-ray', visit: 'Visit' };
+const TASK_FOR = {
+  lab: 'phlebotomy', ecg: 'ecg', xray: 'xray', nursing: 'nursing', physio: 'physio',
+  icu: 'icu_care', eldercare: 'eldercare', equipment: 'delivery', consumables: 'delivery', visit: 'visit',
+};
+const TASK_LABEL = {
+  visit: 'Visit',
+  phlebotomy: 'Sample collection (Phlebo)',
+  nursing: 'Nursing',
+  physio: 'Physio session',
+  icu_care: 'ICU care',
+  eldercare: 'Eldercare shift',
+  delivery: 'Delivery',
+  pickup: 'Pickup',
+  doctor_visit: 'Doctor visit',
+  ecg: 'ECG',
+  xray: 'Portable X-ray',
+};
+const TASK_SKILL = {
+  visit: 'visit',
+  phlebotomy: 'phlebotomy',
+  nursing: 'nursing',
+  physio: 'physio',
+  icu_care: 'icu_care',
+  eldercare: 'eldercare',
+  delivery: 'delivery',
+  pickup: 'pickup',
+  doctor_visit: 'doctor',
+  ecg: 'ecg',
+  xray: 'xray',
+};
+const FIELD_ROLES = ['field_staff', 'phlebotomist', 'nurse', 'physiotherapist', 'icu_nurse', 'eldercare_attendant', 'delivery_executive', 'doctor'];
 const STATUS = {
   assigned: ['Assigned', 'info'], en_route: ['En route', 'warn'], checked_in: ['On site', 'accent'],
   completed: ['Completed', 'ok'], cancelled: ['Cancelled', ''], reassigned: ['Reassigned', ''],
@@ -62,7 +91,7 @@ export default function Field() {
       .sort((a, b) => new Date(a.booked_slot || 0) - new Date(b.booked_slot || 0));
   }, [from], live);
 
-  const staff = useLoad(() => q(db.from('profiles').select('id,full_name,skills,on_duty,phone,active').eq('role', 'field_staff').is('active', true).order('full_name')), [], []);
+  const staff = useLoad(() => q(db.from('profiles').select('id,full_name,role,skills,on_duty,phone,active').in('role', FIELD_ROLES).is('active', true).order('full_name')), [], []);
 
   const needs = useLoad(async () => {
     const cases = await q(db.from('v_cases').select('id,case_no,patient_name,patient_age,patient_gender,zone_name,booked_slot,priority,stage,order_status,service_names,service_categories,pincode')
@@ -272,29 +301,55 @@ function AssignModal({ c, backup, staff, load, onClose, onDone }) {
   const slot = backup ? backup.booked_slot : c.booked_slot;
   const tasks = backup ? [backup.task] : (c.missing?.length ? c.missing : ['visit']);
   const [task, setTask] = useState(tasks[0] || 'visit');
-  const eligible = staff.filter((s) => (task === 'visit' || (s.skills || []).includes(task)) && (!backup || s.id !== backup.staff_id))
+  const requiredSkill = TASK_SKILL[task] || task;
+  const eligible = staff.filter((s) => s.active !== false && (task === 'visit' || (s.skills || []).includes(requiredSkill)) && (!backup || s.id !== backup.staff_id))
     .sort((a, b) => (load[a.id] || 0) - (load[b.id] || 0));
   const [who, setWho] = useState('');
   const pickDefault = who || eligible[0]?.id || '';
   const base = slot ? new Date(slot).getTime() - 10 * 60000 : Date.now() + 45 * 60000;
   const [eta, setEta] = useState(toLocalInput(new Date(Math.max(base, Date.now() + 20 * 60000))));
-  const submit = () => run(async () => {
-    await rpc('assign_staff', { p_case: backup ? backup.case_id : c.id, p_staff: pickDefault, p_task: task, p_eta: fromLocalInput(eta), p_backup_for: backup ? backup.id : null });
-    onDone();
-  }, backup ? 'Backup technician assigned' : (c?.hasActive ? 'Technician reassigned and notified' : 'Technician assigned and notified'));
+  const [reason, setReason] = useState('staff_unavailable');
+  const [note, setNote] = useState('');
+
   const head = backup || c;
   const isReassign = !backup && !!c?.hasActive;
+  const needNote = isReassign && reason === 'other';
+
+  const submit = () => run(async () => {
+    if (isReassign) {
+      const activeAsgId = c?.hasActive?.id || c?.active_assignment_id || c?.id;
+      await rpc('reassign_staff', {
+        p_case: c.id,
+        p_assignment: activeAsgId,
+        p_staff: pickDefault,
+        p_reason: reason,
+        p_eta: fromLocalInput(eta),
+        p_note: note.trim() || null,
+      });
+    } else {
+      await rpc('assign_staff', {
+        p_case: backup ? backup.case_id : c.id,
+        p_staff: pickDefault,
+        p_task: task,
+        p_eta: fromLocalInput(eta),
+        p_backup_for: backup ? backup.id : null,
+        p_role: backup ? 'backup' : 'primary',
+      });
+    }
+    onDone();
+  }, backup ? 'Backup technician assigned' : (isReassign ? 'Technician reassigned and notified' : 'Technician assigned and notified'));
+
   return (
     <Modal title={backup ? `Assign backup · ${backup.case_no}` : isReassign ? `Reassign technician · ${c.case_no}` : `Assign technician · ${c.case_no}`} onClose={onClose} footer={<>
       <Button onClick={onClose} disabled={busy}>Cancel</Button>
-      <Button kind="primary" disabled={busy || !pickDefault} onClick={submit}>{backup ? 'Assign backup' : isReassign ? 'Reassign' : 'Assign'}</Button>
+      <Button kind="primary" disabled={busy || !pickDefault || (needNote && !note.trim())} onClick={submit}>{backup ? 'Assign backup' : isReassign ? 'Reassign' : 'Assign'}</Button>
     </>}>
       <dl className="kv mb-16">
         <dt>Patient</dt><dd>{head.patient_name}</dd>
         <dt>Zone</dt><dd>{head.zone_name || '–'} <span className="mono faint">{head.pincode}</span></dd>
         <dt>Slot</dt><dd className="mono">{slot ? `${dateLong(slot)} · ${time(slot)}` : '–'}</dd>
         <dt>Services</dt><dd>{head.service_names || '–'}</dd>
-        {backup && <><dt>Replacing</dt><dd>{backup.staff_name} · <StatusBadge status={backup.status} /></dd></>}
+        {backup && <><dt>Standby for</dt><dd>{backup.staff_name} · <StatusBadge status={backup.status} /></dd></>}
       </dl>
       <div className="form-grid">
         <F label="Task" hint={!backup && tasks.length > 1 ? 'each task needs its own technician' : null}>
@@ -303,6 +358,23 @@ function AssignModal({ c, backup, staff, load, onClose, onDone }) {
         <F label="ETA at patient" hint="IST">
           <Input type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} />
         </F>
+        {isReassign && (
+          <>
+            <F label="Reassignment reason (mandatory)">
+              <Select value={reason} onChange={(e) => setReason(e.target.value)} options={[
+                ['staff_unavailable', 'Staff unavailable'],
+                ['patient_request', 'Patient request'],
+                ['no_show', 'No-show'],
+                ['other', 'Other (requires note)'],
+              ]} />
+            </F>
+            {needNote && (
+              <F label="Reason note (mandatory)">
+                <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Specify reason" autoFocus />
+              </F>
+            )}
+          </>
+        )}
         <F label="Technician" hint="skilled for this task, lightest load first" className="span2">
           {eligible.length ? (
             <Select value={pickDefault} onChange={(e) => setWho(e.target.value)}
