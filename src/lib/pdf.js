@@ -66,6 +66,10 @@ function wrapLines(text, maxWidth, fontSize, isBold = false) {
   return lines.length ? lines : ['–'];
 }
 
+// Print the 15-day quotation validity on the PDF. Off until Dindayal confirms the rule;
+// workspaces.settings.show_validity_on_pdf = true turns it back on without a release.
+export const SHOW_VALIDITY_ON_PDF = false;
+
 export function formatInr(num) {
   if (num == null || isNaN(num)) return 'Rs. 0.00';
   const n = Number(num);
@@ -82,6 +86,7 @@ export function generateQuotationPdfBytes({ k, patient, items = [], workspace = 
   const pageHeight = 841.89;
   const marginX = 40;
   const contentWidth = pageWidth - marginX * 2; // 515.28
+  const showValidity = workspace?.settings?.show_validity_on_pdf ?? SHOW_VALIDITY_ON_PDF;
 
   const brandName = workspace?.brand_name || 'HINDUJA HOME CARE SERVICES';
   const brandSub = 'In association with SecondMedic · P. D. Hinduja National Hospital & Medical Research Centre';
@@ -172,7 +177,7 @@ BT /F1 8 Tf ${marginX + 80} ${boxY - 42} Td (${escapePdf(quoteDate)}) Tj ET
 0.20 0.25 0.35 rg
 BT /F2 8 Tf ${marginX + 8} ${boxY - 56} Td (Price Status:) Tj ET
 0.10 0.12 0.18 rg
-BT /F1 8 Tf ${marginX + 80} ${boxY - 56} Td (Rate card locked · Valid 15 days) Tj ET
+BT /F1 8 Tf ${marginX + 80} ${boxY - 56} Td (${showValidity ? 'Rate card locked · Valid 15 days' : 'Rate card locked'}) Tj ET
 `);
 
     // Right card: Patient details
@@ -325,15 +330,18 @@ BT /F2 10.5 Tf ${(totX + totW - 12 - textWidth(totFormatted, 10.5, true)).toFixe
 
   curY -= 76;
 
-  // Terms and conditions
+  // Terms and conditions (numbered and spaced from the list, so a hidden line leaves no gap)
+  const terms = [
+    'Quoted rates are from the approved rate card and remain locked for this case registration.',
+    showValidity && 'This quotation is valid for 15 calendar days from the date of issue.',
+    'Final billing will reflect verified service duration, equipment serials, shifts and consumables delivered.',
+    'For questions or service confirmations, please call the Hinduja Care Helpline at +91 80493 68621.',
+  ].filter(Boolean);
   curStream.push(`
 0.40 0.45 0.55 rg
 BT /F2 8 Tf ${marginX} ${curY} Td (Terms & Conditions / Care Information:) Tj ET
 0.50 0.55 0.65 rg
-BT /F1 7.5 Tf ${marginX} ${curY - 12} Td (1. Quoted rates are from the approved rate card and remain locked for this case registration.) Tj ET
-BT /F1 7.5 Tf ${marginX} ${curY - 22} Td (2. This quotation is valid for 15 calendar days from the date of issue.) Tj ET
-BT /F1 7.5 Tf ${marginX} ${curY - 32} Td (3. Final billing will reflect verified service duration, equipment serials, shifts and consumables delivered.) Tj ET
-BT /F1 7.5 Tf ${marginX} ${curY - 42} Td (4. For questions or service confirmations, please call the Hinduja Care Helpline at +91 80493 68621.) Tj ET
+${terms.map((t, i) => `BT /F1 7.5 Tf ${marginX} ${curY - 12 - i * 10} Td (${escapePdf(`${i + 1}. ${t}`)}) Tj ET`).join('\n')}
 `);
 
   // Footers on all pages
