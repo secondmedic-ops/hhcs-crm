@@ -124,7 +124,7 @@ function Availability() {
   const { profile, reload } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  if (!profile.active || !['agent', 'coordinator', 'supervisor'].includes(profile.role)) return null;
+  if (!profile.active || !roleAllows(['agent', 'coordinator', 'supervisor'], profile.role)) return null;
   const on = !!profile.available;
   const toggle = async () => {
     setBusy(true);

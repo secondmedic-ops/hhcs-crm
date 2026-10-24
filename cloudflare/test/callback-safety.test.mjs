@@ -44,6 +44,12 @@ test('callback eligibility, retry boundaries, reservations, reconciliation and w
       await db.exec(`update profiles set ${change} where id='${agent}'`);
       expect(await claim()).toEqual([]);
     }
+    // Administrators take callbacks through the same availability, link and call-lock rules as supervisors.
+    await clear(); await settings(30,3);
+    await db.query("update profiles set role='administrator' where id=$1",[agent]);
+    const adminCallback = await queue();
+    expect((await claim())[0]).toMatchObject({callback_id:adminCallback.id,agent_id:agent,myoperator_user_id:'mo-a'});
+    expect(await claim()).toEqual([]);
     await clear(); await settings(45,3,false); const disabled = await queue();
     expect(disabled.next_attempt_at).toBeNull(); expect(await claim()).toEqual([]);
 

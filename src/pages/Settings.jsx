@@ -560,7 +560,7 @@ function UsersTab() {
 // A department is a login role (profiles.role): pick one to see exactly the staff in it. Partner staff (role provider)
 // are split by partner. Counts are of active logins; disabled logins are listed only when asked for. Same rights as Users:
 // the admin edits logins (role, status); a supervisor sets a login's MyOperator telephony only.
-const CALLING = ['agent', 'coordinator', 'supervisor', 'medical_desk'];   // need a MyOperator user to place calls
+const CALLING = ['agent', 'coordinator', 'supervisor', 'medical_desk', 'administrator'];   // need a MyOperator user to place calls
 
 function DepartmentsTab() {
   const { can, switchUser } = useAuth();

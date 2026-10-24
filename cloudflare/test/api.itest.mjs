@@ -802,6 +802,19 @@ export async function runApiTests({ base, token, sql, wrongKey, obdCalls, gemini
   check(admRead.status === 200 && admRead.body.results.every((r) => (r.data || []).length > 0), 'administrator reads cases, calls and the audit trail', JSON.stringify(admRead.body).slice(0, 200));
   check((await call('administrator', 'GET', '/api/v1/admin/integrations')).status === 200 && (await call('administrator', 'GET', '/api/v1/admin/ai')).status === 200,
     'administrator opens integration and AI settings');
+  const admUnlinked = await call('administrator', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(admUnlinked.status === 409, 'administrator has calling permission but needs its own calling identity', JSON.stringify(admUnlinked.body));
+  const admLink = await call('administrator', 'POST', '/api/v1/admin/users/telephony', { profile_id: U.administrator, myoperator_user_id: 'mo-administrator' });
+  check(admLink.status === 200, 'administrator calling identity can be configured');
+  const admAvailable = await rpc('administrator', 'set_my_availability', { p_available: true });
+  check(admAvailable.status === 200 && admAvailable.body?.data?.available && admAvailable.body?.data?.linked, 'administrator can become available for calls', JSON.stringify(admAvailable.body));
+  const admSettings = await rpc('administrator', 'autodial_settings');
+  check(admSettings.status === 200 && admSettings.body?.data?.agents_available >= 1, 'administrator is included in available caller counts');
+  const admDial = await call('administrator', 'POST', '/api/v1/calls/dial', { case_id: cid });
+  check(admDial.status === 200 && obdCalls.at(-1)?.body?.user_id === 'mo-administrator', 'administrator places a CRM call through its own identity', JSON.stringify(admDial.body));
+  check((await call('administrator', 'POST', '/api/v1/calls/dial', { case_id: cid })).status === 409, 'administrator cannot start overlapping calls');
+  await sql`update calls set status = 'failed', ended_at = now() where id = ${admDial.body?.call_id}::uuid`;
+  await rpc('administrator', 'set_my_availability', { p_available: false });
   const admAgent = await call('administrator', 'POST', '/api/v1/admin/users', { email: 'administrator.made.agent@rehearsal.test', password: 'longenough-1', full_name: 'Administrator Made Agent', role: 'agent' });
   check(admAgent.status === 200 && admAgent.body?.role === 'agent', 'administrator creates a staff login', JSON.stringify(admAgent.body));
   const admAdm = await call('administrator', 'POST', '/api/v1/admin/users', { email: 'second.administrator@rehearsal.test', password: 'longenough-1', full_name: 'Second Administrator', role: 'administrator' });

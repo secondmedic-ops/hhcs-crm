@@ -114,8 +114,8 @@ export async function moSettings(c: Ctx) {
   const origin = (c.env.APP_URL || new URL(c.req.url).origin).replace(/\/$/, '');
   const key = env.MYOPERATOR_WEBHOOK_KEY || null;
   const [last] = await c.sql`select event_type, received_at, processed, error from webhook_events where source = 'myoperator' order by received_at desc limit 1`;
-  const [agents] = await c.sql`select count(*) filter (where role in ('agent','coordinator','supervisor','medical_desk') and active)::int as ops,
-      count(*) filter (where role in ('agent','coordinator','supervisor','medical_desk') and active and myoperator_user_id is not null)::int as linked
+  const [agents] = await c.sql`select count(*) filter (where role in ('agent','coordinator','supervisor','medical_desk','administrator') and active)::int as ops,
+      count(*) filter (where role in ('agent','coordinator','supervisor','medical_desk','administrator') and active and myoperator_user_id is not null)::int as linked
     from profiles where workspace_id = ${c.user.workspaceId}::uuid`;
   return {
     fields: await describeMo(c.env, c.sql),
