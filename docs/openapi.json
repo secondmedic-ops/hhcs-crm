@@ -19,6 +19,32 @@
     }
   },
   "paths": {
+    "/api/v1/admin/ivr": {
+      "get": {
+        "summary": "Hinduja IVR hours, queue policy and MyOperator node mapping",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Save workspace IVR mapping; provider publishing is separate",
+        "x-access": [
+          "admin",
+          "supervisor"
+        ],
+        "security": [
+          {
+            "supabase": []
+          }
+        ]
+      }
+    },
     "/api/v1/feedback/open": {
       "post": {
         "summary": "Validate a single-use customer feedback capability",

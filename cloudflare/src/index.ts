@@ -14,6 +14,7 @@ import type { Env } from './env';
 import { ApiError } from './domain/errors';
 import { dbMessage } from './services/data';
 import { handleMyOperatorWebhook } from './services/myoperator';
+import { handleIvr } from './services/ivr';
 import { liveToken, notifyLive, openLive } from './services/live';
 import { runScheduled } from './services/cron';
 import { handleEmail } from './services/email';
@@ -172,6 +173,9 @@ async function route(req: Request, env: Env, ctx: ExecutionContext, url: URL): P
       status: 404,
       headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
     });
+  }
+  if (url.pathname === '/webhooks/myoperator/ivr' && req.method === 'POST') {
+    try { return await handleIvr(req, env, ctx); } catch (e) { return toResponse(e); }
   }
   if (url.pathname === '/webhooks/myoperator' && req.method === 'POST') {
     try { return await handleMyOperatorWebhook(req, env, ctx); } catch (e) { return toResponse(e); }

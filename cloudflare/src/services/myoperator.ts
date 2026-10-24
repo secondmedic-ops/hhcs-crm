@@ -65,7 +65,7 @@ const knownAnswer = (call: J) => (call.raw?.answered_source === 'server' ? { ser
 const int = (v: unknown) => (v == null || v === '' || isNaN(Number(v)) ? null : Math.round(Number(v)));
 const mins = (s: number | null) => `${Math.floor((s || 0) / 60)}:${String((s || 0) % 60).padStart(2, '0')}`;
 
-async function resolveWorkspace(tx: Tx, env: Env, did: unknown): Promise<string> {
+export async function resolveWorkspace(tx: Tx, env: Env, did: unknown): Promise<string> {
   const n = normMobile(did);
   if (n) {
     const all = await tx`select id::text, settings from workspaces`;
@@ -236,7 +236,7 @@ export function afterCallEvent(o: J, source = 'myoperator'): J {
 }
 
 /** The CRM call for a provider session: by session id, else by our click-to-call reference, else a new one. */
-async function findOrCreateCall(tx: Tx, a: { ws: string; session: string; refId?: unknown; customer: string | null; direction: string;
+export async function findOrCreateCall(tx: Tx, a: { ws: string; session: string; refId?: unknown; customer: string | null; direction: string;
   did: string | null; startedAt: string | null; providerCallId?: string | null; first: J; adoptRecent?: boolean }): Promise<J> {
   const refStr = a.refId != null && String(a.refId).trim() ? String(a.refId).trim() : null;
   await tx`select pg_advisory_xact_lock(hashtextextended(${a.ws + ':' + (refStr || a.session)}, 0))`;

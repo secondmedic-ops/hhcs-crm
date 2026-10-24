@@ -2,6 +2,7 @@
 // (scripts/lint.mjs) and the contract (docs/openapi.json, checked against src/api.ts) are all built from it.
 // access: 'public' only for health / version, 'login' only for /api/v1/me, otherwise the roles allowed.
 import type { Ctx } from './context';
+import { ivrSettings, saveIvrSettings } from '../services/ivr';
 import type { Role } from './auth';
 import { staffDirectory, startStaffSession, endStaffSession } from '../services/staff-session';
 import { batch, rpc, write, READ, WRITE, RPC } from '../services/data';
@@ -38,6 +39,8 @@ const TECH: readonly Role[] = ['admin', 'supervisor'];
 const changing = (r: { body: unknown; changed: string[] }, c: Ctx) => { c.changed.push(...r.changed); return r.body; };
 
 export const routes: Route[] = [
+  { method: 'GET', path: '/api/v1/admin/ivr', access: TECH, handler: (c) => ivrSettings(c), summary: 'Hinduja IVR hours, queue policy and MyOperator node mapping' },
+  { method: 'POST', path: '/api/v1/admin/ivr', access: TECH, handler: (c, b) => saveIvrSettings(c, b), summary: 'Save workspace IVR mapping; provider publishing is separate' },
   { method: 'POST', path: '/api/v1/feedback/open', access: 'feedback-token', summary: 'Validate a single-use customer feedback capability' },
   { method: 'POST', path: '/api/v1/feedback/submit', access: 'feedback-token', summary: 'Submit call experience feedback using a single-use capability' },
   { method: 'POST', path: '/api/v1/feedback/link', access: CALL_VIEW, handler: (c, b) => issueFeedbackLink(c, b), summary: 'Generate a new feedback link for a visible request, invalidating the previous link' },

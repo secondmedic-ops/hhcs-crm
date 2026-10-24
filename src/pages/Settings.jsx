@@ -16,6 +16,7 @@ import Icon from '../components/icons.jsx';
 import { STAFF_ROLES } from '../components/StaffWorkspace.jsx';
 import { RatesTab } from './RateCard.jsx';
 import TelephonySettings from './TelephonySettings.jsx';
+import IvrSettings from './IvrSettings.jsx';
 
 const ALL = ['agent', 'coordinator', 'supervisor', 'field_staff', 'medical_desk', 'client_manager', 'client_clinical', 'admin', 'provider', 'administrator'];
 const TABS = [
@@ -1081,6 +1082,7 @@ function TelephonyTab() {
 
       {roleAllows(['supervisor'], profile?.role) && <WebhookHealth />}
       {isAdmin && <AutodialPanel />}
+      {isAdmin && <IvrSettings />}
       {isAdmin ? <MyOperatorConnection /> : (
         <Panel title="MyOperator"><div className="small">The platform admin or a supervisor connects MyOperator and links agents here. The event log below shows every call event received.</div></Panel>
       )}
